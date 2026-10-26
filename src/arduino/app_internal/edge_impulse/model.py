@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""The model a brick runs on the Edge Impulse inference service.
+"""The model a brick runs on its Edge Impulse inference server.
 
 `EdgeImpulseModel` is the base of every brick running an Edge Impulse model, whatever its input: it resolves
 the model from the app configuration, opens it on the service with the confidence of the brick, keeps the
@@ -15,7 +15,6 @@ import threading
 
 import numpy as np
 
-from arduino.app_internal import ei_inference
 from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model, load_model_list
 from arduino.app_internal.ei_inference import InferenceClient, Result, ServerError, model_name_from_path
 from arduino.app_utils import Logger
@@ -24,19 +23,19 @@ logger = Logger("EdgeImpulseModel")
 
 
 class EdgeImpulseModel:
-    """A model of the Edge Impulse inference service, `arduino:edge_impulse`, and the connection to it.
+    """A model of the Edge Impulse inference server of a brick, and the connection to it.
 
     The model is the one configured for the brick in the app, through the class attribute `MODEL_VARIABLE`, the
     app variable the CLI sets to the `.eim` path, with the models list as the fallback; a subclass names it. The
     confidence is the score the results must reach: the service applies it and returns nothing below it.
     Subclasses set their other model parameters in `_configure`, called every time the model is opened.
 
-    The service is reached at the socket of the shared `arduino:edge_impulse` service, or at `SOCKET_PATH` when a
-    brick runs the inference server as its own container and names its socket there.
+    Every brick runs the inference server as its own container, declared in its compose file, and names the socket
+    of that server in the class attribute `SOCKET_PATH`.
     """
 
     MODEL_VARIABLE = ""  # the app variable naming the .eim file of the brick, set by each brick class
-    SOCKET_PATH: str | None = None  # the socket of a brick-owned inference server, None for the shared service
+    SOCKET_PATH = ""  # the socket of the inference server of the brick, set by each brick class
 
     _RETRY_SEC = 2.0  # seconds between attempts to reach the inference service
 
@@ -48,8 +47,10 @@ class EdgeImpulseModel:
                 tracks reaching the score threshold the model was exported with, and every class score.
 
         Raises:
-            RuntimeError: If no model is configured.
+            RuntimeError: If the brick names no socket path or no model is configured.
         """
+        if not self.SOCKET_PATH:
+            raise RuntimeError(f"{type(self).__name__} names no socket path.")
         self._model = self._configured_model()
         self._confidence = confidence
         self._client: InferenceClient | None = None
@@ -175,7 +176,7 @@ class EdgeImpulseModel:
             ServerError: If the service refuses the model.
             OSError: If the service is not reachable, or the model is not ready in time (TimeoutError).
         """
-        client = InferenceClient(self._model, self._socket_path(), open_timeout=timeout, confidence=self._confidence)
+        client = InferenceClient(self._model, self.SOCKET_PATH, open_timeout=timeout, confidence=self._confidence)
         try:
             self._configure(client)
         except BaseException:
@@ -189,9 +190,6 @@ class EdgeImpulseModel:
     def _configure(self, client: InferenceClient) -> None:
         """Set the parameters of the model every time it is opened; the base class has none beyond the confidence."""
 
-    def _socket_path(self) -> str:
-        return self.SOCKET_PATH or ei_inference.DEFAULT_SOCKET_PATH
-
     def _connect(self, running: threading.Event) -> InferenceClient | None:
         """The open connection to the model, or a new one once the service is ready, retrying while `running` is set."""
         client = self._connected()
@@ -203,7 +201,7 @@ class EdgeImpulseModel:
             except ServerError as e:
                 logger.error(f"The inference service refused model '{self._model}' ({e.code}): {e}. Retrying...")
             except OSError:
-                logger.debug(f"Waiting for the inference service at {self._socket_path()}. Retrying...")
+                logger.debug(f"Waiting for the inference service at {self.SOCKET_PATH}. Retrying...")
             running.wait(self._RETRY_SEC)
         return None
 

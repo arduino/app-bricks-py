@@ -37,7 +37,7 @@ matching no file fails the build. The compose file mounts the models the app CLI
 | `--log-level` | no | Python log level (default `WARNING`: only problems; `INFO` adds the model lifecycle, the instances and the periodic stats) |
 | `--accel cpu\|qnn` | no | startup checks only (NPU device access); default from `EI_ACCEL`, set by each image |
 
-The compose file of each image passes them in `command`. Startup fails if a pinned model does not
+The compose file of each brick passes them in `command`. Startup fails if a pinned model does not
 exist or does not load, or if there are more pinned models than `--max-models`.
 
 ## Model lifecycle
@@ -83,7 +83,7 @@ as the ceiling is not reached, the cores allow it (the affinity mask and the cgr
 cores the `.eim` was measured to use during its warm-up) and the memory reserve holds after another
 process of the size of the first. An instance whose model stays under 40% busy for a while is retired.
 A client slower than the model never triggers an instance, so the NPU image keeps the default of 1 and
-the CPU compose file for the UNO Q sets 2. An instance whose `.eim` exits is replaced on its own, the
+a CPU brick on the UNO Q can set 2 in its compose file. An instance whose `.eim` exits is replaced on its own, the
 others keep serving.
 
 Two guards keep the instances honest. A model that keeps state from one frame to the next, object tracking

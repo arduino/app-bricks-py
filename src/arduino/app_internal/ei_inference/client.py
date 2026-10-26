@@ -29,8 +29,6 @@ import numpy as np
 
 from . import protocol as P
 
-# The service creates its socket in the app .cache directory, mounted at /ipc in its container
-DEFAULT_SOCKET_PATH = os.getenv("EI_INFERENCE_SOCKET_PATH", "/app/.cache/edge_impulse/ei.sock")
 # The models directory of the service: the out-of-the-box models of the image under ootb/ei, the ones the app CLI
 # installs mounted under edge-impulse and custom-ei. Model names are paths relative to it, without the extension.
 IMAGE_MODELS_DIR = "/models"
@@ -121,14 +119,12 @@ class _InFlight:
 class InferenceClient:
     """A connection to the inference service holding one model, thread-safe, as many frames in flight as the service allows."""
 
-    def __init__(
-        self, model: str, socket_path: str = DEFAULT_SOCKET_PATH, open_timeout: float | None = None, confidence: float | None = None
-    ) -> None:
+    def __init__(self, model: str, socket_path: str, open_timeout: float | None = None, confidence: float | None = None) -> None:
         """Connect and request the model, blocking until the service has loaded it.
 
         Args:
             model (str): Model name, the ``.eim`` path relative to the models directory without extension.
-            socket_path (str): Path of the service socket.
+            socket_path (str): Path of the service socket, in the app .cache directory the brick mounts at /ipc in the server.
             open_timeout (float | None): Seconds to wait for the model to load, None waits indefinitely.
             confidence (float | None): Score the boxes, tracks and classes must reach to be returned, between 0 and 1;
                 None returns the boxes and tracks reaching the score threshold the model was exported with, and

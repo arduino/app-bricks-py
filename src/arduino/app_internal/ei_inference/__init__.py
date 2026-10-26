@@ -9,7 +9,6 @@ socket protocol and the client the bricks build on. Frames go out as captured, t
 model input and returns the boxes in the frame coordinates.
 """
 
-from .client import DEFAULT_SOCKET_PATH as DEFAULT_SOCKET_PATH
 from .client import Box as Box
 from .client import InferenceClient as InferenceClient
 from .client import Result as Result
