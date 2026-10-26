@@ -12,8 +12,8 @@ FROM ${REGISTRY}app-bricks/qairt-common-base:${BASE_IMAGE_VERSION}
 ARG DEBIAN_FRONTEND=noninteractive
 
 # The server and its locked packages come from the "server" context,
-# containers/ai/edge-impulse-server, shared with edge-impulse-runner and linked in docker-bake.hcl.
-# Standalone build: docker build --build-context server=../edge-impulse-server .
+# containers/ai/edge-impulse-runner, linked in docker-bake.hcl.
+# Standalone build: docker build --build-context server=../edge-impulse-runner .
 COPY --from=server ./src /app
 COPY --from=server ./pyproject.toml ./uv.lock /tmp/deps/
 

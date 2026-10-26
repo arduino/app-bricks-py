@@ -89,14 +89,14 @@ apps:
       project: containers/ai/llamacpp-npu-runner
 
   # The inference server both edge-impulse-runner and edge-impulse-npu-runner install
-  - name: edge-impulse-server
+  - name: edge-impulse-runner
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "/venvs/edge-impulse-server"
+      virtual_env_dir: "/venvs/edge-impulse-runner"
     venv:
-      project: containers/ai/edge-impulse-server
+      project: containers/ai/edge-impulse-runner
 
 stale_records_action: error
 

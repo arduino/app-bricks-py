@@ -25,8 +25,8 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 | Container | Group | Built `FROM` | Purpose |
 |---|---|---|---|
 | `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
-| `edge-impulse-runner` | ai | `python-slim` | Edge Impulse multi-model inference server, CPU image of `edge-impulse-server` |
-| `edge-impulse-npu-runner` | ai | `qairt-common-base` | Edge Impulse multi-model inference server, Hexagon NPU (QNN) image of `edge-impulse-server` |
+| `edge-impulse-runner` | ai | `python-slim` | Edge Impulse multi-model inference server: its source, and its CPU image |
+| `edge-impulse-npu-runner` | ai | `qairt-common-base` | Edge Impulse multi-model inference server, Hexagon NPU (QNN) image of the `edge-impulse-runner` source |
 | `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages |
 | `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
 | `aihub-framework` | base | `scratch` | Layer, never run: the `aihub` runner framework and the app skeleton, copied by `aihub-litert-models-runner` and `aihub-onnx-models-runner` |
@@ -71,13 +71,12 @@ their own `pyproject.toml`, since the layer has no Python.
 
 ### Shared source
 
-`ai/edge-impulse-server/` is the inference server both `edge-impulse-runner` and `edge-impulse-npu-runner`
-package: its `src/`, `tests/`, `pyproject.toml`, `uv.lock` and the CPU builds of the bundled models live there once.
-It has no `Dockerfile`, so it is not a container: CI, `scripts/container.py` and the release ignore it,
-while `task init:containers`, `task test:containers`, `task check:deps` and the license scan treat it as
-the one uv project it is. Each image's `docker-bake.hcl` target links the directory as the `server`
-build context and its Dockerfile copies from it with `COPY --from=server`; a standalone build passes
-`--build-context server=../edge-impulse-server`.
+`ai/edge-impulse-runner/` holds the inference server both `edge-impulse-runner` and `edge-impulse-npu-runner`
+package, once: its `src/`, `tests/`, `pyproject.toml`, `uv.lock` and the CPU builds of the bundled models,
+from which it builds the CPU image. `ai/edge-impulse-npu-runner/` keeps its `Dockerfile`, `README.md` and
+QNN models only: its `docker-bake.hcl` target links `ai/edge-impulse-runner/` as the `server` build context
+and its Dockerfile copies from it with `COPY --from=server`; a standalone build passes
+`--build-context server=../edge-impulse-runner`.
 
 ## Anatomy of a container directory
 
@@ -91,8 +90,8 @@ repository expects, see [Adding a New Container](../.github/README.md#adding-a-n
 | `patches/` | no | Source patches to the installed Python packages, in `git format-patch` format, applied by the Dockerfile with GNU `patch --fuzz=0` to the locked versions the image installs, every `*.patch` of the directory in name order (see its README), with a test in `tests/containers/` that applies them the same way. A patch that stops applying exactly, after a bump of its package or once upstream has merged it, fails the build and the test: regenerate it against the new version, or drop it |
 | `tests/` | no | Python tests run by `task test` in the container's `.venv`, with the packages of its `test` dependency group; shell tests exercise the built image |
 
-An image whose code is shared with another image keeps only its `Dockerfile`, `README.md` and what is its own in
-its directory, and copies the rest from the shared source directory through a named build context.
+An image built from the code of another container keeps only its `Dockerfile`, `README.md` and what is its own in
+its directory, and copies the rest from that container's directory through a named build context.
 
 SBOMs are not kept in the tree: they are generated from the published images at release time (see
 [SBOMs](#sboms)) and by the dev workflow as run artifacts.

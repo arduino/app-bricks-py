@@ -247,10 +247,7 @@ target "edge-impulse-runner" {
   tags       = image_tags("edge-impulse-runner")
   cache-from = cache_from("edge-impulse-runner")
   cache-to   = cache_to("edge-impulse-runner")
-  contexts = merge(
-    { server = "containers/ai/edge-impulse-server" },
-    parent_context("python-slim"),
-  )
+  contexts   = parent_context("python-slim")
 }
 
 target "qairt-common-base" {
@@ -307,7 +304,7 @@ target "edge-impulse-npu-runner" {
   cache-from = cache_from("edge-impulse-npu-runner")
   cache-to   = cache_to("edge-impulse-npu-runner")
   contexts = merge(
-    { server = "containers/ai/edge-impulse-server" },
+    { server = "containers/ai/edge-impulse-runner" },
     parent_context("qairt-common-base"),
   )
 }

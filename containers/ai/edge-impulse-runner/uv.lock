@@ -28,7 +28,7 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/66/1e/d8ef9cdd120533ea66752e858dfa8f14ded2e71e71e03e66a3b65fd0d6a7/edge_impulse_linux-1.2.2.tar.gz", hash = "sha256:3a908edc53c0382e133c9e3b8d6f7f4e3870a3abe0a7986edc7ae6f4c3611cad", size = 12049, upload-time = "2026-01-15T10:08:48.929Z" }
 
 [[package]]
-name = "edge-impulse-server"
+name = "edge-impulse-runner"
 version = "0"
 source = { virtual = "." }
 dependencies = [

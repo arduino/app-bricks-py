@@ -1,2 +1,7 @@
-# Everything the image copies comes from the server context
+# Only what this image and edge-impulse-npu-runner, through its server context, copy from here
 *
+!pyproject.toml
+!uv.lock
+!src/
+!models/
+**/__pycache__

@@ -15,7 +15,7 @@ updates:
       - /containers/base/python-base
       - /containers/bricks/models-downloader
       - /containers/bricks/tps
-      - /containers/ai/edge-impulse-server
+      - /containers/ai/edge-impulse-runner
     schedule:
       interval: weekly
     open-pull-requests-limit: 0

@@ -11,11 +11,9 @@ FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# The server and its locked packages come from the "server" context,
-# containers/ai/edge-impulse-server, shared with edge-impulse-npu-runner and linked in docker-bake.hcl.
-# Standalone build: docker build --build-context server=../edge-impulse-server .
-COPY --from=server ./src /app
-COPY --from=server ./pyproject.toml ./uv.lock /tmp/deps/
+# The server and its locked packages, shared with edge-impulse-npu-runner
+COPY ./src /app
+COPY ./pyproject.toml ./uv.lock /tmp/deps/
 
 # Runtime settings expected from the compose file:
 # - the .eim files mounted read-only at /models
