@@ -2087,31 +2087,6 @@ models:
       source: "huggingface"
       source-model-id: "MiniCPM5-2B-GGUF"
       source-model-url: "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF"
- - "llamacpp:LFM2.5-8B-A1B-Q4_0":
-    name : "LFM2.5 8B A1B"
-    description: >-
-      LFM2.5 8B A1B is a hybrid mixture-of-experts model developed by Liquid AI, designed for on-device deployment.
-      It has 8.3 billion parameters in total, of which 1.5 billion are active per token.
-      It is built to power personal assistants that follow complex instructions and chain tool calls, and it supports
-      English, Arabic, Chinese, French, German, Japanese, Korean and Spanish.
-    supported_boards: ["ventunoq"]
-    bricks:
-      - id: "arduino:llm"
-        model_configuration:
-          GGML_HEXAGON_DEVICES: 3
-    deployment:
-      handler: "hf-handler"
-      platforms:
-        - ventunoq:
-            variables:
-              model_url: "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF/blob/49c14831707011e64d70b2ebd8462ba08d608434/LFM2.5-8B-A1B-Q4_0.gguf"
-              models_repository: "llamacpp"
-              model_directory: "LiquidAI/LFM2.5-8B-A1B-GGUF"
-    metadata:
-      model_size_mb: 4621
-      source: "huggingface"
-      source-model-id: "LFM2.5-8B-A1B-GGUF"
-      source-model-url: "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF"
  - "llamacpp:Qwen3.5-4B-Q4_K_S":
     name : "Qwen 3.5 4B"
     description: >-
