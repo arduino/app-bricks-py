@@ -72,7 +72,7 @@ their own `pyproject.toml`, since the layer has no Python.
 ### Shared source
 
 `ai/edge-impulse-server/` is the inference server both `edge-impulse-runner` and `edge-impulse-npu-runner`
-package: its `src/`, `tests/`, `pyproject.toml`, `uv.lock` and the out-of-the-box models live there once.
+package: its `src/`, `tests/`, `pyproject.toml`, `uv.lock` and the CPU builds of the bundled models live there once.
 It has no `Dockerfile`, so it is not a container: CI, `scripts/container.py` and the release ignore it,
 while `task init:containers`, `task test:containers`, `task check:deps` and the license scan treat it as
 the one uv project it is. Each image's `docker-bake.hcl` target links the directory as the `server`

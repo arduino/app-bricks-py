@@ -3,7 +3,7 @@
 Multi-model Edge Impulse inference server, the code shared by two images: this directory is not an
 image. [edge-impulse-runner](../edge-impulse-runner/README.md) runs the `.eim` models on the CPU,
 [edge-impulse-npu-runner](../edge-impulse-npu-runner/README.md) on the Hexagon NPU through QNN. Their
-Dockerfiles copy `src/`, the locked packages and the out-of-the-box models from here through the
+Dockerfiles copy `src/`, the locked packages and any out-of-the-box models from here through the
 `server` build context that `docker-bake.hcl` links to both targets; each image README covers what it adds.
 
 Many clients connect to the same Unix socket. One connection uses one model, requested with the
@@ -16,8 +16,10 @@ outside the containers.
 
 The models are the executable `.eim` files under `/models`, the model name is their path relative to it
 without the extension, subdirectories included. The images bundle the out-of-the-box models under
-`/models/ootb/ei` (`ootb/ei/yolo-x-nano`), the CPU builds from `models/ei-ootb-models` here plus, on the
-NPU image, its QNN builds; the service mounts the models the app CLI installs next to them,
+`/models/ootb/ei` (`ootb/ei/yolo-x-nano`): the CPU builds in `models/ei-ootb-models/arm64` here, copied
+into both images, and the QNN builds in the `models/` directory of the NPU image. Each brick moving to
+these images adds its models there, the first one with the `COPY` line of the image too, since a `COPY`
+matching no file fails the build. The compose file mounts the models the app CLI installs next to them,
 `edge-impulse/<dir>/<name>` and `custom-ei/<id>/model`.
 
 ## Server arguments
