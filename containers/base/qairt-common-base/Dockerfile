@@ -69,8 +69,10 @@ RUN set -eu && \
     echo "==> Verify SDK checksum"; \
     echo "${QNP_SDK_SHA256}  ${DOWNLOAD_DIR}/${QNP_SDK}" | sha256sum -c -; \
     \
-    echo "==> Unzip SDK"; \
-    cd "${DOWNLOAD_DIR}" && unzip -q "${QNP_SDK}" && rm -f "${QNP_SDK}"; \
+    echo "==> Unzip the aarch64 and Hexagon libs, the rest of the SDK is never used"; \
+    cd "${DOWNLOAD_DIR}" && unzip -q "${QNP_SDK}" \
+      "qairt/${QNP_VER}/lib/aarch64-oe-linux-gcc11.2/*" "qairt/${QNP_VER}/lib/hexagon-v7[35]/unsigned/*" && \
+    rm -f "${QNP_SDK}"; \
     \
     echo '==> Validate expected directory layout'; \
     test -d "${QNN_ROOT}" || { echo "ERROR: ${QNN_ROOT} missing"; ls -la "${DOWNLOAD_DIR}/qairt" || true; exit 1; }; \
@@ -92,6 +94,9 @@ RUN set -eu && \
     test -d "${ADSP_DIR}" && test "$(find "${ADSP_DIR}" -type f -name '*.so' | wc -l)" -ge 1 || { \
       echo "ERROR: No ADSP .so files copied into ${ADSP_DIR}"; exit 1; \
     }; \
+    \
+    echo "==> Remove the unpacked SDK so the layer keeps only the deployed libs"; \
+    rm -rf "${DOWNLOAD_DIR}/qairt"; \
     \
     echo "==> QAIRT ${QNP_VER} install and validation complete"
 
