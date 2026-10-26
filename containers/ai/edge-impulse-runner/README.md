@@ -16,10 +16,12 @@ outside the containers.
 
 The models are the executable `.eim` files under `/models`, the model name is their path relative to it
 without the extension, subdirectories included. The images bundle the out-of-the-box models under
-`/models/ootb/ei` (`ootb/ei/yolo-x-nano`): the CPU builds in `models/ei-ootb-models/arm64` here, copied
-into both images, and the QNN builds in the `models/` directory of the NPU image. Each brick moving to
-these images adds its models there, the first one with the `COPY` line of the image too, since a `COPY`
-matching no file fails the build. The compose file mounts the models the app CLI installs next to them,
+`/models/ootb/ei` (`ootb/ei/yolo-x-nano`). The CPU builds go in `models/ei-ootb-models/arm64/` here and
+both images copy them; the QNN builds go in `models/ei-ootb-models/arm64/` of
+[edge-impulse-npu-runner](../edge-impulse-npu-runner/README.md) and only the NPU image copies them. Each
+brick moving to these images adds its models to the matching folder, the first one in a folder with the
+`COPY` line of its image too, since a `COPY` matching no file fails the build. The compose file mounts the
+models the app CLI installs next to them,
 `edge-impulse/<dir>/<name>` and `custom-ei/<id>/model`.
 
 ## Server arguments
