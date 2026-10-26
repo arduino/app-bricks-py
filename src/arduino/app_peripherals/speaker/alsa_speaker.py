@@ -16,6 +16,8 @@ from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSASpeaker")
 
+_SYSFS_SOUND = "/sys/class/sound"
+
 
 class ALSASpeaker(BaseSpeaker):
     """
@@ -114,10 +116,15 @@ class ALSASpeaker(BaseSpeaker):
         """
         Return only the available USB speakers as full ALSA device paths.
 
+        The speakers exposed by PipeWire come first, in its discovery order.
+        USB playback devices PipeWire doesn't expose (no PipeWire session, or a card
+        profile without output) follow in ALSA card order, since they are opened
+        through ALSA anyway.
+
         Returns:
             list: Available USB speakers as full ALSA device paths.
         """
-        usb_devices = []
+        usb_devices: list[str] = []
         try:
             usb_sinks, _ = list_audio_sinks()
             cards = alsaaudio.cards()
@@ -130,6 +137,11 @@ class ALSASpeaker(BaseSpeaker):
                 usb_devices.append(f"plughw:CARD={cards[card_idx]},DEV={device_idx}")
         except Exception as e:
             logger.error(f"Error listing USB speakers: {e}")
+
+        for device in _alsa_usb_playback_devices():
+            if device not in usb_devices:
+                logger.warning(f"USB speaker {device} is not exposed by PipeWire (card profile without output?), using it through ALSA")
+                usb_devices.append(device)
 
         return usb_devices
 
@@ -526,13 +538,12 @@ def _nth_plugged_speaker(idx: int) -> str:
     Raises:
         SpeakerOpenError: If no speaker is plugged at the given index.
     """
-    usb_spkrs, builtin_spkrs = list_audio_sinks()
-
-    usb_count = len(usb_spkrs)
+    # Count the very lists the "usb:X" / "jack:X" identifiers are resolved against
+    usb_count = len(ALSASpeaker.list_usb_devices())
     if idx < usb_count:
         return f"usb:{idx + 1}"
 
-    jack_count = len(builtin_spkrs) if has_media_carrier() else 0
+    jack_count = len(ALSASpeaker.list_jack_devices())  # Empty without media carrier
     if idx - usb_count < jack_count:
         return f"jack:{idx - usb_count + 1}"
 
@@ -550,6 +561,47 @@ def _alsa_path_device_index(alsa_path: str) -> int:
     """
     match = re.match(r"^hw:[^,]+,(\d+)$", alsa_path)
     return int(match.group(1)) if match else 0
+
+
+def _alsa_usb_playback_devices() -> list[str]:
+    """
+    List the playback devices of USB sound cards, in card and device order.
+
+    Returns:
+        list[str]: Playback devices as "plughw:CARD=<name>,DEV=<n>".
+    """
+    try:
+        card_names: dict[int, str] = dict(zip(alsaaudio.card_indexes(), alsaaudio.cards()))
+    except Exception as e:
+        logger.error(f"Error listing USB speakers via ALSA: {e}")
+        return []
+
+    return [f"plughw:CARD={card_names[card]},DEV={dev}" for card, dev in _usb_pcm_devices("p") if card in card_names]
+
+
+def _usb_pcm_devices(stream: str) -> list[tuple[int, int]]:
+    """
+    List the (card, device) indexes of the PCM devices of USB sound cards, in order.
+
+    Args:
+        stream (str): "c" for capture devices, "p" for playback devices.
+
+    Returns:
+        list[tuple[int, int]]: ALSA card and device index of each PCM device.
+    """
+    # Read from sysfs: ALSA device hints (alsaaudio.pcms) cost ~120 ms on the UNO Q
+    try:
+        entries = os.listdir(_SYSFS_SOUND)
+    except OSError:
+        return []
+
+    devices: list[tuple[int, int]] = []
+    for entry in entries:
+        match = re.fullmatch(rf"pcmC(\d+)D(\d+){stream}", entry)
+        # USB devices sit below a "usb<bus>" root hub in the device tree
+        if match and re.search(r"[\\/]usb\d+[\\/]", os.path.realpath(os.path.join(_SYSFS_SOUND, entry))):
+            devices.append((int(match.group(1)), int(match.group(2))))
+    return sorted(devices)
 
 
 def _dtype_to_alsa_format_name(dtype: np.dtype, is_packed: bool = False) -> str:

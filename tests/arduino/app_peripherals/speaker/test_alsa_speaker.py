@@ -10,6 +10,7 @@ import numpy as np
 
 from arduino.app_peripherals.speaker.speaker import Speaker
 from arduino.app_peripherals.speaker.alsa_speaker import ALSASpeaker, _nth_plugged_speaker, _alsa_format_name_to_dtype, _dtype_to_alsa_format_name
+from arduino.app_peripherals.speaker.alsa_speaker import _usb_pcm_devices  # The real one: mock_usb_cards patches the module attribute
 from arduino.app_peripherals.speaker.errors import SpeakerConfigError, SpeakerOpenError
 
 
@@ -397,6 +398,65 @@ class TestALSASpeakerUsbDiscovery:
         for listed in ALSASpeaker.list_devices():
             assert ALSASpeaker(device=listed).device_stable_ref == listed
 
+    def test_lists_usb_speakers_pipewire_does_not_expose(self, mock_pw_dump, mock_usb_cards):
+        # A USB headset in an input-only PipeWire profile has no Audio/Sink.
+        mock_pw_dump(usb_ids=())
+        mock_usb_cards(0)
+
+        assert ALSASpeaker.list_usb_devices() == ["plughw:CARD=SomeCard,DEV=0"]
+
+    def test_default_device_resolves_when_pipewire_does_not_expose_it(self, mock_pw_dump, mock_usb_cards):
+        mock_pw_dump(usb_ids=())
+        mock_usb_cards(0)
+
+        assert ALSASpeaker(device=0).device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
+
+    def test_alsa_speakers_follow_pipewire_ones_without_duplicates(self, mock_pw_dump, mock_usb_cards):
+        mock_pw_dump(usb_ids=(50,))  # SomeCard only
+        mock_usb_cards(0, 1)
+
+        assert ALSASpeaker.list_usb_devices() == ["plughw:CARD=SomeCard,DEV=0", "plughw:CARD=AnotherCard,DEV=0"]
+
+    def test_lists_usb_speakers_without_pipewire(self, mock_usb_cards):
+        mock_usb_cards(1)
+
+        with patch("arduino.app_peripherals.speaker.utils.subprocess.run", side_effect=FileNotFoundError):
+            assert ALSASpeaker.list_usb_devices() == ["plughw:CARD=AnotherCard,DEV=0"]
+
+    def test_non_usb_cards_are_not_listed(self, mock_pw_dump):
+        # The fixture reports no USB card in sysfs, as for a built-in codec.
+        mock_pw_dump(usb_ids=())
+
+        assert ALSASpeaker.list_usb_devices() == []
+
+
+class TestUsbPcmDevicesFromSysfs:
+    """USB PCM devices come from the sysfs sound class, in card and device order."""
+
+    def test_lists_pcm_devices_of_usb_cards_only(self, tmp_path, monkeypatch):
+        sound_class = tmp_path / "class" / "sound"
+        sound_class.mkdir(parents=True)
+        cards = {
+            "devices/platform/sound/sound/card0": ["pcmC0D0c", "pcmC0D0p", "controlC0"],
+            "devices/xhci-hcd.2.auto/usb1/1-1/1-1:1.0/sound/card1": ["pcmC1D1p", "pcmC1D0c", "pcmC1D0p", "controlC1"],
+        }
+        for card_path, entries in cards.items():
+            for entry in entries:
+                (tmp_path / card_path / entry).mkdir(parents=True)
+                try:
+                    (sound_class / entry).symlink_to(tmp_path / card_path / entry, target_is_directory=True)
+                except OSError:
+                    pytest.skip("symlinks are not available on this system")
+        monkeypatch.setattr("arduino.app_peripherals.speaker.alsa_speaker._SYSFS_SOUND", str(sound_class))
+
+        assert _usb_pcm_devices("p") == [(1, 0), (1, 1)]
+        assert _usb_pcm_devices("c") == [(1, 0)]
+
+    def test_missing_sysfs_lists_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("arduino.app_peripherals.speaker.alsa_speaker._SYSFS_SOUND", str(tmp_path / "missing"))
+
+        assert _usb_pcm_devices("p") == []
+
 
 class TestALSASpeakerJackResolution:
     """Built-in (jack) resolution to a pipewire:NODE stable ref, gated on media-carrier."""
@@ -536,6 +596,12 @@ class TestNthPluggedSpeaker:
         # Second position has no USB device and there is no built-in fallback without media carrier.
         with pytest.raises(SpeakerOpenError):
             _nth_plugged_speaker(1)
+
+    def test_counts_usb_speakers_pipewire_does_not_expose(self, mock_pw_dump, mock_usb_cards):
+        mock_pw_dump(usb_ids=(50,))
+        mock_usb_cards(0, 1)
+
+        assert _nth_plugged_speaker(1) == "usb:2"
 
     def test_usb_precedence_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")

@@ -8,6 +8,9 @@ Shared fixtures for speaker tests.
 `mock_pw_dump` (autouse) patches the `pw-dump` invocation used by the device
 discovery. It defaults to two USB Audio/Sink nodes and yields a setter
 so a test can declare its own USB/built-in topology.
+
+`mock_usb_cards` (autouse) declares which ALSA cards sysfs reports as USB,
+none by default, so the ALSA side of the USB discovery never reads the host.
 """
 
 import json
@@ -108,3 +111,19 @@ def mock_pw_dump():
 
     with patch("arduino.app_peripherals.speaker.utils.subprocess.run", side_effect=fake_run):
         yield configure
+
+
+@pytest.fixture(autouse=True)
+def mock_usb_cards(monkeypatch):
+    """Patch the sysfs listing of USB PCM devices to device 0 of a configurable set of ALSA cards (defaults to none)."""
+    usb_cards = set()
+    monkeypatch.setattr(
+        "arduino.app_peripherals.speaker.alsa_speaker._usb_pcm_devices",
+        lambda stream: [(card, 0) for card in sorted(usb_cards)],
+    )
+
+    def configure(*card_indexes):
+        usb_cards.clear()
+        usb_cards.update(card_indexes)
+
+    return configure
