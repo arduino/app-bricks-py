@@ -1,13 +1,13 @@
 ---
 name: pycparser
-version: '3.0'
+version: '3.12'
 type: pip
 summary: C parser in Python
 homepage: https://github.com/eliben/pycparser
-license: bsd-3-clause
+license: other
 licenses:
 - sources: LICENSE
-  text: "pycparser -- A C parser in Python\n\nCopyright (c) 2008-2022, Eli Bendersky\nAll
+  text: "pycparser -- A C parser in Python\n\nCopyright (c) 2008-2027, Eli Bendersky\nAll
     rights reserved.\n\nRedistribution and use in source and binary forms, with or
     without modification,\nare permitted provided that the following conditions are
     met:\n\n* Redistributions of source code must retain the above copyright notice,

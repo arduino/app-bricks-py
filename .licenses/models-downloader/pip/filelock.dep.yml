@@ -1,6 +1,6 @@
 ---
 name: filelock
-version: 3.32.6
+version: 3.29.0
 type: pip
 summary: A platform independent file lock.
 homepage: https://github.com/tox-dev/py-filelock

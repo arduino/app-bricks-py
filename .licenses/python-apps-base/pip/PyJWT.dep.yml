@@ -1,6 +1,6 @@
 ---
 name: PyJWT
-version: 2.13.0
+version: 2.15.1
 type: pip
 summary: JSON Web Token implementation in Python
 homepage: https://github.com/jpadilla/pyjwt

@@ -1,10 +1,10 @@
 ---
 name: pycryptodome
-version: 3.23.0
+version: 4.2.0
 type: pip
 summary: Cryptographic library for Python
 homepage: https://www.pycryptodome.org
-license: bsd-2-clause
+license: other
 licenses:
 - sources: LICENSE.rst
   text: |
@@ -13,6 +13,10 @@ licenses:
 
     In either case, there are minimal if no restrictions on the redistribution,
     modification and usage of the software.
+
+    Files that do not include the license text refer to it with an SPDX tag:
+    ``SPDX-License-Identifier: BSD-2-Clause`` for the BSD license below
+    (``SPDX-FileCopyrightText`` gives the copyright notice).
 
     Public domain
     =============
@@ -69,57 +73,17 @@ licenses:
     CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
     OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-notices:
-- sources: AUTHORS.rst
-  text: |-
-    Simon Arneaud
-    Nevins Bartolomeo
-    Thorsten E. Behrens
-    Tim Berners-Lee
-    Frédéric Bertolus
-    Ian Bicking
-    Joris Bontje
-    Antoon Bosselaers
-    Andrea Bottoni
-    Jean-Paul Calderone
-    Sergey Chernov
-    Geremy Condra
-    Jan Dittberner
-    Andrew Eland
-    Philippe Frycia
-    Peter Gutmann
-    Hirendra Hindocha
-    Nikhil Jhingan
-    Sebastian Kayser
-    Ryan Kelly
-    Andrew M. Kuchling
-    Piers Lauder
-    Legrandin
-    M.-A. Lemburg
-    Wim Lewis
-    Darsey C. Litzenberger
-    Richard Mitchell
-    Mark Moraes
-    Lim Chee Siang
-    Bryan Olson
-    Wallace Owen
-    Colin Plumb
-    Robey Pointer
-    Lorenz Quack
-    Sebastian Ramacher
-    Jeethu Rao
-    James P. Rutledge
-    Matt Schreiner
-    Peter Simmons
-    Janne Snabb
-    Tom St. Denis
-    Anders Sundman
-    Paul Swartz
-    Fabrizio Tarizzo
-    Kevin M. Turner
-    Barry A. Warsaw
-    Eric Young
-    Hannes van Niekerk
-    Stefan Seering
-    Koki Takahashi
-    Lauro de Lima
+
+    Third-party code
+    ================
+
+    The directory ``src/mldsa-native`` contains code from mldsa-native
+    (https://github.com/pq-code-package/mldsa-native), available under
+    the Apache-2.0 license OR the ISC license OR the MIT license.
+    See ``src/mldsa-native/LICENSE`` for the full text of the licenses.
+
+    The directory ``src/mlkem-native`` contains code from mlkem-native
+    (https://github.com/pq-code-package/mlkem-native), available under
+    the Apache-2.0 license OR the ISC license OR the MIT license.
+    See ``src/mlkem-native/LICENSE`` for the full text of the licenses.
+notices: []

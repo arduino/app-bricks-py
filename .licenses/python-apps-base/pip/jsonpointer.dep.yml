@@ -1,6 +1,6 @@
 ---
 name: jsonpointer
-version: 3.1.1
+version: '3.6'
 type: pip
 summary: Identify specific nodes in a JSON document (RFC 6901)
 homepage: https://github.com/stefankoegl/python-json-pointer

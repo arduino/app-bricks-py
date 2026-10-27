@@ -1,6 +1,6 @@
 ---
 name: httpcore2
-version: 2.12.0
+version: 2.16.0
 type: pip
 summary: A minimal low-level HTTP client.
 homepage: https://github.com/pydantic/httpx2

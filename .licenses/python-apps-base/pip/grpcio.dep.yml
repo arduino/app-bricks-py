@@ -1,6 +1,6 @@
 ---
 name: grpcio
-version: 1.83.1
+version: 1.85.0
 type: pip
 summary: HTTP/2-based RPC framework
 homepage: https://grpc.io

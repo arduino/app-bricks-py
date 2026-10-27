@@ -1,6 +1,6 @@
 ---
 name: uvloop
-version: 0.22.1
+version: 0.23.0
 type: pip
 summary: Fast implementation of asyncio event loop on top of libuv
 homepage: ''

@@ -1,6 +1,6 @@
 ---
 name: pydantic-settings
-version: 2.15.0
+version: 2.16.1
 type: pip
 summary: Settings management using Pydantic
 homepage: https://github.com/pydantic/pydantic-settings

@@ -1,6 +1,6 @@
 ---
 name: sse-starlette
-version: 3.4.11
+version: 3.6.0
 type: pip
 summary: SSE plugin for Starlette
 homepage: https://github.com/sysid/sse-starlette
