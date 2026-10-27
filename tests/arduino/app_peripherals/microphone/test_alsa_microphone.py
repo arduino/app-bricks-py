@@ -100,6 +100,13 @@ class TestALSAMicrophoneDeviceResolution:
 
         assert mic.device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
 
+    def test_card_index_resolves_by_alsa_index(self, cards_with_gap):
+        assert ALSAMicrophone(device="hw:2,0").device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
+
+    def test_unplugged_card_index_raises(self, cards_with_gap):
+        with pytest.raises(MicrophoneOpenError, match=r"Card index 1 not found. Available: \[0, 2, 3\]"):
+            ALSAMicrophone(device="hw:1,0")
+
     @pytest.mark.parametrize(
         "device, message",
         [
@@ -441,6 +448,12 @@ class TestALSAMicrophoneUsbDiscovery:
         mock_pw_dump(usb_ids=())
 
         assert ALSAMicrophone.list_usb_devices() == []
+
+    def test_lists_usb_microphones_on_cards_with_gap(self, mock_pw_dump, mock_usb_cards, cards_with_gap):
+        mock_pw_dump(usb_ids=(50, 60), usb_cards=(0, 2))
+        mock_usb_cards(0, 2)
+
+        assert ALSAMicrophone.list_usb_devices() == ["plughw:CARD=SomeCard,DEV=0", "plughw:CARD=AnotherCard,DEV=0"]
 
 
 class TestUsbPcmDevicesFromSysfs:
