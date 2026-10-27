@@ -146,7 +146,7 @@ tasks:
         echo "SPDX headers are in place"
 
   check:licenses:
-    desc: Fail if the dependency license records under .licenses/ are not current with the locks (licensed status, via Docker)
+    desc: Fail on dependency license problems as CI does, listing outdated records under .licenses/ without rewriting them (licensed, via Docker)
     cmds:
       - task: _licenses:image
       - task: _licenses:scan

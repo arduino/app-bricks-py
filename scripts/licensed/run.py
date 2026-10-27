@@ -4,7 +4,13 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Installs the locked dependencies of every app in .licensed.yml into its venv, then runs licensed cache and status on each."""
+"""
+Installs the locked dependencies of every app in .licensed.yml into its venv, then runs licensed cache and status on each.
+
+Both modes reach the same verdict and differ only in where the records are written:
+- default (task fix:licenses): into .licenses, to refresh the committed records
+- --check (task check:licenses): into a throwaway copy, listing the records a refresh would change
+"""
 
 import glob
 import hashlib
@@ -100,14 +106,14 @@ def build_venv(app):
     return f"{app['name']}: venv built"
 
 
-def run_licensed(config, app, tmp, commands=("cache", "status")):
-    """Runs licensed on a single app through a config holding only that app."""
-    app_config = {**config, "root": str(SRC), "apps": [app]}
+def run_licensed(config, app, tmp, cache_path):
+    """Runs licensed cache and status on a single app through a config holding only that app."""
+    app_config = {**config, "root": str(SRC), "cache_path": str(cache_path), "apps": [app]}
     config_file = Path(tmp) / f"{app['name']}.yml"
     config_file.write_text(yaml.safe_dump(app_config))
     output = []
     ok = True
-    for command in commands:
+    for command in ("cache", "status"):
         result = subprocess.run(["licensed", command, "-c", str(config_file)], cwd=SRC, capture_output=True, text=True)
         output.append(result.stdout + result.stderr)
         if result.returncode != 0:
@@ -118,10 +124,20 @@ def run_licensed(config, app, tmp, commands=("cache", "status")):
     return ok
 
 
+def outdated_records(committed, scanned):
+    """Lists the records the scan added or rewrote, relative to the committed ones."""
+    outdated = []
+    for record in sorted(scanned.rglob("*.dep.yml")):
+        original = committed / record.relative_to(scanned)
+        if not original.is_file() or original.read_bytes() != record.read_bytes():
+            outdated.append(record.relative_to(scanned))
+    return outdated
+
+
 def main():
-    # --check reports the status of the committed records without rewriting them
-    commands = ("status",) if "--check" in sys.argv[1:] else ("cache", "status")
+    check = "--check" in sys.argv[1:]
     config, apps = load_config()
+    committed = SRC / config["cache_path"]
     check_projects_covered(apps)
     VENVS.mkdir(exist_ok=True)
     with ThreadPoolExecutor() as pool:
@@ -131,7 +147,14 @@ def main():
         for message in pool.map(build_venv, apps):
             print(message, flush=True)
         with tempfile.TemporaryDirectory() as tmp:
-            results = list(pool.map(lambda app: run_licensed(config, app, tmp, commands), apps))
+            cache_path = committed
+            if check:
+                cache_path = Path(tmp) / "records"
+                shutil.copytree(committed, cache_path)
+            results = list(pool.map(lambda app: run_licensed(config, app, tmp, cache_path), apps))
+            outdated = outdated_records(committed, cache_path) if check else []
+    if outdated:
+        print("warning: outdated records, run task fix:licenses to refresh them:\n  " + "\n  ".join(map(str, outdated)), flush=True)
     if not all(results):
         failed = [app["name"] for app, ok in zip(apps, results) if not ok]
         fail("licensed reported problems for: " + ", ".join(failed))

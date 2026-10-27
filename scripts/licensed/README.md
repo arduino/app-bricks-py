@@ -6,7 +6,7 @@
 
 1. Builds the `arduino-licensed` image from the [Dockerfile](Dockerfile). It holds licensed, the compilers some packages need and the same Python as the containers. It knows nothing about the apps.
 2. Runs [run.py](run.py) with the repository mounted at `/src` and the `arduino-licensed-venvs` volume at `/venvs`. For each app in [.licensed.yml](../../.licensed.yml) it creates a venv from the uv project named in `venv.project`, running the same `uv export` and hash checked `uv pip install` the Dockerfiles run, and keeps only the package metadata licensed reads. A venv is rebuilt only when the lock or the Python version change.
-3. Runs `licensed cache` and `licensed status` on every app, all apps in parallel (`status` only with `--check`, what `task check:licenses` passes). `cache` writes one record per package under `.licenses/<app>/pip/`, `status` fails when a record is missing, stale, unreviewed or carries a license outside the allowed list.
+3. Runs `licensed cache` and `licensed status` on every app, all apps in parallel. `cache` writes one record per package under `.licenses/<app>/pip/`, `status` fails when a record is unreviewed or carries a license outside the allowed list. With `--check`, what `task check:licenses` passes, both run on a copy of `.licenses/`, so the check fails on what CI fails on, never rewrites a record and lists the records a version change made outdated as a warning.
 
 Before scanning, run.py refuses to start if an app has no `venv.project`, if a `pyproject.toml` under `containers/` belongs to no app, if a `requirements*.txt` under `containers/` lists packages, or if a `uv.lock` lags its `pyproject.toml`. A container cannot slip out of the scan, and the scan cannot see anything else than what the images install.
 
@@ -22,7 +22,7 @@ Every container that installs Python packages, under its own name. `python-apps-
 
 ## When the check fails
 
-- **cached dependency record out of date**: a lock moved a package to another version. `licensed cache` has already rewritten the record, review the diff and commit it.
+- **outdated records** (a warning, not a failure): a lock moved a package to another version with no license problem. Run `task fix:licenses` to refresh the records, review the diff and commit it, or leave them for a later refresh.
 - **license needs review**: licensee could not classify the license text. Read the text in the record and, if the license is acceptable, add the package to `reviewed` in `.licensed.yml` with a comment naming the license.
 - **missing license text**: the wheel ships no license file. Fill the `licenses` block of the record by hand from the project's license and say where it came from in `sources`. Licensed keeps hand edits until the version changes.
 - **license text has changed**: read the new text, then remove `review_changed_license: true` from the record.
