@@ -209,12 +209,18 @@ class BaseMicrophone(ABC):
         Continuously capture audio chunks from the microphone.
 
         This is a generator that yields audio chunks continuously while the microphone is started.
+        Stopping the microphone, also from another thread, ends the stream.
 
         Yields:
             np.ndarray: Audio chunks as numpy arrays.
         """
         while self.is_started():
-            chunk = self.capture()
+            try:
+                chunk = self.capture()
+            except MicrophoneReadError:
+                if self.is_started():
+                    raise
+                return  # Stopped between the started check and the read: end as on the next check
             if chunk is not None:
                 yield chunk
             else:
