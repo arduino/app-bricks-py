@@ -2,13 +2,13 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from PIL import ImageDraw, ImageFont
+from PIL import ImageDraw
 from PIL.Image import Image
 import numpy as np
+from arduino.app_utils.image import label_font
 from .detection import Detection
 
 font_size = 18
-font = ImageFont.load_default(font_size)
 
 
 # TODO: move these drawing functions to app_utils and merge them with the ones in object detection & friends
@@ -81,7 +81,7 @@ def draw_bounding_box(frame: Image, detection: Detection) -> Image:
 
             # Draw the text
             text_to_draw = f"[{code_type}] {code_content}"
-            draw.text((text_x, text_y), text_to_draw, fill=(0, 255, 0), font=font)
+            draw.text((text_x, text_y), text_to_draw, fill=(0, 255, 0), font=label_font(font_size))
         case _:
             print("Warning: Invalid or missing coordinates. Returning original image.")
             return frame

@@ -2,11 +2,17 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import cv2
 import numpy as np
-from PIL import Image
 
 from arduino.app_utils.image.pipeable import PipeableFunction
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 # NOTE: we adopt the following conventions for color and image shape arguments:
 # (H = height, W = width, C = channels)
@@ -477,6 +483,8 @@ def numpy_to_pil(frame: np.ndarray) -> Image.Image:
     Returns:
         PIL.Image.Image: PIL Image in RGB format
     """
+    from PIL import Image
+
     # Convert BGR to RGB
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     return Image.fromarray(rgb_frame)
