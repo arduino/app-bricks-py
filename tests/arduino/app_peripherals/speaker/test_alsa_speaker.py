@@ -68,6 +68,20 @@ class TestALSASpeakerDeviceResolution:
 
         assert "Subdevice in 'hw:0,0,1' is ignored" in mock_logger.warning.call_args.args[0]
 
+    @pytest.mark.parametrize(
+        "device, message",
+        [
+            (1, "Using speaker plughw:CARD=AnotherCard,DEV=0 (requested as 1)"),
+            ("plughw:CARD=SomeCard,DEV=0", "Using speaker plughw:CARD=SomeCard,DEV=0"),  # Already stable
+        ],
+    )
+    def test_reports_the_speaker_in_use(self, device, message):
+        """Test that the resolved speaker is logged along with the identifier it was requested as."""
+        with patch("arduino.app_peripherals.speaker.alsa_speaker.logger") as mock_logger:
+            ALSASpeaker(device=device)
+
+        mock_logger.info.assert_any_call(message)
+
     def test_default_device_resolves_to_first_plugged(self):
         """Test that the default device selects the first plugged speaker."""
         assert ALSASpeaker().device_stable_ref == "plughw:CARD=SomeCard,DEV=0"

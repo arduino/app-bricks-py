@@ -85,6 +85,8 @@ class ALSAMicrophone(BaseMicrophone):
             raise MicrophoneOpenError(f"Failed to look for microphone device '{device}': {e}")
         self.shared = shared
         self.logger = logger
+        requested = "" if device == self.device_stable_ref else f" (requested as {device!r})"
+        logger.info(f"Using microphone {self.device_stable_ref}{requested}")
 
         self._pcm: alsaaudio.PCM | None = None
 
@@ -139,7 +141,7 @@ class ALSAMicrophone(BaseMicrophone):
 
         for device in _alsa_usb_capture_devices():
             if device not in usb_devices:
-                logger.warning(f"USB microphone {device} is not exposed by PipeWire (card profile without input?), using it through ALSA")
+                logger.warning(f"USB microphone {device} is not exposed by PipeWire (card profile without input?), listing it from ALSA")
                 usb_devices.append(device)
 
         return usb_devices

@@ -86,6 +86,8 @@ class ALSASpeaker(BaseSpeaker):
             raise SpeakerOpenError(f"Failed to look for speaker device '{device}': {e}")
         self.shared = shared
         self.logger = logger
+        requested = "" if device == self.device_stable_ref else f" (requested as {device!r})"
+        logger.info(f"Using speaker {self.device_stable_ref}{requested}")
 
         self._pcm: alsaaudio.PCM | None = None
 
@@ -140,7 +142,7 @@ class ALSASpeaker(BaseSpeaker):
 
         for device in _alsa_usb_playback_devices():
             if device not in usb_devices:
-                logger.warning(f"USB speaker {device} is not exposed by PipeWire (card profile without output?), using it through ALSA")
+                logger.warning(f"USB speaker {device} is not exposed by PipeWire (card profile without output?), listing it from ALSA")
                 usb_devices.append(device)
 
         return usb_devices

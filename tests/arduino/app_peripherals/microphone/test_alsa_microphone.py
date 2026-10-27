@@ -73,6 +73,20 @@ class TestALSAMicrophoneDeviceResolution:
 
         assert "Subdevice in 'hw:0,0,1' is ignored" in mock_logger.warning.call_args.args[0]
 
+    @pytest.mark.parametrize(
+        "device, message",
+        [
+            (1, "Using microphone plughw:CARD=AnotherCard,DEV=0 (requested as 1)"),
+            ("plughw:CARD=SomeCard,DEV=0", "Using microphone plughw:CARD=SomeCard,DEV=0"),  # Already stable
+        ],
+    )
+    def test_reports_the_microphone_in_use(self, device, message):
+        """Test that the resolved microphone is logged along with the identifier it was requested as."""
+        with patch("arduino.app_peripherals.microphone.alsa_microphone.logger") as mock_logger:
+            ALSAMicrophone(device=device)
+
+        mock_logger.info.assert_any_call(message)
+
     def test_default_device_resolves_to_first_plugged(self):
         """Test that the default device selects the first plugged microphone."""
         assert ALSAMicrophone().device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
