@@ -129,14 +129,14 @@ class ALSASpeaker(BaseSpeaker):
         usb_devices: list[str] = []
         try:
             usb_sinks, _ = list_audio_sinks()
-            cards = alsaaudio.cards()
+            card_names = _alsa_card_names()
             for sink in usb_sinks:
                 props = sink.get("info", {}).get("props", {})
-                card_idx = props.get("api.alsa.pcm.card")
-                if card_idx is None or card_idx >= len(cards):
+                card_name = card_names.get(props.get("api.alsa.pcm.card"))
+                if card_name is None:
                     continue
                 device_idx = _alsa_path_device_index(props.get("api.alsa.path", ""))
-                usb_devices.append(f"plughw:CARD={cards[card_idx]},DEV={device_idx}")
+                usb_devices.append(f"plughw:CARD={card_name},DEV={device_idx}")
         except Exception as e:
             logger.error(f"Error listing USB speakers: {e}")
 
@@ -366,12 +366,11 @@ class ALSASpeaker(BaseSpeaker):
                     raise SpeakerOpenError(f"Failed to resolve speaker name from stable ref {device_ref}: {e}")
 
         elif isinstance(device_ref, int):
-            # This is a card index like 0, 1, ...
-            cards = alsaaudio.cards()
-            if device_ref < 0 or device_ref >= len(cards):
-                raise SpeakerOpenError(f"Card index {device_ref} out of range. Available: 0-{len(cards) - 1}")
-            card_name = cards[device_ref]
-            return card_name
+            # This is an ALSA card index, which can have gaps after unplugs
+            card_names = _alsa_card_names()
+            if device_ref not in card_names:
+                raise SpeakerOpenError(f"Card index {device_ref} not found. Available: {sorted(card_names)}")
+            return card_names[device_ref]
 
         raise SpeakerOpenError(f"Invalid device reference for name resolution: {device_ref} (type:{type(device_ref)})")
 
@@ -536,12 +535,24 @@ def _alsa_usb_playback_devices() -> list[str]:
         list[str]: Playback devices as "plughw:CARD=<name>,DEV=<n>".
     """
     try:
-        card_names: dict[int, str] = dict(zip(alsaaudio.card_indexes(), alsaaudio.cards()))
+        card_names = _alsa_card_names()
     except Exception as e:
         logger.error(f"Error listing USB speakers via ALSA: {e}")
         return []
 
     return [f"plughw:CARD={card_names[card]},DEV={dev}" for card, dev in _usb_pcm_devices("p") if card in card_names]
+
+
+def _alsa_card_names() -> dict[int, str]:
+    """
+    Map each ALSA card index to its name.
+
+    Card indexes are not positions in alsaaudio.cards(): they keep gaps left by unplugged cards.
+
+    Returns:
+        dict[int, str]: Card name by ALSA card index.
+    """
+    return dict(zip(alsaaudio.card_indexes(), alsaaudio.cards()))
 
 
 def _usb_pcm_devices(stream: str) -> list[tuple[int, int]]:
