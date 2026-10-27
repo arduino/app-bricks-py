@@ -19,6 +19,21 @@ trap_signal() {
 trap 'trap_signal TERM' TERM
 trap 'trap_signal INT' INT
 
+# The V8 compile cache is keyed on the CPU, so it cannot be built into the image: it is filled on
+# the board and kept in a volume mounted at $NODE_COMPILE_CACHE. Node writes it only when it exits
+# on its own, and the runner is stopped with SIGTERM, so a preload flushes it on that signal.
+# Without a writable mount the cache is disabled: it would be rebuilt at every start.
+enable_compile_cache() {
+  [ -n "$NODE_COMPILE_CACHE" ] || return 0
+  if awk -v dir="$NODE_COMPILE_CACHE" '$5 == dir { found = 1 } END { exit !found }' /proc/self/mountinfo && [ -w "$NODE_COMPILE_CACHE" ]; then
+    export NODE_OPTIONS="--require /home/arduino/flush-compile-cache.js"
+  else
+    unset NODE_COMPILE_CACHE
+  fi
+}
+
+enable_compile_cache
+
 while true; do
   echo "🚀 Starting EI inference runner..."
 

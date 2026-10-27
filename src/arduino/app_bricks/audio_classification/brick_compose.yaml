@@ -11,11 +11,16 @@ services:
     volumes:
       - "${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks}:${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks}"
       - /var/lib/arduino-app-cli/models/edge-impulse:/var/lib/arduino-app-cli/models/edge-impulse
+      - ei-runner-cache:/home/arduino/.cache/node-compile-cache  # V8 compile cache, filled at the first start
     command: ["--model-file", "${EI_AUDIO_CLASSIFICATION_MODEL:-/models/ootb/ei/glass-breaking.eim}", "--run-http-server", "1337", "--dont-print-predictions"]
     healthcheck:
       test: [ "CMD-SHELL", "wget -q --spider http://localhost:1337/api/info || exit 1" ]
-      interval: 2s
+      interval: 10s
       start_period: 30s
-      start_interval: 250ms
+      start_interval: 1s
       timeout: 2s
-      retries: 25
+      retries: 3
+
+volumes:
+  ei-runner-cache:
+    name: arduino-ei-runner-cache

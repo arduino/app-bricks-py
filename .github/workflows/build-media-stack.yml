@@ -86,13 +86,15 @@ jobs:
           apt-get update
 
       # FFmpeg uses its own ./configure script. The strategy is: patch debian/rules
-      # to disable the features we don't want.
+      # to disable the features we don't want, GPL-only ones included, so the
+      # libraries stay LGPL. The noextra profile skips Debian's GPLv3 flavor.
       - name: Build custom minimal FFmpeg
         id: ffmpeg
         shell: bash
         run: |
           FFMPEG_VER="${{ inputs.ffmpeg_debian_version }}"
           if [[ "$FFMPEG_VER" == "latest" ]]; then FFMPEG_VER=""; fi
+          export DEB_BUILD_PROFILES=pkg.ffmpeg.noextra
           apt-get build-dep -y ffmpeg${FFMPEG_VER:+=$FFMPEG_VER}
           apt-get source ffmpeg${FFMPEG_VER:+=$FFMPEG_VER}
           cd ffmpeg-*
@@ -112,7 +114,9 @@ jobs:
               "--disable-sdl2 --disable-libass --disable-libvidstab "
               "--disable-libbluray --disable-librtmp --disable-libopenjpeg "
               "--disable-libopus --disable-libtheora --disable-libvorbis "
-              "--disable-librsvg"
+              "--disable-librsvg "
+              "--disable-gpl --disable-frei0r --disable-libcdio --disable-libdvdnav "
+              "--disable-libdvdread --disable-librubberband --disable-libx264 --disable-libxvid"
           )
 
           # Inject before the ' ||' error guard FFmpeg's rules append to the configure call.
@@ -130,13 +134,41 @@ jobs:
           with open("debian/rules", "w") as f:
               f.write(c)
           print("Injected disable flags into configure invocation")
+
+          # libpostproc is GPL-only and no longer built: drop its packages and the dependencies on them.
+          with open("debian/control") as f:
+              stanzas = f.read().split("\n\n")
+          control = "\n\n".join(s for s in stanzas if not s.startswith("Package: libpostproc"))
+          control = control.replace(" libpostproc-dev (= ${binary:Version}),\n", "")
+          if "libpostproc" in control:
+              raise RuntimeError("debian/control still references libpostproc")
+          with open("debian/control", "w") as f:
+              f.write(control)
           PYEOF
+          rm debian/libpostproc*
 
           DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -b -uc -us -j$(nproc)
 
           cd ..
           mkdir -p artifacts
           cp *.deb artifacts/
+
+      # Every library the build produced must report an LGPL license.
+      - name: Check the FFmpeg license
+        shell: bash
+        run: |
+          cd ffmpeg-*/debian/tmp/usr/lib/*-linux-gnu
+          LD_LIBRARY_PATH="$PWD" python3 - <<'PYEOF'
+          import ctypes, glob, os
+
+          for path in sorted({os.path.realpath(p) for p in glob.glob("lib*.so.*")}):
+              name = os.path.basename(path).split(".so")[0][len("lib"):]
+              license = getattr(ctypes.CDLL(path), f"{name}_license")
+              license.restype = ctypes.c_char_p
+              text = license().decode()
+              print(f"lib{name}: {text}")
+              assert text.startswith("LGPL"), f"lib{name} is not LGPL"
+          PYEOF
 
       - name: Upload FFmpeg debs
         uses: actions/upload-artifact@v7
@@ -422,8 +454,8 @@ jobs:
 
       - name: Install custom debs
         run: |
-          # Exclude -extra (conflicts with base packages) and -dbgsym (unneeded).
-          apt-get install -y $(ls ./debs/ffmpeg-debs/*.deb | grep -vE '\-(extra|dbgsym)')
+          # Exclude -dbgsym (unneeded).
+          apt-get install -y $(ls ./debs/ffmpeg-debs/*.deb | grep -v '\-dbgsym')
           apt-get install -y ./debs/gstreamer-debs/gstreamer1.0-plugins-good_*.deb
 
       - name: Install OpenCV build deps
@@ -500,8 +532,8 @@ jobs:
           )
           
           # Collect release assets: the wheel, the runtime FFmpeg libs tarball, the
-          # plugins-good deb and the qtiqmmfsrc tarball. Build byproducts (-extra,
-          # -dev, dbgsym, disabled plugin stubs) are intentionally left out.
+          # plugins-good deb and the qtiqmmfsrc tarball. Build byproducts (-dev,
+          # dbgsym, disabled plugin stubs) are intentionally left out.
           mkdir release-assets
           cp artifacts/opencv-wheel/*.whl release-assets/
           cp artifacts/gstreamer-debs/gstreamer1.0-plugins-good_*.deb release-assets/

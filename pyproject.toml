@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77,<81", "wheel"]
+requires = ["setuptools>=77,<85", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -96,7 +96,7 @@ cloud_llm = [
 ]
 mcp_client = [
     "langchain-mcp-adapters==0.3.1",
-    "mcp==1.29.0",
+    "mcp==1.30.0",
 ]
 cloud_asr = [
     "websocket-client",
