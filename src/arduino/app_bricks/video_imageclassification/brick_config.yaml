@@ -26,7 +26,3 @@ variables:
   description: Bind address
   hidden: true
   default_value: 0.0.0.0
-- name: VIDEO_DEVICE
-  description: Video device path
-  hidden: true
-  default_value: /dev/video1
