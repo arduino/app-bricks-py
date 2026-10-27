@@ -1,6 +1,6 @@
 ---
 name: uuid_utils
-version: 0.17.1
+version: 0.19.0
 type: pip
 summary: Fast, drop-in replacement for Python's uuid module, powered by Rust.
 homepage: ''

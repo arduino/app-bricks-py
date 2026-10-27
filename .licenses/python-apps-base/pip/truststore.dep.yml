@@ -1,6 +1,6 @@
 ---
 name: truststore
-version: 0.10.4
+version: 0.10.5
 type: pip
 summary: Verify certificates using native system trust stores
 homepage: ''

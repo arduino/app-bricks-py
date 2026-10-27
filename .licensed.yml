@@ -57,6 +57,15 @@ apps:
     venv:
       requirements: containers/bricks/models-downloader/requirements.txt
 
+  - name: tps
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: "/venvs/tps"
+    venv:
+      requirements: containers/bricks/tps/requirements.txt
+
   - name: ei-qnn-models-runner
     source_path: .
     sources:
@@ -106,6 +115,10 @@ reviewed:
     - tzdata            # Apache-2.0
     - pyalsaaudio       # PSF-2.0
     - certifi           # MPL-2.0, modified ca-bundle notice not recognised by licensee 9.20
+    - typing_extensions # PSF-2.0, ships CPython's LICENSE file with its history preamble, not matched by newer licensee
+    - numpy             # BSD-3-Clause, its LICENSE.txt also carries the notices of the bundled libraries, not matched by newer licensee
+    - pycparser         # BSD-3-Clause, not matched by newer licensee
+    - pycryptodome      # BSD-2-Clause with public domain parts, its new SPDX preamble is not matched by newer licensee
 
 allowed:
   - mpl-2.0

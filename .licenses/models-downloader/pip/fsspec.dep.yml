@@ -1,6 +1,6 @@
 ---
 name: fsspec
-version: 2026.7.0
+version: 2026.9.0
 type: pip
 summary: File-system specification
 homepage: https://github.com/fsspec/filesystem_spec

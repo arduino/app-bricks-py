@@ -1,6 +1,6 @@
 ---
 name: Werkzeug
-version: 3.1.8
+version: 3.1.9
 type: pip
 summary: The comprehensive WSGI web application library.
 homepage: ''

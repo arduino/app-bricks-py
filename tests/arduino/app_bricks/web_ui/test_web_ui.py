@@ -4,8 +4,12 @@
 
 import os
 import time
+from unittest.mock import patch
 
+import numpy as np
 from fastapi.testclient import TestClient
+
+from arduino.app_peripherals.camera.base_camera import BaseCamera
 from arduino.app_bricks.web_ui import web_ui
 from arduino.app_bricks.web_ui.web_ui import WebUI
 
@@ -131,60 +135,67 @@ def test_cors_multiple_origins():
     assert response.headers.get("access-control-allow-origin") == "https://example.com"
 
 
+class _FakeCamera(BaseCamera):
+    """Camera yielding the given frames, then failing to end the stream."""
+
+    def __init__(self, *frames: np.ndarray) -> None:
+        super().__init__(fps=1000)
+        self._frames = iter(frames)
+
+    def _open_camera(self) -> None:
+        pass
+
+    def _close_camera(self) -> None:
+        pass
+
+    def _read_frame(self) -> np.ndarray | None:
+        frame = next(self._frames, None)
+        if frame is None:
+            raise RuntimeError("end")
+        return frame
+
+
 def test_expose_camera_starts_camera_if_not_started():
-    from unittest.mock import Mock, patch
-    import numpy as np
-
     ui = WebUI()
-    mock_camera = Mock()
-    mock_camera.is_started = False
-    mock_camera.capture = Mock(side_effect=[np.zeros((2, 2, 3), dtype=np.uint8), RuntimeError("end")])
+    camera = _FakeCamera(np.zeros((2, 2, 3), dtype=np.uint8))
 
-    with patch("arduino.app_utils.image.compress_to_jpeg", return_value=np.array([0], dtype=np.uint8)):
-        ui.expose_camera("/stream", mock_camera)
-        TestClient(ui.app, raise_server_exceptions=False).get("/stream")
+    ui.expose_camera("/stream", camera)
+    response = TestClient(ui.app).get("/stream")
 
-    mock_camera.start.assert_called_once()
+    assert camera.is_started()
+    assert response.content.startswith(b"--frame\r\nContent-Type: image/jpeg\r\n\r\n\xff\xd8")
+    camera.stop()
 
 
 def test_expose_camera_streams_mjpeg_response():
-    from unittest.mock import Mock, patch
-    import numpy as np
-
     ui = WebUI()
-    mock_camera = Mock()
-    mock_camera.is_started = True
-
-    fake_frame = np.zeros((2, 2, 3), dtype=np.uint8)
-    mock_camera.capture = Mock(side_effect=[fake_frame, RuntimeError("end")])
+    camera = _FakeCamera(np.zeros((2, 2, 3), dtype=np.uint8))
+    camera.start()
 
     fake_jpeg = b"\xff\xd8jpeg"
 
     with patch("arduino.app_utils.image.compress_to_jpeg", return_value=np.frombuffer(fake_jpeg, dtype=np.uint8)):
-        ui.expose_camera("/stream", mock_camera)
+        ui.expose_camera("/stream", camera)
         response = TestClient(ui.app).get("/stream")
 
     assert response.status_code == 200
     assert "multipart/x-mixed-replace" in response.headers["content-type"]
     assert fake_jpeg in response.content
+    camera.stop()
 
 
 def test_expose_camera_passes_quality_to_compress():
-    from unittest.mock import Mock, patch
-    import numpy as np
-
     ui = WebUI()
-    mock_camera = Mock()
-    mock_camera.is_started = True
-
     fake_frame = np.zeros((2, 2, 3), dtype=np.uint8)
-    mock_camera.capture = Mock(side_effect=[fake_frame, RuntimeError("end")])
+    camera = _FakeCamera(fake_frame)
+    camera.start()
 
     with patch("arduino.app_utils.image.compress_to_jpeg", return_value=np.array([0], dtype=np.uint8)) as mock_compress:
-        ui.expose_camera("/stream", mock_camera, jpeg_quality=95)
+        ui.expose_camera("/stream", camera, jpeg_quality=95)
         TestClient(ui.app).get("/stream")
 
     mock_compress.assert_called_with(fake_frame, quality=95)
+    camera.stop()
 
 
 class _FakeServer:

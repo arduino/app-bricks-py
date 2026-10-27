@@ -1,6 +1,6 @@
 ---
 name: rpds-py
-version: 2026.6.3
+version: 2026.9.1
 type: pip
 summary: Python bindings to Rust's persistent data structures (rpds)
 homepage: https://github.com/crate-py/rpds

@@ -1,9 +1,9 @@
 ---
 name: python-socketio
-version: 5.16.4
+version: 5.17.0
 type: pip
 summary: Socket.IO server and client for Python
-homepage: https://github.com/miguelgrinberg/python-socketio
+homepage: https://code.miguelgrinberg.com/miguelgrinberg/python-socketio
 license: mit
 licenses:
 - sources: LICENSE

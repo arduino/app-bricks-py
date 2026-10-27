@@ -1,6 +1,6 @@
 ---
 name: websockets
-version: '17.1'
+version: '17.3'
 type: pip
 summary: An implementation of the WebSocket Protocol (RFC 6455 & 7692)
 homepage: https://github.com/python-websockets/websockets

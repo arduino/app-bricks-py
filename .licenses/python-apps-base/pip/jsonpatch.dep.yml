@@ -1,6 +1,6 @@
 ---
 name: jsonpatch
-version: '1.33'
+version: '1.38'
 type: pip
 summary: Apply JSON-Patches (RFC 6902)
 homepage: https://github.com/stefankoegl/python-json-patch
