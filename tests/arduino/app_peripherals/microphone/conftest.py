@@ -34,17 +34,18 @@ def _no_carrier(monkeypatch):
     monkeypatch.delenv("CONFIGURED_CARRIERS", raising=False)
 
 
-def build_pw_dump(usb_ids=(), builtin_ids=(), bluetooth_ids=(), hdmi_ids=()):
+def build_pw_dump(usb_ids=(), builtin_ids=(), bluetooth_ids=(), hdmi_ids=(), usb_cards=None):
     """
     Build a minimal pw-dump JSON payload.
 
     Args:
         usb_ids: PipeWire node ids for USB Audio/Source nodes. Each is assigned an
             ALSA card index by enumeration order, so the node-id ordering maps to the
-            mocked alsaaudio cards (SomeCard=0, AnotherCard=1).
+            mocked alsaaudio cards (SomeCard=0, AnotherCard=1), unless usb_cards is given.
         builtin_ids: PipeWire node ids for built-in (jack) Audio/Source nodes.
         bluetooth_ids: PipeWire node ids for Bluetooth Audio/Source nodes.
         hdmi_ids: PipeWire node ids for built-in Audio/Source nodes routed through HDMI.
+        usb_cards: ALSA card index of each USB node, to model gaps left by unplugged cards.
     """
     objects = []
     dev_seq = iter(range(1000, 2000))
@@ -57,7 +58,7 @@ def build_pw_dump(usb_ids=(), builtin_ids=(), bluetooth_ids=(), hdmi_ids=()):
         objects.append(device)
         objects.append({"id": node_id, "info": {"props": {"media.class": "Audio/Source", "device.id": dev_id, **source_props}}})
 
-    for alsa_card, node_id in enumerate(usb_ids):
+    for alsa_card, node_id in zip(usb_cards or range(len(usb_ids)), usb_ids):
         add(
             node_id,
             {"device.bus": "usb", "device.name": f"alsa_card.usb-Device-{node_id}"},
@@ -127,3 +128,13 @@ def mock_usb_cards(monkeypatch):
         usb_cards.update(card_indexes)
 
     return configure
+
+
+@pytest.fixture
+def cards_with_gap():
+    """Number the ALSA cards 0, 2 and 3 as after unplugging card 1: SomeCard, AnotherCard and a built-in codec."""
+    with (
+        patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=["SomeCard", "AnotherCard", "BuiltinCard"]),
+        patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 2, 3]),
+    ):
+        yield
