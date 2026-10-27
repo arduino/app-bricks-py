@@ -1,27 +1,32 @@
 services:
-  ei-video-obj-detection-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-models-runner:__BRICKS_RELEASE_VERSION__
+  video-object-detection-runner:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/edge-impulse-runner:__BRICKS_RELEASE_VERSION__
     logging:
       driver: "json-file"
       options:
         max-size: "5m"
-        max-file: "2"     
-    ports:
-      - ${BIND_ADDRESS:-0.0.0.0}:4912:4912  # Embedded UI port
-      - ${BIND_ADDRESS_IPV6:-[::]}:4912:4912  # Embedded UI port
+        max-file: "2"
+    # The inference server of the brick, serving its one model, see containers/ai/edge-impulse-runner/README.md
+    # A saturated model gets a second instance: the .eim files are single-threaded, the container has three cores
+    command: [--max-models=1, --max-clients=4, --memory-reserve-mb=256, --max-model-instances=2]
+    cpus: "3"                       # leave one core to the app
     volumes:
-      - "${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks}:${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks}"
-      - /var/lib/arduino-app-cli/models/edge-impulse:/var/lib/arduino-app-cli/models/edge-impulse
-      - ei-runner-cache:/home/arduino/.cache/node-compile-cache  # V8 compile cache, filled at the first start
-    command: ["--model-file", "${EI_V_OBJ_DETECTION_MODEL:-/models/ootb/ei/yolo-x-nano.eim}", "--gst-source", "tcpserversrc host=0.0.0.0 port=5050 ! jpegdec", "--dont-print-predictions", "--preview-original-resolution"]
+      # The .eim models installed by the app CLI, next to the out-of-the-box ones of the image (/models/ootb/ei)
+      - ${MODELS_PATH:-/var/lib/arduino-app-cli/models}/edge-impulse:/models/edge-impulse:ro
+      - ${MODELS_PATH:-/var/lib/arduino-app-cli/models}/custom-ei:/models/custom-ei:ro
+      # The socket the brick connects to, /app/.cache/video_object_detection/ei.sock in the app container
+      - "${APP_HOME:-.}/.cache/video_object_detection:/ipc"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m               # the SDK creates its socket to the .eim process here
+    shm_size: 64m                   # feature buffers shared with the .eim process
+    stop_grace_period: 15s          # an inference in progress completes before the model is stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     healthcheck:
-      test: [ "CMD-SHELL", "grep -iE ':13BA [0-9A-F:]+ (0A|01) ' /proc/net/tcp || exit 1" ] # Port 5050 (hex 13BA) listening or serving a client: tcpserversrc stops listening once the app connects
-      interval: 10s
+      test: ["CMD", "python3", "-c", "import socket as S;S.socket(S.AF_UNIX).connect('/ipc/ei.sock')"]
+      interval: 5s
+      timeout: 3s
       start_period: 30s
-      start_interval: 1s
-      timeout: 2s
+      start_interval: 250ms
       retries: 3
-
-volumes:
-  ei-runner-cache:
-    name: arduino-ei-runner-cache
