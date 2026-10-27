@@ -34,6 +34,12 @@ class TestNthPluggedMicrophone:
         with pytest.raises(MicrophoneOpenError):
             _nth_plugged_microphone(1)
 
+    def test_counts_usb_microphones_pipewire_does_not_expose(self, mock_pw_dump, mock_usb_cards):
+        mock_pw_dump(usb_ids=(50,))
+        mock_usb_cards(0, 1)
+
+        assert _nth_plugged_microphone(1) == "usb:2"
+
     def test_usb_precedence_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv(_CARRIER_ENV, "media-carrier")
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
@@ -113,6 +119,12 @@ class TestClaimFirstAvailableMicrophone:
 
         with pytest.raises(MicrophoneOpenError):
             _claim_first_available_microphone()
+
+    def test_claims_usb_microphones_pipewire_does_not_expose(self, mock_pw_dump, mock_usb_cards):
+        mock_pw_dump(usb_ids=())
+        mock_usb_cards(0)
+
+        assert _claim_first_available_microphone() == "plughw:CARD=SomeCard,DEV=0"
 
     def test_never_selects_bluetooth_or_hdmi_microphones(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv(_CARRIER_ENV, "media-carrier")

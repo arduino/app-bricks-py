@@ -61,13 +61,14 @@ def _nth_plugged_microphone(idx: int) -> str:
     Raises:
         MicrophoneOpenError: If no microphone is plugged at the given index.
     """
-    usb_mics, builtin_mics = list_audio_sources()
+    from .alsa_microphone import ALSAMicrophone
 
-    usb_count = len(usb_mics)
+    # Count the very lists the "usb:X" / "jack:X" identifiers are resolved against
+    usb_count = len(ALSAMicrophone.list_usb_devices())
     if idx < usb_count:
         return f"usb:{idx + 1}"
 
-    jack_count = len(builtin_mics) if has_media_carrier() else 0
+    jack_count = len(ALSAMicrophone.list_jack_devices())  # Empty without media carrier
     if idx - usb_count < jack_count:
         return f"jack:{idx - usb_count + 1}"
 
