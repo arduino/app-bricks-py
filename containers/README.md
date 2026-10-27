@@ -27,7 +27,7 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 | `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
 | `edge-impulse-runner` | ai | `python-slim` | Edge Impulse multi-model inference server: its source, and its CPU image |
 | `edge-impulse-npu-runner` | ai | `qairt-common-base` | Edge Impulse multi-model inference server, Hexagon NPU (QNN) image of the `edge-impulse-runner` source |
-| `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages |
+| `python-base` | base | `python-slim` | System deps, non-root user, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages |
 | `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
 | `aihub-framework` | base | `scratch` | Layer, never run: the `aihub` runner framework and the app skeleton, copied by `aihub-litert-models-runner` and `aihub-onnx-models-runner` |
 | `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config, patches FastAPI to build its OpenAPI models on first use |

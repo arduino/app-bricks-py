@@ -13,12 +13,14 @@ completes a document.
 
 from __future__ import annotations
 
-import colorsys
-import random
+import functools
+import math
 import select
 import socket
 import threading
 import time
+import zlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +28,7 @@ import cv2
 import numpy as np
 
 from .client import Box
+from arduino.app_utils.image import label_font
 from arduino.app_utils.image.colors import color_difference
 from arduino.app_utils import Logger
 
@@ -40,58 +43,73 @@ EMBED_PAGE = b"""<!DOCTYPE html>
 <style>html,body{margin:0;height:100%}img{display:block;width:100%;height:100%;object-fit:contain}</style></head>
 <body><img src="/" alt="video"></body></html>
 """
-FONT = cv2.FONT_HERSHEY_SIMPLEX
-TEXT_COLOR = (255, 255, 255)
+TEXT_HEIGHT = 0.015  # the text of the chips as a share of the frame height: 12 px of a 720p video shown 1440 px wide
+MIN_TEXT_PX = 8
+
+
+def _bgr(hex_color: str) -> tuple[int, int, int]:
+    """The BGR color of an "#RRGGBB" one."""
+    rgb = int(hex_color.lstrip("#"), 16)
+    return (rgb & 0xFF, (rgb >> 8) & 0xFF, rgb >> 16)
+
+
+TEXT_COLOR = (0, 0, 0)
+
+
+# The label colors of the App Lab design
+PALETTE = tuple(
+    _bgr(hex_color)
+    for hex_color in (
+        "#EB2F83",
+        "#EB8100",
+        "#FFF533",
+        "#19FFFF",
+        "#5EEB73",
+        "#4D70FF",
+        "#66A3FF",
+        "#C24EBC",
+        "#FF004D",
+        "#FFB200",
+        "#FF66C9",
+        "#3AC28C",
+    )
+)
 
 
 class LabelColors:
-    """A color per label, picked the first time the label is seen and kept for the whole run.
+    """A color of the palette per label, picked the first time the label is seen and kept for the whole run.
 
-    The first hue is random, the following ones step around the color wheel by the golden ratio, so the
-    labels of a run are always distinct from each other. A color the eye would confuse with one of the colors
-    to avoid, by their CIEDE2000 difference, is stepped over.
+    A label takes the color its name hashes to, so it gets the same color on every run, or the next free one when
+    another label of the run holds that color already; once every color is taken, the palette starts again from its
+    first color. The colors the eye would confuse with one of the colors to avoid, by their CIEDE2000 difference,
+    are left out of the palette.
     """
 
-    HUE_STEP = 0.618034
     MIN_DIFFERENCE = 23.0  # the CIEDE2000 difference a label color keeps from every color to avoid
-    MAX_STEPS = 100  # hues stepped over at most, when the colors to avoid leave no room
 
-    def __init__(self, seed: int | None = None, avoid: tuple[tuple[int, int, int], ...] = ()) -> None:
+    def __init__(self, avoid: tuple[tuple[int, int, int], ...] = ()) -> None:
         """
         Args:
-            seed (int | None): Seed of the random first hue, for a palette that repeats. Default is None.
             avoid (tuple[tuple[int, int, int], ...]): BGR colors drawn on the same frames, which the label
                 colors keep clearly different from. Default is none.
         """
-        self._random = random.Random(seed)
-        self._hue = self._random.random()
-        self._avoided = avoid
+        clear = [color for color in PALETTE if all(color_difference(color, avoided) >= self.MIN_DIFFERENCE for avoided in avoid)]
+        self._palette = clear or list(PALETTE)
         self._colors: dict[str, tuple[int, int, int]] = {}
         self._lock = threading.Lock()
 
     def __getitem__(self, label: str) -> tuple[int, int, int]:
         with self._lock:
             if label not in self._colors:
-                # Light, moderately saturated colors keep the white label text readable
-                saturation = self._random.uniform(0.35, 0.6)
-                color = _bgr(self._hue, saturation)
-                for _ in range(self.MAX_STEPS):
-                    if self._clear_of_avoided(color):
-                        break
-                    self._hue = (self._hue + self.HUE_STEP) % 1.0
-                    color = _bgr(self._hue, saturation)
-                self._colors[label] = color
-                self._hue = (self._hue + self.HUE_STEP) % 1.0
+                self._colors[label] = self._pick(label)
             return self._colors[label]
 
-    def _clear_of_avoided(self, color: tuple[int, int, int]) -> bool:
-        return all(color_difference(color, avoided) >= self.MIN_DIFFERENCE for avoided in self._avoided)
-
-
-def _bgr(hue: float, saturation: float) -> tuple[int, int, int]:
-    """The light BGR color of the hue at the saturation."""
-    r, g, b = colorsys.hsv_to_rgb(hue, saturation, 0.95)
-    return (int(b * 255), int(g * 255), int(r * 255))
+    def _pick(self, label: str) -> tuple[int, int, int]:
+        size = len(self._palette)
+        start = zlib.crc32(label.encode()) % size
+        taken = set(self._colors.values())
+        free = [color for color in (self._palette[(start + step) % size] for step in range(size)) if color not in taken]
+        return free[0] if free else self._palette[len(self._colors) % size]
 
 
 @dataclass
@@ -194,39 +212,74 @@ def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, flo
     return inter / union if union > 0 else 0.0
 
 
-def draw_detections(frame: np.ndarray, detections: dict[str, list[dict[str, Any]]], colors: LabelColors) -> np.ndarray:
-    """A copy of the frame with a box around every detection and a filled label chip at its top-right corner, "label" and "(score)".
+def draw_detections(
+    frame: np.ndarray, detections: dict[str, list[dict[str, Any]]], colors: LabelColors, color_key: Callable[[str], str] | None = None
+) -> np.ndarray:
+    """A copy of the frame with a box around every detection and a filled label chip above its top-left corner, "label" and "(score)".
 
     Args:
         frame (np.ndarray): HxWx3 BGR frame.
         detections (dict): The detections of the frame, as the brick passes them to the callbacks.
         colors (LabelColors): The color of every label.
+        color_key (Callable[[str], str] | None): The label whose color the boxes of a label take, the label
+            itself when None.
 
     Returns:
         np.ndarray: The annotated copy.
     """
     image = frame.copy()
-    scale = max(image.shape[0] / 480, 0.5)  # sizes tuned on 480p frames
-    thickness = max(1, round(1.5 * scale))
-    font_scale, font_thickness = 0.5 * scale, 1 if scale < 1.5 else 2
-    line_h = cv2.getTextSize("Ag", FONT, font_scale, font_thickness)[0][1]
-    pad = max(3, round(5 * scale))
+    thickness = max(1, round(1.5 * max(image.shape[0] / 480, 0.5)))
+    size = _text_px(image.shape[0])
+    pad = max(2, round(size * 0.4))
     for label, label_detections in detections.items():
-        color = colors[label]
+        color = colors[color_key(label) if color_key is not None else label]
         for detection in label_detections:
             x1, y1, x2, y2 = (int(v) for v in detection["bounding_box_xyxy"])
             cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness)
-            lines = [label, f"({detection['confidence']:.2f})"]
-            chip_h = len(lines) * (line_h + pad) + pad
-            chip_w = max(cv2.getTextSize(line, FONT, font_scale, font_thickness)[0][0] for line in lines) + 2 * pad
-            left = max(0, x2 - chip_w)  # right-aligned with the box, kept inside the frame
+            lines = [_rendered(text, size) for text in _chip_lines(label, detection["confidence"])]
+            line_h = lines[0].shape[0]
+            chip_w = max(line.shape[1] for line in lines) + 2 * pad
+            chip_h = len(lines) * line_h + 2 * pad
+            left = max(0, min(x1, image.shape[1] - chip_w))  # left-aligned with the box, kept inside the frame
             top = y1 - chip_h if y1 - chip_h >= 0 else y1  # inside the box when there is no room above
             cv2.rectangle(image, (left, top), (left + chip_w, top + chip_h), color, cv2.FILLED)
             for i, line in enumerate(lines):
-                text_w = cv2.getTextSize(line, FONT, font_scale, font_thickness)[0][0]
-                origin = (left + (chip_w - text_w) // 2, top + pad + (i + 1) * (line_h + pad) - pad // 2)
-                cv2.putText(image, line, origin, FONT, font_scale, TEXT_COLOR, font_thickness, cv2.LINE_AA)
+                _write(image, line, left + (chip_w - line.shape[1]) // 2, top + pad + i * line_h)
     return image
+
+
+def _chip_lines(label: str, confidence: float) -> list[str]:
+    """The two lines of a chip: the label with a capital initial, then the confidence in brackets."""
+    return [label[:1].upper() + label[1:], f"({confidence:.2f})"]
+
+
+def _text_px(frame_height: int) -> int:
+    """The size of the chip text for a frame, in pixels."""
+    return max(MIN_TEXT_PX, round(frame_height * TEXT_HEIGHT))
+
+
+@functools.lru_cache(maxsize=1024)
+def _rendered(text: str, size: int) -> np.ndarray:
+    """The text drawn in the chip font, as the coverage of every pixel in 0..1, one line high."""
+    from PIL import Image, ImageDraw  # loaded by the first chip drawn, that is once a viewer connects
+
+    font = label_font(size)
+    ascent, descent = font.getmetrics()
+    canvas = Image.new("L", (max(1, math.ceil(font.getlength(text))), ascent + descent), 0)
+    ImageDraw.Draw(canvas).text((0, 0), text, font=font, fill=255)
+    return np.asarray(canvas, dtype=np.float32) / 255.0
+
+
+def _write(image: np.ndarray, text: np.ndarray, left: int, top: int) -> None:
+    """Blend the rendered text onto the image in the text color, with its top-left corner at (left, top)."""
+    height, width = text.shape
+    y0, x0 = max(top, 0), max(left, 0)
+    y1, x1 = min(top + height, image.shape[0]), min(left + width, image.shape[1])
+    if y0 >= y1 or x0 >= x1:
+        return
+    coverage = text[y0 - top : y1 - top, x0 - left : x1 - left][..., None]
+    region = image[y0:y1, x0:x1].astype(np.float32)
+    image[y0:y1, x0:x1] = (region * (1 - coverage) + np.array(TEXT_COLOR, np.float32) * coverage).astype(np.uint8)
 
 
 class VideoStreamServer:

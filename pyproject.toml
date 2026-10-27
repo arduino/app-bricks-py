@@ -13,7 +13,7 @@ description = "Arduino App Bricks for Apps Lab"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "MPL-2.0"
-license-files = ["LICENSE.txt"]
+license-files = ["LICENSE.txt", "LICENSES/*"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",

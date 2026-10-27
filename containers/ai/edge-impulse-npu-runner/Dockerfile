@@ -16,6 +16,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Standalone build: docker build --build-context server=../edge-impulse-runner .
 COPY --from=server ./src /app
 COPY --from=server ./pyproject.toml ./uv.lock /tmp/deps/
+# The QNN builds of the out-of-the-box models, next to the CPU ones
+COPY --chown=arduino:arduino --chmod=755 ./models/ei-ootb-models/arm64/*.eim /models/ootb/ei/
 
 # Runtime settings expected from the compose file:
 # - the QNN .eim files mounted read-only at /models

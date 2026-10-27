@@ -6,7 +6,7 @@ version: "3"
 # Every task here runs on a developer machine. What runs only in CI lives in Taskfile.ci.yml.
 
 vars:
-  LICENSE_HEADER_EXCLUDE: '(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock)$'
+  LICENSE_HEADER_EXCLUDE: '(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock|ttf|ttf\.license)$'
   LICENSE_HEADER_ARGS: --skip-unrecognized --copyright-prefix spdx-string-c --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license MPL-2.0
 
 tasks:

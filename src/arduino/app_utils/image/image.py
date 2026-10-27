@@ -2,12 +2,18 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from __future__ import annotations
+
+import functools
 import io
 import os
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from PIL import Image, ImageDraw, ImageFont
 from arduino.app_utils import Logger
+
+if TYPE_CHECKING:
+    from PIL import Image, ImageDraw, ImageFont
 
 logger = Logger(__name__)
 
@@ -26,7 +32,15 @@ CONFIDENCE_MAP = {
     (81, 100): "#1EFF00",  # Green
 }
 
-FONT_PATH = "/home/app/.fonts/OpenSans.ttf"
+FONT_FILE = Path(__file__).parent / "assets" / "OpenSans-SemiBold.ttf"
+
+
+@functools.lru_cache(maxsize=32)
+def label_font(size: int) -> ImageFont.FreeTypeFont:
+    """Open Sans SemiBold at `size` pixels, the typeface of the App Lab labels, shared by every label the library draws."""
+    from PIL import ImageFont
+
+    return ImageFont.truetype(str(FONT_FILE), size)
 
 
 # Get the color for a given confidence value based on the defined ranges.
@@ -45,6 +59,8 @@ def get_image_type(image_bytes: bytes | Image.Image) -> str | None:
         str: The image type in lowercase (e.g., 'jpeg', 'png').
         None if the image type cannot be determined.
     """
+    from PIL import Image
+
     try:
         if isinstance(image_bytes, Image.Image):
             # If the input is already a PIL Image, we can directly get its format
@@ -74,6 +90,8 @@ def get_image_bytes(image: str | os.PathLike[str] | Image.Image | bytes | None) 
     """
     if image is None:
         return None
+    from PIL import Image
+
     try:
         match image:
             case Image.Image():
@@ -111,6 +129,8 @@ def draw_bounding_boxes(
         shape (str | None, optional): Shape of the bounding box, Shape.RECTANGLE/"rectangle" or
             Shape.CIRCLE/"circle". Defaults to rectangle, None included, as do unsupported values (with a warning).
     """
+    from PIL import Image, ImageDraw
+
     if isinstance(image, bytes):
         image_box = Image.open(io.BytesIO(image))
     else:
@@ -151,11 +171,7 @@ def draw_bounding_boxes(
     label_vpad = max(2, int(font_size * 0.4))
     label_hpad = max(4, int(font_size * 0.8))
 
-    try:
-        font = ImageFont.truetype(FONT_PATH, font_size)
-    except Exception as e:
-        logger.warning(f"Error loading custom font: {e}. Using default font.")
-        font = ImageFont.load_default(14)
+    font = label_font(font_size)
 
     for obj_det in boxes:
         if "class_name" not in obj_det or "bounding_box_xyxy" not in obj_det or "confidence" not in obj_det:
@@ -223,6 +239,7 @@ def draw_anomaly_markers(image: Image.Image | bytes, detection: dict[str, Any] |
     """
     if not detection or "detection" not in detection:
         return None
+    from PIL import Image, ImageDraw
 
     if isinstance(image, bytes):
         image_box = Image.open(io.BytesIO(image))
