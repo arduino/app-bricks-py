@@ -7,9 +7,9 @@
 """
 Installs the locked dependencies of every app in .licensed.yml into its venv, then runs licensed cache and status on each.
 
-Both modes reach the same verdict and differ only in where the records are written:
-- default (task fix:licenses): into .licenses, to refresh the committed records
-- --check (task check:licenses): into a throwaway copy, listing the records a refresh would change
+Licensed writes into a throwaway copy of .licenses, so a run that stops halfway leaves the records untouched. Then:
+- default (task fix:licenses): the changed records are written back into .licenses
+- --check (task check:licenses and CI): the changed records are listed as outdated, nothing is written
 """
 
 import glob
@@ -124,14 +124,25 @@ def run_licensed(config, app, tmp, cache_path):
     return ok
 
 
-def outdated_records(committed, scanned):
-    """Lists the records the scan added or rewrote, relative to the committed ones."""
-    outdated = []
-    for record in sorted(scanned.rglob("*.dep.yml")):
-        original = committed / record.relative_to(scanned)
-        if not original.is_file() or original.read_bytes() != record.read_bytes():
-            outdated.append(record.relative_to(scanned))
-    return outdated
+def record_bytes(path):
+    return path.read_bytes() if path.is_file() else None
+
+
+def changed_records(committed, scanned):
+    """Lists the records the scan added, rewrote or removed, relative to the committed ones."""
+    records = {path.relative_to(root) for root in (committed, scanned) for path in root.rglob("*.dep.yml")}
+    return sorted(record for record in records if record_bytes(committed / record) != record_bytes(scanned / record))
+
+
+def write_back(records, scanned, committed):
+    """Copies the changed records into the committed ones, deleting those the scan removed."""
+    for record in records:
+        source, target = scanned / record, committed / record
+        if source.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+        else:
+            target.unlink()
 
 
 def main():
@@ -147,14 +158,16 @@ def main():
         for message in pool.map(build_venv, apps):
             print(message, flush=True)
         with tempfile.TemporaryDirectory() as tmp:
-            cache_path = committed
-            if check:
-                cache_path = Path(tmp) / "records"
-                shutil.copytree(committed, cache_path)
-            results = list(pool.map(lambda app: run_licensed(config, app, tmp, cache_path), apps))
-            outdated = outdated_records(committed, cache_path) if check else []
-    if outdated:
-        print("warning: outdated records, run task fix:licenses to refresh them:\n  " + "\n  ".join(map(str, outdated)), flush=True)
+            scanned = Path(tmp) / "records"
+            shutil.copytree(committed, scanned)
+            results = list(pool.map(lambda app: run_licensed(config, app, tmp, scanned), apps))
+            changed = changed_records(committed, scanned)
+            if not check:
+                write_back(changed, scanned, committed)
+    if check and changed:
+        for record in changed:
+            print(f"warning: outdated record {committed.relative_to(SRC) / record}", flush=True)
+        print("Run task fix:licenses to refresh them", flush=True)
     if not all(results):
         failed = [app["name"] for app, ok in zip(apps, results) if not ok]
         fail("licensed reported problems for: " + ", ".join(failed))

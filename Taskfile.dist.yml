@@ -152,6 +152,12 @@ tasks:
       - task: _licenses:scan
         vars: { LICENSED_ARGS: "--check" }
 
+  check:licenses:scan:
+    desc: Run task check:licenses against an already built arduino-licensed image (CI), LICENSED_VENVS is the volume or directory holding the venvs
+    cmds:
+      - task: _licenses:scan
+        vars: { LICENSED_VENVS: "{{.LICENSED_VENVS}}", LICENSED_ARGS: "--check" }
+
   check:deps:
     desc: Fail if any uv.lock is out of date with its pyproject.toml, run task deps:lock
     cmds:
@@ -221,12 +227,6 @@ tasks:
     cmds:
       - task: _licenses:image
       - task: _licenses:scan
-
-  fix:licenses:scan:
-    desc: Run the license scan against an already built arduino-licensed image (CI), LICENSED_VENVS is the volume or directory holding the venvs
-    cmds:
-      - task: _licenses:scan
-        vars: { LICENSED_VENVS: "{{.LICENSED_VENVS}}" }
 
   fix:licenses:clean:
     desc: Remove the venvs cached by the license scan, the image itself is kept
