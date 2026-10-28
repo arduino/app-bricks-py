@@ -259,7 +259,7 @@ class TestAudioStreaming:
         with pytest.raises(MicrophoneReadError, match="device gone"):
             next(mic.stream())
         mic.stop()
-        
+
     def test_stop_from_another_thread_while_reading_ends_the_stream(self):
         """Test that a stop() landing right before a read ends the stream instead of raising MicrophoneReadError."""
         mic = StopRaceMicrophone()
