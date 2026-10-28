@@ -4,7 +4,13 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Installs the locked dependencies of every app in .licensed.yml into its venv, then runs licensed cache and status on each."""
+"""
+Installs the locked dependencies of every app in .licensed.yml into its venv, then runs licensed cache and status on each.
+
+Licensed writes into a throwaway copy of .licenses, so a run that stops halfway leaves the records untouched. Then:
+- default (task fix:licenses): the changed records are written back into .licenses
+- --check (task check:licenses and CI): the changed records are listed as outdated, nothing is written
+"""
 
 import glob
 import hashlib
@@ -100,14 +106,14 @@ def build_venv(app):
     return f"{app['name']}: venv built"
 
 
-def run_licensed(config, app, tmp, commands=("cache", "status")):
-    """Runs licensed on a single app through a config holding only that app."""
-    app_config = {**config, "root": str(SRC), "apps": [app]}
+def run_licensed(config, app, tmp, cache_path):
+    """Runs licensed cache and status on a single app through a config holding only that app."""
+    app_config = {**config, "root": str(SRC), "cache_path": str(cache_path), "apps": [app]}
     config_file = Path(tmp) / f"{app['name']}.yml"
     config_file.write_text(yaml.safe_dump(app_config))
     output = []
     ok = True
-    for command in commands:
+    for command in ("cache", "status"):
         result = subprocess.run(["licensed", command, "-c", str(config_file)], cwd=SRC, capture_output=True, text=True)
         output.append(result.stdout + result.stderr)
         if result.returncode != 0:
@@ -118,10 +124,31 @@ def run_licensed(config, app, tmp, commands=("cache", "status")):
     return ok
 
 
+def record_bytes(path):
+    return path.read_bytes() if path.is_file() else None
+
+
+def changed_records(committed, scanned):
+    """Lists the records the scan added, rewrote or removed, relative to the committed ones."""
+    records = {path.relative_to(root) for root in (committed, scanned) for path in root.rglob("*.dep.yml")}
+    return sorted(record for record in records if record_bytes(committed / record) != record_bytes(scanned / record))
+
+
+def write_back(records, scanned, committed):
+    """Copies the changed records into the committed ones, deleting those the scan removed."""
+    for record in records:
+        source, target = scanned / record, committed / record
+        if source.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+        else:
+            target.unlink()
+
+
 def main():
-    # --check reports the status of the committed records without rewriting them
-    commands = ("status",) if "--check" in sys.argv[1:] else ("cache", "status")
+    check = "--check" in sys.argv[1:]
     config, apps = load_config()
+    committed = SRC / config["cache_path"]
     check_projects_covered(apps)
     VENVS.mkdir(exist_ok=True)
     with ThreadPoolExecutor() as pool:
@@ -131,7 +158,16 @@ def main():
         for message in pool.map(build_venv, apps):
             print(message, flush=True)
         with tempfile.TemporaryDirectory() as tmp:
-            results = list(pool.map(lambda app: run_licensed(config, app, tmp, commands), apps))
+            scanned = Path(tmp) / "records"
+            shutil.copytree(committed, scanned)
+            results = list(pool.map(lambda app: run_licensed(config, app, tmp, scanned), apps))
+            changed = changed_records(committed, scanned)
+            if not check:
+                write_back(changed, scanned, committed)
+    if check and changed:
+        for record in changed:
+            print(f"warning: outdated record {committed.relative_to(SRC) / record}", flush=True)
+        print("Run task fix:licenses to refresh them", flush=True)
     if not all(results):
         failed = [app["name"] for app, ok in zip(apps, results) if not ok]
         fail("licensed reported problems for: " + ", ".join(failed))
