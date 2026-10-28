@@ -186,7 +186,7 @@ change either.
 
 `ai-edge-litert` has no NPU support of its own. The NPU is reached through the **QNN TFLite
 delegate**, which comes from the QAIRT SDK: the App must carry the delegate and the QNN
-libraries it needs, all from one SDK release.
+libraries it needs, all from one [SDK release](https://softwarecenter.qualcomm.com/catalog/item/Qualcomm_AI_Runtime_Community).
 
 ### 2.1 Install the Python package
 
