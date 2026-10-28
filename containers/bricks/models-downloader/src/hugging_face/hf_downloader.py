@@ -119,6 +119,8 @@ from huggingface_hub.hf_api import RepoFile
 import argparse
 import configparser
 from collections import ChainMap
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 from tqdm.auto import tqdm
@@ -498,8 +500,23 @@ def install_signal_handlers() -> None:
     signal.signal(signal.SIGTERM, _handler)
 
 
+@dataclass
+class Transfer:
+    """A download of several files reported as one, see ``JsonProgress.one_transfer``."""
+
+    total: int
+    done: int = 0
+    """Bytes of the files that completed."""
+    description: str = ""
+    """The file reported last, which the completion event names."""
+
+
 class JsonProgress(tqdm):
     """tqdm replacement that reports download progress as JSON events on stdout.
+
+    huggingface_hub gives every file its own bar. Inside ``one_transfer`` the bars of all
+    the files report one progress and one completion between them, so a GGUF and its
+    projector read 0-100% once; outside it each file is reported on its own.
 
     huggingface_hub's Xet downloader tracks two byte counters: bytes written to disk
     ("reconstruction") and bytes pulled from the network ("transfer"), and renders one
@@ -521,8 +538,32 @@ class JsonProgress(tqdm):
     # describe an implementation detail, so they are stripped from the reported description.
     DESC_SUFFIXES = (": reconstructing file", ": downloading bytes")
 
+    # The transfer every bar reports into while one_transfer() runs, None outside it.
+    transfer: Transfer | None = None
+
+    @classmethod
+    @contextmanager
+    def one_transfer(cls, total: int | None):
+        """Report the files downloaded inside the block as one transfer of *total* bytes.
+
+        Each bar carries on from the bytes of the files completed before it, out of
+        *total*, and the single "complete" event is emitted when the block ends without an
+        error. *total* is what the Hub listing says the files weigh, so the reported bytes
+        are capped at it and the completion reports it whatever the files added up to. With
+        no *total* (None or 0) every file is reported on its own, as outside the block.
+        """
+        if not total:
+            yield
+            return
+        transfer = cls.transfer = Transfer(total)
+        try:
+            yield
+        finally:
+            cls.transfer = None
+        cls._print_event("complete", transfer.description, total, total, "B")
+
     def __init__(self, *args, **kwargs):
-        self._complete_emitted = False
+        self._completed = False
         self._last_emit = 0.0
         self._transferred = 0
         super().__init__(*args, **kwargs)
@@ -550,16 +591,23 @@ class JsonProgress(tqdm):
         return desc
 
     def _emit(self, event_type):
-        """Helper to print the current state as JSON"""
+        """Print this file's state as JSON, as part of the transfer inside one_transfer()."""
         self._last_emit = time.monotonic()
-        current = self._current()
-        pct = round((current / self.total) * 100, 2) if self.total else 0
+        description, current, total = self._description(), self._current(), self.total
+        if self.transfer is not None:
+            self.transfer.description = description
+            current, total = min(self.transfer.done + current, self.transfer.total), self.transfer.total
+        self._print_event(event_type, description, current, total, self.unit)
+
+    @staticmethod
+    def _print_event(event_type, description, current, total, unit):
+        pct = round((current / total) * 100, 2) if total else 0
         data = {
             "event": event_type,
-            "description": self._description(),
+            "description": description,
             "current": current,
-            "total": self.total,
-            "unit": self.unit,
+            "total": total,
+            "unit": unit,
             "percentage": f"{pct}%",
         }
         print(json.dumps(data), flush=True)
@@ -590,9 +638,13 @@ class JsonProgress(tqdm):
 
     def close(self):
         # Only report completion if the transfer actually finished.
-        if self.total and self.n >= self.total and not self._complete_emitted:
-            self._complete_emitted = True
-            self._emit("complete")
+        if self.total and self.n >= self.total and not self._completed:
+            self._completed = True
+            if self.transfer is not None:
+                # One file of several: the transfer reports its own completion, once.
+                self.transfer.done += self.total
+            else:
+                self._emit("complete")
         # tqdm writes a bare newline when closing a bar with leave=True. No bar was ever
         # drawn, so there is nothing to leave on screen.
         self.leave = False
@@ -1343,12 +1395,12 @@ def downloaded_size_mb(downloaded: list[str]) -> float | None:
     return paths_size_mb(downloaded)
 
 
-def expected_size_mb(repo_id: str, patterns: list[str]) -> float | None:
-    """The ``size_mb`` the files matching *patterns* will have once downloaded, or None.
+def expected_size_bytes(repo_id: str, patterns: list[str]) -> int | None:
+    """The bytes the files matching *patterns* will take once downloaded, or None.
 
-    Written into the ".download" marker, so the listing can size an ad-hoc download
-    before any of its files exist. Best effort: sizing the repository must never fail
-    or hold up the download it describes.
+    Read from the Hub listing, so a download is sized before any of its files exist.
+    Best effort: sizing the repository must never fail or hold up the download it
+    describes.
     """
     try:
         sizes = [f.size for f in list_repo_matches(repo_id, patterns)]
@@ -1356,7 +1408,7 @@ def expected_size_mb(repo_id: str, patterns: list[str]) -> float | None:
         return None
     if not sizes or any(size is None for size in sizes):
         return None
-    return size_mb(sum(sizes))
+    return sum(sizes)
 
 
 def no_match_error(repo_id: str, pattern: str | list[str]) -> NoMatchingFileError:
@@ -1919,6 +1971,7 @@ def main():
         # already there stays installed throughout; the record and the completion event
         # still describe the whole model.
         fetch = [pattern for pattern in patterns if not matching_files(output_dir, [pattern])]
+        model_bytes = expected_size_bytes(repo_id, patterns)
 
         os.makedirs(output_dir, exist_ok=True)
         write_marker(
@@ -1931,7 +1984,7 @@ def main():
             # quantization already installed there is not reported as in progress.
             file_patterns=fetch,
             # The size of the model, not of the transfer: the listing reports it.
-            size_mb=expected_size_mb(repo_id, patterns),
+            size_mb=size_mb(model_bytes),
         )
         # The listing now reports the model as downloading, and reports it again
         # however this run ends: installed (after the marker is cleared), or discarded.
@@ -1948,48 +2001,51 @@ def main():
         # complete file the listing ignores and the API cannot delete.
         recorded = None
         try:
-            if url_filename:
-                # Single-file download via direct URL
-                if allow_pattern in fetch:
-                    if args.verbose:
-                        emit_json_info(f"Downloading file '{url_filename}' from {repo_id} (revision: {url_revision})")
-                    hf_hub_download(
-                        repo_id=repo_id,
-                        filename=url_filename,
-                        revision=url_revision,
-                        local_dir=output_dir,
-                        tqdm_class=tqdm_class,
-                    )
-                if mmproj_url_filename and mmproj_allow_pattern in fetch:
-                    if args.verbose:
-                        emit_json_info(f"Downloading mmproj file '{mmproj_url_filename}' from {repo_id} (revision: {mmproj_url_revision})")
-                    hf_hub_download(
-                        repo_id=repo_id,
-                        filename=mmproj_url_filename,
-                        revision=mmproj_url_revision,
-                        local_dir=output_dir,
-                        tqdm_class=tqdm_class,
-                    )
-            else:
-                # Pattern-based download
-                if allow_pattern in fetch:
-                    if args.verbose:
-                        emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
-                    download_matched_files(
-                        repo_id,
-                        allow_pattern,
-                        output_dir,
-                        tqdm_class,
-                        ignore_pattern="*mmproj*",
-                        verbose=args.verbose,
-                    )
-
-                if mmproj_allow_pattern in fetch:
-                    if args.verbose:
-                        emit_json_info(
-                            f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
+            # The files still missing are reported as one transfer, so the host's progress
+            # runs from 0 to 100% once however many files the model is made of.
+            with JsonProgress.one_transfer(model_bytes if fetch == patterns else expected_size_bytes(repo_id, fetch)):
+                if url_filename:
+                    # Single-file download via direct URL
+                    if allow_pattern in fetch:
+                        if args.verbose:
+                            emit_json_info(f"Downloading file '{url_filename}' from {repo_id} (revision: {url_revision})")
+                        hf_hub_download(
+                            repo_id=repo_id,
+                            filename=url_filename,
+                            revision=url_revision,
+                            local_dir=output_dir,
+                            tqdm_class=tqdm_class,
                         )
-                    download_matched_files(repo_id, mmproj_allow_pattern, output_dir, tqdm_class, verbose=args.verbose)
+                    if mmproj_url_filename and mmproj_allow_pattern in fetch:
+                        if args.verbose:
+                            emit_json_info(f"Downloading mmproj file '{mmproj_url_filename}' from {repo_id} (revision: {mmproj_url_revision})")
+                        hf_hub_download(
+                            repo_id=repo_id,
+                            filename=mmproj_url_filename,
+                            revision=mmproj_url_revision,
+                            local_dir=output_dir,
+                            tqdm_class=tqdm_class,
+                        )
+                else:
+                    # Pattern-based download
+                    if allow_pattern in fetch:
+                        if args.verbose:
+                            emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
+                        download_matched_files(
+                            repo_id,
+                            allow_pattern,
+                            output_dir,
+                            tqdm_class,
+                            ignore_pattern="*mmproj*",
+                            verbose=args.verbose,
+                        )
+
+                    if mmproj_allow_pattern in fetch:
+                        if args.verbose:
+                            emit_json_info(
+                                f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
+                            )
+                        download_matched_files(repo_id, mmproj_allow_pattern, output_dir, tqdm_class, verbose=args.verbose)
 
             # Remove download caches
             cache_path = Path(output_dir) / ".cache"
