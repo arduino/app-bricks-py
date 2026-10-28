@@ -1,6 +1,6 @@
-# Large Language Model (Text) Brick
+# Large Language Model - Text Brick
 
-The Large Language Model (LLM) Brick provides functionality for interacting with locally-based LLMs such as Qwenm, LLama, Gemma. It offers a simplified, unified interface for chatting with the local models. It supports both synchronous 'one-shot' responses and streaming output, with optional conversational memory.
+The Large Language Model - Text Brick provides functionality for interacting with locally-based LLMs such as Qwenm, LLama, Gemma. It offers a simplified, unified interface for chatting with the local models. It supports both synchronous 'one-shot' responses and streaming output, with optional conversational memory.
 
 ## Overview
 
