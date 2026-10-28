@@ -380,23 +380,6 @@ INFO: [Qnn Delegate] TfLiteQnnDelegate delegate: 71 nodes delegated out of 71 no
 | LiteRT: `Failed to load skel, error: 4000` ... `error: 14001`, then the same `RuntimeError` | The files in `qairt/` are for another Hexagon architecture | Extract the ones for the board's architecture (`HEXAGON_ARCH` in 2.2) |
 | LiteRT: `PrepareLibLoader Failed loading libQnnHtpPrepare.so`, CPU-like timings | `libQnnHtpPrepare.so` is missing | Add it to `qairt/lib` |
 
-## Measured performance
-
-MobileNet-v2 (224x224) from AI Hub v0.64.0. Median of 50 runs, measured inside the App
-container on the board with the options of the examples above. CPU runs: ONNX Runtime with
-its default threading, LiteRT with `num_threads=8`. NPU times vary from one run to the next:
-these are typical values.
-
-| Model | CPU | NPU, default mode | NPU, sustained high performance |
-|---|---|---|---|
-| ONNX float32 | 14.2 ms | 5.2 ms | **1.5 ms** |
-| ONNX w8a8 | 12.8 ms | 2.0 ms | **0.8 ms** |
-| LiteRT float32 | 18.3 ms | 5.8 ms | **1.7 ms** |
-| LiteRT w8a8 | 10.9 ms | 2.1 ms | **0.6 ms** |
-
-An App that runs one inference per second, like the minimal ones above, shows 2-3 ms per
-call: between calls the NPU drops back to idle clocks.
-
 ## Tested on
 
 - ONNX: `onnxruntime` 1.31.0, `onnxruntime-qnn` 2.6.0 (bundles QAIRT 2.50.40)
