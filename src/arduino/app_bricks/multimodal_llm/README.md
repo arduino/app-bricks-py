@@ -1,4 +1,4 @@
-# Multimodal Language Model Brick
+# Large Language Model (Multimodal) Brick
 
 The Multimodal Language Model Brick provides a simple Python® interface for chatting with a locally hosted AI model using text, images and audio. It lets Arduino® App Lab applications send a text prompt alone, together with images, together with audio clips, or with both, then receive generated text from the model running on the board.
 

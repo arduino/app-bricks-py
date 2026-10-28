@@ -1,5 +1,5 @@
 id: arduino:multimodal_llm
-name: Multimodal Language Model
+name: Large Language Model (Multimodal)
 description: "Multimodal Language Model Brick lets your Arduino projects chat with a locally hosted AI model using text, images and audio."
 requires_services: ["arduino:llamacpp"]
 model: llamacpp:gemma-4-E2B_q4_0-it-multimodal

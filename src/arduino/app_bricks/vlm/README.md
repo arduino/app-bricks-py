@@ -1,6 +1,6 @@
-# Vision Language Model (VLM) Brick
+# Large Language Model (Vision) Brick
 
-The Vision Language Model (VLM) Brick provides a simple Python® interface for asking a locally hosted multimodal AI model questions about images. It lets Arduino® App Lab applications send text prompts together with image file paths or image bytes, then receive generated text from the model running on the board.
+The Large Language Model (Vision) Brick provides a simple Python® interface for asking a locally hosted multimodal AI model questions about images. It lets Arduino® App Lab applications send text prompts together with image file paths or image bytes, then receive generated text from the model running on the board.
 
 ## Overview
 
