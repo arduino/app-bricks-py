@@ -407,6 +407,26 @@ def test_a_header_cut_inside_its_vocabulary_is_refused(tmp_path):
         read_model_shape(gguf)
 
 
+def test_both_runners_skip_a_vocabulary_when_reading_the_metadata(runner, tmp_path):
+    """The llamacpp-runner reads every installed header at start too, to tell a decision
+    model apart, with its own copy of the reader: the vocabulary costs neither copy any
+    memory, and every key after it reads the same."""
+    skipped = vocabulary(100_000) | {"test.nested": [[1, 2]] * 2000}
+    with_arrays = attention_model(tmp_path / "arrays.gguf", layers=4, extra_metadata=skipped)
+    without = attention_model(tmp_path / "plain.gguf", layers=4)
+
+    tracemalloc.start()
+    try:
+        metadata = runner.read_gguf_metadata(with_arrays)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+    assert peak < MIB, f"{peak / MIB:.1f} MiB allocated: the vocabulary was decoded"
+    assert all(metadata[key] is None for key in skipped)
+    assert {k: v for k, v in metadata.items() if k not in skipped} == runner.read_gguf_metadata(without)
+
+
 # --------------------------------------------------------------------------- #
 # What happens when llama.cpp changes underneath
 #
