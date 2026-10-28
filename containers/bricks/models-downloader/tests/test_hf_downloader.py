@@ -2613,6 +2613,42 @@ def test_the_marker_of_a_multimodal_download_names_both_files(tmp_path, monkeypa
     assert seen[0]["file_patterns"] == ["*Q4_0*.gguf", "mmproj-F16.gguf"]
 
 
+def test_a_multimodal_download_reports_one_progress_for_both_files(tmp_path, monkeypatch, capsys):
+    """The reported bug: the progress ran to 100% on the GGUF, then again on the projector."""
+    models_dir, _repo = _qwen_repo(tmp_path)
+    sizes = {"Qwen3-0.6B-Q4_0.gguf": 300, "mmproj-F16.gguf": 100}
+
+    def _listing(_repo_id, patterns, ignore_pattern=None, **_kwargs):
+        matched = [_SizedRepoFile(path, size) for path, size in sizes.items() if any(matches_pattern(path, p) for p in patterns)]
+        return [f for f in matched if not (ignore_pattern and matches_pattern(f.path, ignore_pattern))]
+
+    def _download(repo_id, allow_pattern, output_dir, _tqdm_class, ignore_pattern=None, verbose=False):
+        for f in _listing(repo_id, [allow_pattern], ignore_pattern):
+            _fetch(f"{f.path}: reconstructing file", f.size)
+            Path(output_dir, f.path).write_bytes(b"\0")
+
+    monkeypatch.setattr(hf_downloader, "validate_hub_source", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _listing)
+    monkeypatch.setattr(hf_downloader, "download_matched_files", _download)
+    monkeypatch.setattr(JsonProgress, "EMIT_INTERVAL", 0)
+
+    _run_main(
+        monkeypatch,
+        "--model-url",
+        "llamacpp:unsloth/Qwen3-0.6B-GGUF:Q4_0",
+        "--model-mmproj-url",
+        "unsloth/Qwen3-0.6B-GGUF",
+        "--output-dir",
+        str(models_dir),
+    )
+
+    progress = [e for e in read_events(capsys) if "percentage" in e]
+    percentages = [float(e["percentage"].rstrip("%")) for e in progress]
+    assert percentages == sorted(percentages), "the progress went backwards"
+    assert [e["event"] for e in progress].count("complete") == 1
+    assert progress[-1] == {**progress[-1], "event": "complete", "current": 400, "total": 400}
+
+
 def test_delete_takes_only_the_projector_that_was_asked_for(tmp_path, monkeypatch):
     """'*mmproj*F16*.gguf' also matches mmproj-BF16.gguf, which delete must not remove."""
     models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf", "mmproj-F16.gguf", "mmproj-BF16.gguf")
