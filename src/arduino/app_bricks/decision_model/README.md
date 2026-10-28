@@ -20,7 +20,7 @@ The answer time grows with the input tokens: the state is read once per question
 
 - **Typed answers**: `Choice`, `Score` and `Noul` questions return `ChoiceAnswer`, `ScoreAnswer` and `NoulAnswer` data classes, with the probabilities of every option; `decide()` returns them in an `Answers` dict with typed accessors.
 - **One request, many questions**: `decide()` answers any number of questions about the same state in a single call.
-- **Text or JSON state**: pass free text, or a dict/list of readings and let the model reason on structured data.
+- **Text or JSON state**: pass free text, or a dict/list such as a support ticket. Write numeric readings (temperatures, humidity, speeds) in a sentence with their units: the model reads numbers in a sentence much better than in a JSON object.
 - **Local and private**: the model runs on the board inside the `arduino:llamacpp` service, like the Large Language Model Brick.
 - **Shortcuts**: `choose()`, `score()` and `check()` ask a single question and return its typed answer directly.
 
@@ -113,9 +113,9 @@ def triage_ticket():
 App.run(triage_ticket)
 ```
 
-### Checking and Grading Sensor Readings
+### Checking Sensor Readings
 
-`check()` answers a yes/no question and `score()` grades the state on a scale you describe. Both accept the optional descriptions that help the model understand your domain.
+`check()` answers a yes/no question; the optional descriptions of the two answers help the model understand your domain. The readings are written in a sentence with their units, which the model reads much better than the same numbers in a JSON object.
 
 ```python
 from arduino.app_bricks.decision_model import DecisionModel
@@ -123,13 +123,8 @@ from arduino.app_utils import App
 
 decision_model = DecisionModel()
 
-READINGS = {
-    "room": "server closet",
-    "temperature_c": 38.5,
-    "humidity_pct": 71,
-    "fan_rpm": 0,
-    "door_open": False,
-}
+# The readings described in a sentence, with their units
+READINGS = "Server closet: temperature 45.3 °C, humidity 71 %, cooling fan speed 0 rpm, door closed."
 
 
 def assess_readings():
@@ -139,19 +134,69 @@ def assess_readings():
         true_description="Temperature or humidity are high and the cooling is not working",
         false_description="The environment is within normal operating conditions",
     )
-    severity = decision_model.score(
-        state=READINGS,
-        instructions="How severe is the situation?",
-        levels=["Normal", "Keep an eye on it", "Intervene soon", "Emergency"],
-    )
     if overheating.is_true:
-        print(f"Overheating risk (probability {overheating.probability:.2f}): {severity.level}")
+        print(f"Overheating risk (probability {overheating.probability:.2f})")
     else:
-        print(f"All good (probability of a problem {overheating.probability:.2f}): {severity.level}")
+        print(f"All good (probability of a problem {overheating.probability:.2f})")
     raise StopIteration
 
 
 App.run(assess_readings)
+```
+
+### Setting an Air Conditioner from a Climate Sensor
+
+The temperature and humidity of a room go into a sentence, `decide()` asks three yes/no questions about it in one request and the app turns the answers into the air conditioner mode. The model judges well whether a person would feel cold and whether the air is too humid, but not when a room is too hot: that question carries its threshold, and the model compares a reading with a threshold written in the question very reliably.
+
+```python
+from arduino.app_bricks.decision_model import Answers, DecisionModel, Noul
+from arduino.app_utils import App
+
+decision_model = DecisionModel()
+
+CLIMATE_QUESTIONS = {
+    "cold": Noul(
+        instructions="Would a person in this room feel cold?",
+        true_description="The room is colder than what people find comfortable",
+        false_description="The room is comfortable or warm",
+    ),
+    "hot": Noul(instructions="Is the temperature in this room above 26 °C?"),
+    "humid": Noul(
+        instructions="Is the air in this room too humid?",
+        true_description="The humidity is higher than what people find comfortable",
+        false_description="The humidity is comfortable or low",
+    ),
+}
+
+# Readings of a temperature (°C) and humidity (%) sensor
+READINGS = [(16.0, 55), (23.0, 80), (32.0, 35), (23.0, 55)]
+
+
+def air_conditioner_mode(answers: Answers) -> str:
+    if answers.noul("cold").is_true:
+        return "heat"
+    if answers.noul("hot").is_true:
+        return "cool"
+    if answers.noul("humid").is_true:
+        return "dehumidify"
+    return "off"
+
+
+def control_climate():
+    for temperature_c, humidity_pct in READINGS:
+        answers = decision_model.decide(
+            state=f"Living room: temperature {temperature_c} °C, relative humidity {humidity_pct} %.",
+            questions=CLIMATE_QUESTIONS,
+        )
+        cold = answers.noul("cold")
+        print(
+            f"{temperature_c} °C, {humidity_pct} % humidity: a person feels cold {cold.is_true} ({cold.probability:.2f}),"
+            f" air conditioner: {air_conditioner_mode(answers)}"
+        )
+    raise StopIteration
+
+
+App.run(control_climate)
 ```
 
 ### Asking about a Camera Image
