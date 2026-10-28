@@ -212,6 +212,7 @@ class BaseMicrophone(ABC):
         This is a generator that yields audio chunks continuously while the microphone is started.
         It ends when the microphone is stopped, also when the stop lands while a chunk is
         being read.
+        Stopping the microphone, also from another thread, ends the stream.
 
         Yields:
             np.ndarray: Audio chunks as numpy arrays.
@@ -222,7 +223,7 @@ class BaseMicrophone(ABC):
             except MicrophoneReadError:
                 if self.is_started():
                     raise
-                return  # stopped by another thread between the check above and the read
+                return  # Stopped between the started check and the read: end as on the next check
             if chunk is not None:
                 yield chunk
             else:

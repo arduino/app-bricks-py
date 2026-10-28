@@ -47,6 +47,31 @@ class MockMicrophone(BaseMicrophone):
         self._max_chunks = count
 
 
+class StopRaceMicrophone(MockMicrophone):
+    """Mock microphone whose stop() closes the device only once a capture is waiting for it.
+
+    stop() closes the device holding the microphone lock, so a capture waiting at that point
+    has already passed the started check of stream(): the stop lands between that check and
+    the read, as when a brick is stopped while its loop streams the microphone.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._pending_captures = 0
+
+    def capture(self):
+        self._pending_captures += 1
+        try:
+            return super().capture()
+        finally:
+            self._pending_captures -= 1
+
+    def _close_microphone(self):
+        deadline = time.monotonic() + 2.0
+        while self._pending_captures == 0 and time.monotonic() < deadline:
+            time.sleep(0.001)
+
+
 class TestAudioCapture:
     """Test single audio chunk capture."""
 
@@ -234,6 +259,27 @@ class TestAudioStreaming:
         with pytest.raises(MicrophoneReadError, match="device gone"):
             next(mic.stream())
         mic.stop()
+        
+    def test_stop_from_another_thread_while_reading_ends_the_stream(self):
+        """Test that a stop() landing right before a read ends the stream instead of raising MicrophoneReadError."""
+        mic = StopRaceMicrophone()
+        mic.start()
+        errors = []
+
+        def consume():
+            try:
+                for _ in mic.stream():
+                    pass
+            except Exception as e:
+                errors.append(e)
+
+        consumer = threading.Thread(target=consume)
+        consumer.start()
+        mic.stop()
+        consumer.join(timeout=2.0)
+
+        assert not consumer.is_alive()
+        assert errors == []
 
     def test_stream_skips_none_values(self):
         """Test that stream skips None values without yielding them."""

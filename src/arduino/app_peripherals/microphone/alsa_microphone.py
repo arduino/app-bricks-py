@@ -16,6 +16,8 @@ from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSAMicrophone")
 
+_SYSFS_SOUND = "/sys/class/sound"
+
 
 class ALSAMicrophone(BaseMicrophone):
     """
@@ -83,6 +85,8 @@ class ALSAMicrophone(BaseMicrophone):
             raise MicrophoneOpenError(f"Failed to look for microphone device '{device}': {e}")
         self.shared = shared
         self.logger = logger
+        requested = "" if device == self.device_stable_ref else f" (requested as {device!r})"
+        logger.info(f"Using microphone {self.device_stable_ref}{requested}")
 
         self._pcm: alsaaudio.PCM | None = None
 
@@ -113,22 +117,32 @@ class ALSAMicrophone(BaseMicrophone):
         """
         Return only the available USB microphones as full ALSA device paths.
 
+        The microphones exposed by PipeWire come first, in its discovery order.
+        USB capture devices PipeWire doesn't expose (no PipeWire session, or a card
+        profile without input) follow in ALSA card order, since they are opened
+        through ALSA anyway.
+
         Returns:
             list: Available USB microphones as full ALSA device paths.
         """
-        usb_devices = []
+        usb_devices: list[str] = []
         try:
             usb_sources, _ = list_audio_sources()
-            cards = alsaaudio.cards()
+            card_names = _alsa_card_names()
             for source in usb_sources:
                 props = source.get("info", {}).get("props", {})
-                card_idx = props.get("api.alsa.pcm.card")
-                if card_idx is None or card_idx >= len(cards):
+                card_name = card_names.get(props.get("api.alsa.pcm.card"))
+                if card_name is None:
                     continue
                 device_idx = _alsa_path_device_index(props.get("api.alsa.path", ""))
-                usb_devices.append(f"plughw:CARD={cards[card_idx]},DEV={device_idx}")
+                usb_devices.append(f"plughw:CARD={card_name},DEV={device_idx}")
         except Exception as e:
             logger.error(f"Error listing USB microphones: {e}")
+
+        for device in _alsa_usb_capture_devices():
+            if device not in usb_devices:
+                logger.warning(f"USB microphone {device} is not exposed by PipeWire (card profile without input?), listing it from ALSA")
+                usb_devices.append(device)
 
         return usb_devices
 
@@ -352,12 +366,11 @@ class ALSAMicrophone(BaseMicrophone):
                     raise MicrophoneOpenError(f"Failed to resolve microphone name from stable ref {device_ref}: {e}")
 
         else:
-            # This is a card index like 0, 1, ...
-            cards = alsaaudio.cards()
-            if device_ref < 0 or device_ref >= len(cards):
-                raise MicrophoneOpenError(f"Card index {device_ref} out of range. Available: 0-{len(cards) - 1}")
-            card_name = cards[device_ref]
-            return card_name
+            # This is an ALSA card index, which can have gaps after unplugs
+            card_names = _alsa_card_names()
+            if device_ref not in card_names:
+                raise MicrophoneOpenError(f"Card index {device_ref} not found. Available: {sorted(card_names)}")
+            return card_names[device_ref]
 
         raise MicrophoneOpenError(f"Invalid device reference for name resolution: {device_ref} (type:{type(device_ref)})")
 
@@ -530,13 +543,12 @@ def _nth_plugged_microphone(idx: int) -> str:
     Raises:
         MicrophoneOpenError: If no microphone is plugged at the given index.
     """
-    usb_mics, builtin_mics = list_audio_sources()
-
-    usb_count = len(usb_mics)
+    # Count the very lists the "usb:X" / "jack:X" identifiers are resolved against
+    usb_count = len(ALSAMicrophone.list_usb_devices())
     if idx < usb_count:
         return f"usb:{idx + 1}"
 
-    jack_count = len(builtin_mics) if has_media_carrier() else 0
+    jack_count = len(ALSAMicrophone.list_jack_devices())  # Empty without media carrier
     if idx - usb_count < jack_count:
         return f"jack:{idx - usb_count + 1}"
 
@@ -554,6 +566,59 @@ def _alsa_path_device_index(alsa_path: str) -> int:
     """
     match = re.match(r"^hw:[^,]+,(\d+)$", alsa_path)
     return int(match.group(1)) if match else 0
+
+
+def _alsa_usb_capture_devices() -> list[str]:
+    """
+    List the capture devices of USB sound cards, in card and device order.
+
+    Returns:
+        list[str]: Capture devices as "plughw:CARD=<name>,DEV=<n>".
+    """
+    try:
+        card_names = _alsa_card_names()
+    except Exception as e:
+        logger.error(f"Error listing USB microphones via ALSA: {e}")
+        return []
+
+    return [f"plughw:CARD={card_names[card]},DEV={dev}" for card, dev in _usb_pcm_devices("c") if card in card_names]
+
+
+def _alsa_card_names() -> dict[int, str]:
+    """
+    Map each ALSA card index to its name.
+
+    Card indexes are not positions in alsaaudio.cards(): they keep gaps left by unplugged cards.
+
+    Returns:
+        dict[int, str]: Card name by ALSA card index.
+    """
+    return dict(zip(alsaaudio.card_indexes(), alsaaudio.cards()))
+
+
+def _usb_pcm_devices(stream: str) -> list[tuple[int, int]]:
+    """
+    List the (card, device) indexes of the PCM devices of USB sound cards, in order.
+
+    Args:
+        stream (str): "c" for capture devices, "p" for playback devices.
+
+    Returns:
+        list[tuple[int, int]]: ALSA card and device index of each PCM device.
+    """
+    # Read from sysfs: ALSA device hints (alsaaudio.pcms) cost ~120 ms on the UNO Q
+    try:
+        entries = os.listdir(_SYSFS_SOUND)
+    except OSError:
+        return []
+
+    devices: list[tuple[int, int]] = []
+    for entry in entries:
+        match = re.fullmatch(rf"pcmC(\d+)D(\d+){stream}", entry)
+        # USB devices sit below a "usb<bus>" root hub in the device tree
+        if match and re.search(r"[\\/]usb\d+[\\/]", os.path.realpath(os.path.join(_SYSFS_SOUND, entry))):
+            devices.append((int(match.group(1)), int(match.group(2))))
+    return sorted(devices)
 
 
 def _dtype_to_alsa_format_name(dtype: np.dtype, is_packed: bool = False) -> str:

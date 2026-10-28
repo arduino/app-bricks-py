@@ -14,6 +14,7 @@ from arduino.app_peripherals.microphone.alsa_microphone import (
     _nth_plugged_microphone,
     _alsa_format_name_to_dtype,
     _dtype_to_alsa_format_name,
+    _usb_pcm_devices,  # The real one: the autouse mock_usb_cards fixture patches the module attribute
 )
 from arduino.app_peripherals.microphone.errors import MicrophoneConfigError, MicrophoneOpenError
 
@@ -72,6 +73,20 @@ class TestALSAMicrophoneDeviceResolution:
 
         assert "Subdevice in 'hw:0,0,1' is ignored" in mock_logger.warning.call_args.args[0]
 
+    @pytest.mark.parametrize(
+        "device, message",
+        [
+            (1, "Using microphone plughw:CARD=AnotherCard,DEV=0 (requested as 1)"),
+            ("plughw:CARD=SomeCard,DEV=0", "Using microphone plughw:CARD=SomeCard,DEV=0"),  # Already stable
+        ],
+    )
+    def test_reports_the_microphone_in_use(self, device, message):
+        """Test that the resolved microphone is logged along with the identifier it was requested as."""
+        with patch("arduino.app_peripherals.microphone.alsa_microphone.logger") as mock_logger:
+            ALSAMicrophone(device=device)
+
+        mock_logger.info.assert_any_call(message)
+
     def test_default_device_resolves_to_first_plugged(self):
         """Test that the default device selects the first plugged microphone."""
         assert ALSAMicrophone().device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
@@ -85,6 +100,13 @@ class TestALSAMicrophoneDeviceResolution:
             mic = ALSAMicrophone(device="/dev/snd/by-id/usb-Some-Mic-00")
 
         assert mic.device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
+
+    def test_card_index_resolves_by_alsa_index(self, cards_with_gap):
+        assert ALSAMicrophone(device="hw:2,0").device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
+
+    def test_unplugged_card_index_raises(self, cards_with_gap):
+        with pytest.raises(MicrophoneOpenError, match=r"Card index 1 not found. Available: \[0, 2, 3\]"):
+            ALSAMicrophone(device="hw:1,0")
 
     @pytest.mark.parametrize(
         "device, message",
@@ -397,6 +419,71 @@ class TestALSAMicrophoneUsbDiscovery:
         for listed in ALSAMicrophone.list_devices():
             assert ALSAMicrophone(device=listed).device_stable_ref == listed
 
+    def test_lists_usb_microphones_pipewire_does_not_expose(self, mock_pw_dump, mock_usb_cards):
+        # A USB headset in an output-only PipeWire profile has no Audio/Source.
+        mock_pw_dump(usb_ids=())
+        mock_usb_cards(0)
+
+        assert ALSAMicrophone.list_usb_devices() == ["plughw:CARD=SomeCard,DEV=0"]
+
+    def test_default_device_resolves_when_pipewire_does_not_expose_it(self, mock_pw_dump, mock_usb_cards):
+        mock_pw_dump(usb_ids=())
+        mock_usb_cards(0)
+
+        assert ALSAMicrophone(device=0).device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
+
+    def test_alsa_microphones_follow_pipewire_ones_without_duplicates(self, mock_pw_dump, mock_usb_cards):
+        mock_pw_dump(usb_ids=(50,))  # SomeCard only
+        mock_usb_cards(0, 1)
+
+        assert ALSAMicrophone.list_usb_devices() == ["plughw:CARD=SomeCard,DEV=0", "plughw:CARD=AnotherCard,DEV=0"]
+
+    def test_lists_usb_microphones_without_pipewire(self, mock_usb_cards):
+        mock_usb_cards(1)
+
+        with patch("arduino.app_peripherals.microphone.utils.subprocess.run", side_effect=FileNotFoundError):
+            assert ALSAMicrophone.list_usb_devices() == ["plughw:CARD=AnotherCard,DEV=0"]
+
+    def test_non_usb_cards_are_not_listed(self, mock_pw_dump):
+        # The fixture reports no USB card in sysfs, as for a built-in codec.
+        mock_pw_dump(usb_ids=())
+
+        assert ALSAMicrophone.list_usb_devices() == []
+
+    def test_lists_usb_microphones_on_cards_with_gap(self, mock_pw_dump, mock_usb_cards, cards_with_gap):
+        mock_pw_dump(usb_ids=(50, 60), usb_cards=(0, 2))
+        mock_usb_cards(0, 2)
+
+        assert ALSAMicrophone.list_usb_devices() == ["plughw:CARD=SomeCard,DEV=0", "plughw:CARD=AnotherCard,DEV=0"]
+
+
+class TestUsbPcmDevicesFromSysfs:
+    """USB PCM devices come from the sysfs sound class, in card and device order."""
+
+    def test_lists_pcm_devices_of_usb_cards_only(self, tmp_path, monkeypatch):
+        sound_class = tmp_path / "class" / "sound"
+        sound_class.mkdir(parents=True)
+        cards = {
+            "devices/platform/sound/sound/card0": ["pcmC0D0c", "pcmC0D0p", "controlC0"],
+            "devices/xhci-hcd.2.auto/usb1/1-1/1-1:1.0/sound/card1": ["pcmC1D1c", "pcmC1D0p", "pcmC1D0c", "controlC1"],
+        }
+        for card_path, entries in cards.items():
+            for entry in entries:
+                (tmp_path / card_path / entry).mkdir(parents=True)
+                try:
+                    (sound_class / entry).symlink_to(tmp_path / card_path / entry, target_is_directory=True)
+                except OSError:
+                    pytest.skip("symlinks are not available on this system")
+        monkeypatch.setattr("arduino.app_peripherals.microphone.alsa_microphone._SYSFS_SOUND", str(sound_class))
+
+        assert _usb_pcm_devices("c") == [(1, 0), (1, 1)]
+        assert _usb_pcm_devices("p") == [(1, 0)]
+
+    def test_missing_sysfs_lists_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("arduino.app_peripherals.microphone.alsa_microphone._SYSFS_SOUND", str(tmp_path / "missing"))
+
+        assert _usb_pcm_devices("c") == []
+
 
 class TestALSAMicrophoneJackResolution:
     """Built-in (jack) resolution to a pipewire:NODE stable ref, gated on media-carrier."""
@@ -536,6 +623,12 @@ class TestNthPluggedMicrophone:
         # Second position has no USB device and there is no built-in fallback without media carrier.
         with pytest.raises(MicrophoneOpenError):
             _nth_plugged_microphone(1)
+
+    def test_counts_usb_microphones_pipewire_does_not_expose(self, mock_pw_dump, mock_usb_cards):
+        mock_pw_dump(usb_ids=(50,))
+        mock_usb_cards(0, 1)
+
+        assert _nth_plugged_microphone(1) == "usb:2"
 
     def test_usb_precedence_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
