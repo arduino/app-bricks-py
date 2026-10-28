@@ -1,7 +1,7 @@
 # Running ONNX and LiteRT models on the NPU from an Arduino App
 
 This guide shows how an App's own Python code (`python/main.py`) can run a model on the
-board's Hexagon NPU, like VENTUNO Q. It covers two frameworks:
+board's Hexagon NPU, for example on VENTUNO Q. It covers two frameworks:
 
 1. [ONNX Runtime](#1-onnx-runtime) with the QNN execution provider
 2. [LiteRT](#2-litert) (TensorFlow Lite) with the QNN delegate
