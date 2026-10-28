@@ -144,59 +144,89 @@ def assess_readings():
 App.run(assess_readings)
 ```
 
-### Setting an Air Conditioner from a Climate Sensor
+### Heating: Would a Person Feel Cold?
 
-The temperature and humidity of a room go into a sentence, `decide()` asks three yes/no questions about it in one request and the app turns the answers into the air conditioner mode. The model judges well whether a person would feel cold and whether the air is too humid, but not when a room is too hot: that question carries its threshold, and the model compares a reading with a threshold written in the question very reliably.
+The readings of a temperature and humidity sensor go into a sentence with their units. `check()` tells whether a person in the room would feel cold, and the app turns the heating on or off.
 
 ```python
-from arduino.app_bricks.decision_model import Answers, DecisionModel, Noul
+from arduino.app_bricks.decision_model import DecisionModel
 from arduino.app_utils import App
 
 decision_model = DecisionModel()
 
-CLIMATE_QUESTIONS = {
-    "cold": Noul(
+ROOM = "Living room: temperature 16.0 °C, relative humidity 55 %."
+
+
+def control_heating():
+    cold = decision_model.check(
+        state=ROOM,
         instructions="Would a person in this room feel cold?",
         true_description="The room is colder than what people find comfortable",
         false_description="The room is comfortable or warm",
-    ),
-    "hot": Noul(instructions="Is the temperature in this room above 26 °C?"),
-    "humid": Noul(
-        instructions="Is the air in this room too humid?",
-        true_description="The humidity is higher than what people find comfortable",
-        false_description="The humidity is comfortable or low",
-    ),
-}
-
-# Readings of a temperature (°C) and humidity (%) sensor
-READINGS = [(16.0, 55), (23.0, 80), (32.0, 35), (23.0, 55)]
-
-
-def air_conditioner_mode(answers: Answers) -> str:
-    if answers.noul("cold").is_true:
-        return "heat"
-    if answers.noul("hot").is_true:
-        return "cool"
-    if answers.noul("humid").is_true:
-        return "dehumidify"
-    return "off"
-
-
-def control_climate():
-    for temperature_c, humidity_pct in READINGS:
-        answers = decision_model.decide(
-            state=f"Living room: temperature {temperature_c} °C, relative humidity {humidity_pct} %.",
-            questions=CLIMATE_QUESTIONS,
-        )
-        cold = answers.noul("cold")
-        print(
-            f"{temperature_c} °C, {humidity_pct} % humidity: a person feels cold {cold.is_true} ({cold.probability:.2f}),"
-            f" air conditioner: {air_conditioner_mode(answers)}"
-        )
+    )
+    if cold.is_true:
+        print(f"A person would feel cold (probability {cold.probability:.2f}): heating on")
+    else:
+        print(f"The room is comfortable (probability of feeling cold {cold.probability:.2f}): heating off")
     raise StopIteration
 
 
-App.run(control_climate)
+App.run(control_heating)
+```
+
+### Cooling: Is the Room above a Threshold?
+
+The model does not judge reliably by itself when a room is too hot, but it compares a reading with a threshold written in the question very reliably: put your comfort limit in the question.
+
+```python
+from arduino.app_bricks.decision_model import DecisionModel
+from arduino.app_utils import App
+
+decision_model = DecisionModel()
+
+ROOM = "Living room: temperature 32.0 °C, relative humidity 35 %."
+
+
+def control_cooling():
+    hot = decision_model.check(state=ROOM, instructions="Is the temperature in this room above 26 °C?")
+    if hot.is_true:
+        print(f"Above 26 °C (probability {hot.probability:.2f}): cooling on")
+    else:
+        print(f"Not above 26 °C (probability {hot.probability:.2f}): cooling off")
+    raise StopIteration
+
+
+App.run(control_cooling)
+```
+
+### Dehumidifying: Is the Air Too Humid?
+
+The same sentence answers a question about the humidity: `check()` tells whether the air is too humid, and the app turns the dehumidifier on or off.
+
+```python
+from arduino.app_bricks.decision_model import DecisionModel
+from arduino.app_utils import App
+
+decision_model = DecisionModel()
+
+ROOM = "Living room: temperature 23.0 °C, relative humidity 80 %."
+
+
+def control_dehumidifier():
+    humid = decision_model.check(
+        state=ROOM,
+        instructions="Is the air in this room too humid?",
+        true_description="The humidity is higher than what people find comfortable",
+        false_description="The humidity is comfortable or low",
+    )
+    if humid.is_true:
+        print(f"The air is too humid (probability {humid.probability:.2f}): dehumidifier on")
+    else:
+        print(f"The humidity is comfortable (probability of too humid {humid.probability:.2f}): dehumidifier off")
+    raise StopIteration
+
+
+App.run(control_dehumidifier)
 ```
 
 ### Asking about a Camera Image
