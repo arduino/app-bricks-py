@@ -32,6 +32,12 @@ listing rewrites it: a download when it starts (its ".download" marker makes the
 cache, written best effort: the listing is the authority, and a failed write never
 fails the action that triggered it. A SIGKILLed download leaves it saying
 "downloading", which is what the listing says too, as the marker survives as well.
+
+Every release writes the same file, but builds it from its own models-list.yaml: the
+catalog, the declared sizes and the outdated check of one release are not those of
+another. The file names the release that wrote it (``bricks_release_version``, the
+tag of the models-downloader image), so a reader expecting another release runs the
+list action instead of trusting it.
 """
 
 import argparse
@@ -89,6 +95,9 @@ MODELS_ROOT_DIR = "/models-root"
 # without the lock still never sees a partial file, only a possibly older one.
 LISTING_NAME = "models.yaml"
 LISTING_LOCK_NAME = f"{LISTING_NAME}.lock"
+
+# The release of this image, set from its tag at build time; unset outside the image.
+RELEASE_VERSION_ENV = "BRICKS_RELEASE_VERSION"
 
 # "model_origin" says where a listed model comes from, using the same two values the
 # ".arduino_metadata.yaml" record does. A model declared in models-list.yaml is curated
@@ -728,16 +737,18 @@ _LISTING_HEADER = (
 def write_listing(models_dir, results):
     """Write *results* to ``<models_dir>/models.yaml`` atomically; return its path.
 
-    The document is the ``models`` list and nothing else, dumped like the
+    The document is the release that wrote it, ``bricks_release_version`` (null outside
+    the image, which matches no release), and the ``models`` list, dumped like the
     ".arduino_metadata.yaml" records: the ``event`` wrapper belongs to the stdout
     protocol of the list action, not to a file.
     """
     path = os.path.join(models_dir, LISTING_NAME)
     tmp_path = f"{path}.tmp"
+    document = {"bricks_release_version": os.environ.get(RELEASE_VERSION_ENV) or None, "models": results}
     with open(tmp_path, "w") as f:
         f.write(_LISTING_HEADER)
         # width: keep long URLs and paths on one line rather than folded.
-        yaml.safe_dump({"models": results}, f, sort_keys=False, default_flow_style=False, allow_unicode=True, width=4096)
+        yaml.safe_dump(document, f, sort_keys=False, default_flow_style=False, allow_unicode=True, width=4096)
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp_path, path)

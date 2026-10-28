@@ -33,3 +33,8 @@ WORKDIR /app
 
 ENV HOME=/app
 ENV USER=arduino
+
+# The release this image and its catalog belong to, stamped in the listing it writes.
+# Declared last so a new version does not invalidate the cached layers above.
+ARG BASE_IMAGE_VERSION
+ENV BRICKS_RELEASE_VERSION=${BASE_IMAGE_VERSION}
