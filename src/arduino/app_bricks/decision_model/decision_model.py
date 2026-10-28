@@ -713,7 +713,8 @@ class DecisionModel:
 
         Args:
             state (str | Mapping[str, Json] | Sequence[Json]): What the questions are about: free text, or a
-                JSON-serializable dict or list (e.g. sensor readings), sent to the model untouched. With an
+                JSON-serializable dict or list (e.g. a support ticket), sent to the model untouched. Numeric
+                readings are read much better in a sentence with their units than in a JSON object. With an
                 image, the state says what the image is (e.g. "A frame of the garage camera").
             questions (Mapping[str, Question]): The questions keyed by an id of your choice; each value is a
                 `Choice`, `Score` or `Noul`.
