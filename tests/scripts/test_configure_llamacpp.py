@@ -17,6 +17,7 @@ from __future__ import annotations
 import configparser
 import importlib.util
 import struct
+import tracemalloc
 from pathlib import Path
 
 import pytest
@@ -56,7 +57,7 @@ CTX_SIZES = (4096, 8192, 16384)
 # only prove that the fake matches the reader.
 # --------------------------------------------------------------------------- #
 
-GGUF_UINT32, GGUF_BOOL, GGUF_STRING, GGUF_ARRAY = 4, 7, 8, 9
+GGUF_UINT32, GGUF_FLOAT32, GGUF_BOOL, GGUF_STRING, GGUF_ARRAY = 4, 6, 7, 8, 9
 Q4_0, Q3_K, Q6_K, Q8_0, F32 = 2, 11, 14, 8, 0
 
 
@@ -71,12 +72,14 @@ def _gguf_value(value) -> bytes:
         return struct.pack("<IB", GGUF_BOOL, int(value))
     if isinstance(value, int):
         return struct.pack("<II", GGUF_UINT32, value)
+    if isinstance(value, float):
+        return struct.pack("<If", GGUF_FLOAT32, value)
     if isinstance(value, str):
         return struct.pack("<I", GGUF_STRING) + _gguf_string(value)
     if isinstance(value, list):
-        item_type = GGUF_BOOL if isinstance(value[0], bool) else GGUF_UINT32
+        item_type = _gguf_value(value[0])[:4]  # the tag of the first item, for all of them
         body = b"".join(_gguf_value(item)[4:] for item in value)
-        return struct.pack("<IIQ", GGUF_ARRAY, item_type, len(value)) + body
+        return struct.pack("<I", GGUF_ARRAY) + item_type + struct.pack("<Q", len(value)) + body
     raise TypeError(value)
 
 
@@ -110,11 +113,14 @@ def attention_model(
     recurrent_layers: int = 0,
     window: int = 0,
     architecture: str = "llama",
+    extra_metadata: dict | None = None,
 ) -> Path:
     """A plain attention model: *layers* layers, all of them caching, plus the
-    recurrent layers that do not. Its weights are one q4_0 tensor of *weight_mib*."""
+    recurrent layers that do not. Its weights are one q4_0 tensor of *weight_mib*.
+    *extra_metadata* goes right after the architecture, ahead of every key the sizing reads."""
     metadata = {
         "general.architecture": architecture,
+        **(extra_metadata or {}),
         f"{architecture}.block_count": layers + recurrent_layers,
         f"{architecture}.attention.head_count": kv_heads,
         f"{architecture}.attention.head_count_kv": kv_heads,
@@ -345,6 +351,59 @@ def test_an_unreadable_header_is_not_a_model(tmp_path):
 
     with pytest.raises(ValueError):
         read_model_shape(tmp_path / "m.gguf")
+
+
+# --------------------------------------------------------------------------- #
+# The tokenizer
+#
+# Most of a header's bytes are the vocabulary, and none of the sizing: a gemma-4 header
+# holds ~800k token strings, scores and types, which took 1.1 s per model to decode on a
+# VENTUNO Q. They are skipped instead, and whatever follows them must read the same.
+# --------------------------------------------------------------------------- #
+
+
+def vocabulary(size: int) -> dict:
+    """The tokenizer arrays of a *size*-token vocabulary, as llama.cpp writes them."""
+    return {
+        "tokenizer.ggml.tokens": [f"<token{i}>" for i in range(size)],
+        "tokenizer.ggml.scores": [float(-i) for i in range(size)],
+        "tokenizer.ggml.token_type": [1] * size,
+    }
+
+
+def test_a_vocabulary_is_skipped_rather_than_decoded(tmp_path):
+    gguf = attention_model(tmp_path / "m.gguf", layers=4, extra_metadata=vocabulary(100_000))
+    configure_llamacpp.ggml_types()  # probed once per process: not part of the read
+
+    tracemalloc.start()
+    try:
+        metadata, _ = configure_llamacpp.read_gguf(gguf)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+    assert metadata["tokenizer.ggml.tokens"] is None
+    assert peak < MIB, f"{peak / MIB:.1f} MiB allocated: the vocabulary was decoded"
+
+
+def test_what_follows_a_skipped_array_reads_as_if_it_were_not_there(tmp_path):
+    """Strings are skipped by their lengths, numbers by their width, arrays of arrays
+    item by item: a skip that lands one byte off turns every key and tensor after it
+    into garbage."""
+    skipped = vocabulary(5000) | {"test.nested": [[1, 2]] * 2000}
+    with_arrays = attention_model(tmp_path / "arrays.gguf", layers=32, window=1024, extra_metadata=skipped)
+    without = attention_model(tmp_path / "plain.gguf", layers=32, window=1024)
+
+    assert read_model_shape(with_arrays) == read_model_shape(without)
+
+
+def test_a_header_cut_inside_its_vocabulary_is_refused(tmp_path):
+    """A seek past the end of the file does not fail by itself: the read after it must."""
+    gguf = attention_model(tmp_path / "m.gguf", layers=4, extra_metadata=vocabulary(5000))
+    gguf.write_bytes(gguf.read_bytes()[:30_000])
+
+    with pytest.raises((ValueError, struct.error)):
+        read_model_shape(gguf)
 
 
 # --------------------------------------------------------------------------- #
@@ -994,6 +1053,24 @@ def test_detect_hexagon_sessions_ignores_models_it_cannot_read(tmp_path, capsys)
 
     assert detect_hexagon_sessions(models, 4096) == 1
     assert "broken: cannot size it from its GGUF header" in capsys.readouterr().err
+
+
+def test_models_that_share_a_gguf_read_its_header_once(tmp_path, monkeypatch, capsys):
+    """<name> and <name>-multimodal are the same file, sized the same way."""
+    attention_model(tmp_path / "m.gguf", layers=32)
+    (tmp_path / "m-mmproj.gguf").write_bytes(b"")
+    models = configure_llamacpp.find_models(tmp_path)
+    reads = []
+    read = configure_llamacpp.read_model_shape
+    monkeypatch.setattr(configure_llamacpp, "read_model_shape", lambda path: reads.append(path) or read(path))
+
+    assert detect_hexagon_sessions(models, 4096) == 1
+
+    assert sorted(models) == ["m", "m-multimodal"]
+    assert reads == [tmp_path / "m.gguf"]
+    diagnostics = capsys.readouterr().err
+    assert "  m: 100 MiB on the NPU" in diagnostics
+    assert "  m-multimodal: 100 MiB on the NPU" in diagnostics
 
 
 def test_detect_ctx_size_halves_the_context_until_the_models_fit(tmp_path, capsys):

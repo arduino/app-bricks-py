@@ -204,9 +204,11 @@ GGUF_SCALARS = {
 }
 # fmt: on
 GGUF_BOOL, GGUF_STRING, GGUF_ARRAY = 7, 8, 9
+GGUF_STRING_LENGTH = struct.Struct("<Q")
 
-# Metadata arrays longer than this are token vocabularies: they are read past without
-# being kept, so that a 150k-entry vocabulary costs no memory here.
+# Metadata arrays longer than this are token vocabularies: they are skipped without being
+# decoded. A gemma-4 header holds ~1.3M of those values (token and merge strings, scores,
+# types); decoding them one by one took 1.1 s per model on a VENTUNO Q, skipping them 0.26 s.
 MAX_KEPT_ARRAY = 1024
 
 
@@ -241,9 +243,25 @@ class GgufReader:
             return self.string()
         if value_type == GGUF_ARRAY:
             item_type, count = self.u32(), self.u64()
-            items = [self.value(item_type) for _ in range(count)]
-            return items if count <= MAX_KEPT_ARRAY else None
+            if count > MAX_KEPT_ARRAY:
+                self.skip(item_type, count)
+                return None
+            return [self.value(item_type) for _ in range(count)]
         raise ValueError(f"unknown GGUF value type {value_type}")
+
+    def skip(self, item_type: int, count: int) -> None:
+        """Move past *count* values of *item_type* without decoding them."""
+        if item_type in GGUF_SCALARS:
+            self.file.seek(count * GGUF_SCALARS[item_type][1], os.SEEK_CUR)
+        elif item_type == GGUF_STRING:
+            # Once per token and merge: with the calls bound locally rather than through
+            # u64(), a gemma-4 header took 0.26 s instead of 0.42 s on a VENTUNO Q.
+            read, seek, length = self.file.read, self.file.seek, GGUF_STRING_LENGTH.unpack
+            for _ in range(count):
+                seek(length(read(8))[0], os.SEEK_CUR)
+        else:
+            for _ in range(count):
+                self.value(item_type)
 
 
 class Tensor(NamedTuple):
@@ -716,14 +734,23 @@ def model_sizings(models):
     by file size: less accurate, but it is what the runner did before it read headers, and
     it always produces a number. Skipping the model instead would be the one unsafe
     outcome, since the server would then be started with too few sessions to load it.
+
+    Each GGUF is read once, however many models share it: ``<name>`` and
+    ``<name>-multimodal`` are the same file.
     """
+    shapes = {}
     for name, entry in sorted(models.items()):
         path = Path(entry["model"])
-        try:
-            yield name, read_model_shape(path)
+        if path not in shapes:
+            try:
+                shapes[path] = read_model_shape(path)
+            except Exception as e:
+                shapes[path] = e
+        shape = shapes[path]
+        if isinstance(shape, ModelShape):
+            yield name, shape
             continue
-        except Exception as e:
-            reason = f"{type(e).__name__}: {e}"
+        reason = f"{type(shape).__name__}: {shape}"
         try:
             fallback = FileSizeSizing(name, path.stat().st_size)
         except OSError as e:
