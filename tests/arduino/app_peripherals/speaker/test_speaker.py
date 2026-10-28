@@ -325,6 +325,12 @@ class TestClaimFirstAvailableSpeaker:
         with pytest.raises(SpeakerOpenError):
             _claim_first_available_speaker()
 
+    def test_claims_usb_speakers_pipewire_does_not_expose(self, mock_pw_dump, mock_usb_cards):
+        mock_pw_dump(usb_ids=())
+        mock_usb_cards(0)
+
+        assert _claim_first_available_speaker() == "plughw:CARD=SomeCard,DEV=0"
+
     def test_never_selects_bluetooth_or_hdmi_speakers(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
         mock_pw_dump(builtin_ids=(54,), bluetooth_ids=(50,), hdmi_ids=(52,))

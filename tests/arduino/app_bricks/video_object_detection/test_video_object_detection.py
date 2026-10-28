@@ -4,12 +4,15 @@
 
 import base64
 import json
+import shutil
+import subprocess
 import threading
 import time
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from websockets.exceptions import InvalidHandshake
+from websockets.exceptions import ConnectionClosedOK, InvalidHandshake
 
 from arduino.app_bricks.video_objectdetection import VideoObjectDetection
 
@@ -626,3 +629,72 @@ def test_override_threshold_accepts_an_integer(detector: VideoObjectDetection, m
     detector.override_threshold(1)
 
     assert json.loads(connection.send.call_args[0][0])["value"] == 1
+
+
+def test_detection_loop_reconnects_quickly_while_the_runner_starts(detector: VideoObjectDetection, monkeypatch: pytest.MonkeyPatch):
+    """The model runner opens its WebSocket port only after the first frame: the refused attempts before that must add well under 2 s."""
+    delays: list[float] = []
+    monkeypatch.setattr("arduino.app_bricks.video_objectdetection.time.sleep", delays.append)
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.recv.side_effect = ConnectionClosedOK(None, None)  # Runner closes cleanly: the loop ends
+    attempts = 0
+
+    def fake_connect(uri):
+        nonlocal attempts
+        attempts += 1
+        if attempts <= 3:
+            raise ConnectionRefusedError
+        return connection
+
+    monkeypatch.setattr("arduino.app_bricks.video_objectdetection.connect", fake_connect)
+    detector._is_running.set()
+
+    detector.object_detection_loop()
+
+    assert attempts == 4
+    assert sum(delays) <= 1.5
+
+
+# ---------------------------------------------------------------------------
+# Model runner health probe
+# ---------------------------------------------------------------------------
+
+# /proc/net/tcp lines captured on a UNO Q: port 5050 (hex 13BA) listening, the same port once the
+# app's stream is connected (tcpserversrc then stops listening), and the preview port 4912 listening.
+_TCP_HEADER = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode"
+_TCP_5050_LISTEN = "   1: 00000000:13BA 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 117796"
+_TCP_5050_SERVING = "   1: 020013AC:13BA 030013AC:8EC2 01 00000000:00000000 00:00000000 00000000  1000        0 117918"
+_TCP_4912_LISTEN = "   2: 00000000:1330 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 117800"
+
+
+def _health_probe(compose_name: str) -> str:
+    """The runner's CMD-SHELL health probe from the brick's compose file."""
+    import yaml
+
+    import arduino.app_bricks.video_objectdetection as brick_module
+
+    compose = yaml.safe_load((Path(brick_module.__file__).parent / compose_name).read_text())
+    (service,) = compose["services"].values()
+    kind, command = service["healthcheck"]["test"]
+    assert kind == "CMD-SHELL"
+    return command
+
+
+def _probe_exit_code(command: str, tcp_lines: list[str], tmp_path: Path) -> int:
+    """Run the probe with a fake /proc/net/tcp holding the given lines."""
+    fake_tcp = tmp_path / "tcp"
+    fake_tcp.write_text("\n".join([_TCP_HEADER, *tcp_lines]) + "\n")
+    return subprocess.run(["sh", "-c", command.replace("/proc/net/tcp", str(fake_tcp))], capture_output=True).returncode
+
+
+@pytest.mark.skipif(shutil.which("sh") is None or shutil.which("grep") is None, reason="the probe is a shell command")
+@pytest.mark.parametrize("compose_name", ["brick_compose.yaml", "brick_compose.ventunoq.yaml"])
+def test_runner_health_probe_holds_while_the_stream_is_connected(compose_name: str, tmp_path: Path):
+    """The probe passes while port 5050 is listening and while it is serving the app's stream, fails otherwise."""
+    command = _health_probe(compose_name)
+
+    assert _probe_exit_code(command, [_TCP_5050_LISTEN, _TCP_4912_LISTEN], tmp_path) == 0
+    assert _probe_exit_code(command, [_TCP_5050_SERVING, _TCP_4912_LISTEN], tmp_path) == 0
+    assert _probe_exit_code(command, [_TCP_4912_LISTEN], tmp_path) != 0
+    assert _probe_exit_code(command, [], tmp_path) != 0

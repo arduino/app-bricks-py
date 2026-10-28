@@ -261,6 +261,109 @@ models:
       - id: "arduino:video_object_detection"
         model_configuration:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano-qnn.eim"
+ - yolox-small-qnn-object-tracker:
+    name : "General purpose object tracker - YoloX small"
+    description: "General purpose object tracking model based on YoloX-Small. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
+    model_labels:
+      - airplane
+      - apple
+      - backpack
+      - banana
+      - baseball bat
+      - baseball glove
+      - bear
+      - bed
+      - bench
+      - bicycle
+      - bird
+      - boat
+      - book
+      - bottle
+      - bowl
+      - broccoli
+      - bus
+      - cake
+      - car
+      - carrot
+      - cat
+      - cell phone
+      - chair
+      - clock
+      - couch
+      - cow
+      - cup
+      - dining table
+      - dog
+      - donut
+      - elephant
+      - fire hydrant
+      - fork
+      - frisbee
+      - giraffe
+      - hair drier
+      - handbag
+      - hot dog
+      - horse
+      - keyboard
+      - kite
+      - knife
+      - laptop
+      - microwave
+      - motorcycle
+      - mouse
+      - orange
+      - oven
+      - parking meter
+      - person
+      - pizza
+      - potted plant
+      - refrigerator
+      - remote
+      - sandwich
+      - scissors
+      - sheep
+      - sink
+      - skateboard
+      - skis
+      - snowboard
+      - spoon
+      - sports ball
+      - stop sign
+      - suitcase
+      - surfboard
+      - teddy bear
+      - tennis racket
+      - tie
+      - toaster
+      - toilet
+      - toothbrush
+      - traffic light
+      - train
+      - truck
+      - tv
+      - umbrella
+      - vase
+      - wine glass
+      - zebra
+    metadata:
+      model_size_mb: 48
+      source: "edgeimpulse"
+      image-resolution: "640x640"
+      hw_acceleration_backend: "qnn"
+      ei-project-id: 1141365
+      ei-impulse-id: 1
+      ei-model-url: "https://studio.edgeimpulse.com/public/1141365/live"
+      source-model-id: "yolox"
+      source-model-url: "https://aihub.qualcomm.com/models/yolox"
+      model_publisher: "qualcomm-ai-hub"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true
+    bricks:
+      - id: "arduino:video_object_tracking"
+        model_configuration:
+          "EI_V_OBJ_TRACKING_MODEL": "/models/ootb/ei/yolo-x-small-qnn-tracking.eim"
  - mobilenet-image-classification:
     name : "General purpose image classification"
     description: "General purpose image classification model based on MobileNetV2. This model is trained on the ImageNet dataset and can classify images into 1000 categories."
@@ -2007,6 +2110,30 @@ models:
        source: "huggingface"
        source-model-id: "Qwen3.5-0.8B-Q4_0"
        source-model-url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF"
+ - "llamacpp:MiniCPM5-2B-Q4_K_M":
+    name : "MiniCPM5 2B"
+    description: >-
+      MiniCPM5 2B is a dense two billion parameter language model developed by OpenBMB,
+      built for on-device and resource-constrained deployment.
+      It supports English and Chinese and is strong at coding, mathematics, long-context understanding and tool use.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF/blob/2079a22f3beaa4e306449978533478fe0522f4b3/MiniCPM5-2B-Q4_K_M.gguf"
+              models_repository: "llamacpp"
+              model_directory: "openbmb/MiniCPM5-2B-GGUF"
+    metadata:
+      model_size_mb: 1489
+      source: "huggingface"
+      source-model-id: "MiniCPM5-2B-GGUF"
+      source-model-url: "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF"
  - "ei:yolox-small-qnn-object-detection":
     name : "General purpose object detection - YoloX small"
     description: "General purpose object detection model based on YoloX-Small. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."

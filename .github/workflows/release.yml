@@ -2,7 +2,7 @@ name: Release
 
 run-name: "Release ${{ inputs.version }}"
 
-# A release is started by hand from the branch to release. The release/X.Y.Z
+# A release is started by hand from the branch to release. The bricks/X.Y.Z
 # tag is created by the last job, so it exists only once everything succeeded.
 on:
   workflow_dispatch:
@@ -41,7 +41,7 @@ jobs:
         id: release
         run: |
           VERSION="${{ inputs.version }}"
-          TAG_REF="release/$VERSION"
+          TAG_REF="bricks/$VERSION"
 
           # The version is stamped into the wheel: it must be a plain X.Y.Z, with
           # an optional rcN, aN or bN prerelease suffix which also disables :latest

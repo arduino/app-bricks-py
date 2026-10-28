@@ -139,11 +139,13 @@ group "default" {
     "tps",
     "aihub-onnx-models-runner",
     "ocr-runner",
+    "edge-impulse-runner",
     "qairt-common-base",
     "aihub-litert-models-runner",
     "gesture-recognition-runner",
     "pose-estimation-runner",
     "llamacpp-npu-runner",
+    "edge-impulse-npu-runner",
     "ei-models-runner",
     "ei-qnn-models-runner",
   ]
@@ -239,6 +241,15 @@ target "ocr-runner" {
   contexts   = parent_context("aihub-onnx-models-runner")
 }
 
+target "edge-impulse-runner" {
+  inherits   = ["_downstream"]
+  context    = "containers/ai/edge-impulse-runner"
+  tags       = image_tags("edge-impulse-runner")
+  cache-from = cache_from("edge-impulse-runner")
+  cache-to   = cache_to("edge-impulse-runner")
+  contexts   = parent_context("python-slim")
+}
+
 target "qairt-common-base" {
   inherits   = ["_common"]
   context    = "containers/base/qairt-common-base"
@@ -284,6 +295,18 @@ target "llamacpp-npu-runner" {
   cache-from = cache_from("llamacpp-npu-runner")
   cache-to   = cache_to("llamacpp-npu-runner")
   contexts   = parent_context("qairt-common-base")
+}
+
+target "edge-impulse-npu-runner" {
+  inherits   = ["_downstream"]
+  context    = "containers/ai/edge-impulse-npu-runner"
+  tags       = image_tags("edge-impulse-npu-runner")
+  cache-from = cache_from("edge-impulse-npu-runner")
+  cache-to   = cache_to("edge-impulse-npu-runner")
+  contexts = merge(
+    { server = "containers/ai/edge-impulse-runner" },
+    parent_context("qairt-common-base"),
+  )
 }
 
 target "ei-models-runner" {

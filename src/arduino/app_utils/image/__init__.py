@@ -15,6 +15,7 @@ __all__ = [
     "get_image_bytes",
     "draw_bounding_boxes",
     "draw_anomaly_markers",
+    "label_font",
     "letterbox",
     "resize",
     "flip_h",

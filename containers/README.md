@@ -25,7 +25,9 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 | Container | Group | Built `FROM` | Purpose |
 |---|---|---|---|
 | `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
-| `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages |
+| `edge-impulse-runner` | ai | `python-slim` | Edge Impulse multi-model inference server: its source, and its CPU image |
+| `edge-impulse-npu-runner` | ai | `qairt-common-base` | Edge Impulse multi-model inference server, Hexagon NPU (QNN) image of the `edge-impulse-runner` source |
+| `python-base` | base | `python-slim` | System deps, non-root user, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages |
 | `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
 | `aihub-framework` | base | `scratch` | Layer, never run: the `aihub` runner framework and the app skeleton, copied by `aihub-litert-models-runner` and `aihub-onnx-models-runner` |
 | `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config, patches FastAPI to build its OpenAPI models on first use |
@@ -55,6 +57,8 @@ graph LR
   slim --> aihubonnx[aihub-onnx-models-runner] --> ocr[ocr-runner]
   fw[aihub-framework] -.-> aihub
   fw -.-> aihubonnx
+  slim --> edgeimpulserunner[edge-impulse-runner]
+  qairt --> edgeimpulsenpurunner[edge-impulse-npu-runner]
 ```
 
 `ei-models-runner` and `ei-qnn-models-runner` build on external Edge Impulse images and have no upstream
@@ -64,6 +68,15 @@ Dashed edges add a layer (see below): `aihub-framework` is an image `FROM scratc
 `aihub` package at `/opt/aihub/` and the app skeleton at `/app/`. Both runner bases add its layers, put
 `/opt` on `PYTHONPATH` so their runners `import aihub`, and install the framework's dependencies from
 their own `pyproject.toml`, since the layer has no Python.
+
+### Shared source
+
+`ai/edge-impulse-runner/` holds the inference server both `edge-impulse-runner` and `edge-impulse-npu-runner`
+package, once: its `src/`, `tests/`, `pyproject.toml`, `uv.lock` and the CPU builds of the bundled models,
+from which it builds the CPU image. `ai/edge-impulse-npu-runner/` keeps its `Dockerfile`, `README.md` and
+QNN models only: its `docker-bake.hcl` target links `ai/edge-impulse-runner/` as the `server` build context
+and its Dockerfile copies from it with `COPY --from=server`; a standalone build passes
+`--build-context server=../edge-impulse-runner`.
 
 ## Anatomy of a container directory
 
@@ -76,6 +89,9 @@ repository expects, see [Adding a New Container](../.github/README.md#adding-a-n
 | `pyproject.toml` + `uv.lock` | if Python packages are installed | The Python packages the image installs, declared in `pyproject.toml` and pinned with hashes in `uv.lock` by `task deps:lock`. The Dockerfile installs from the lock, `task init:containers` installs the same packages into a local `.venv` for IDE support. Board-only packages carry an environment marker. Never install packages inline, the [dependency license scan](../scripts/licensed/README.md) only sees the lock |
 | `patches/` | no | Source patches to the installed Python packages, in `git format-patch` format, applied by the Dockerfile with GNU `patch --fuzz=0` to the locked versions the image installs, every `*.patch` of the directory in name order (see its README), with a test in `tests/containers/` that applies them the same way. A patch that stops applying exactly, after a bump of its package or once upstream has merged it, fails the build and the test: regenerate it against the new version, or drop it |
 | `tests/` | no | Python tests run by `task test` in the container's `.venv`, with the packages of its `test` dependency group; shell tests exercise the built image |
+
+An image built from the code of another container keeps only its `Dockerfile`, `README.md` and what is its own in
+its directory, and copies the rest from that container's directory through a named build context.
 
 SBOMs are not kept in the tree: they are generated from the published images at release time (see
 [SBOMs](#sboms)) and by the dev workflow as run artifacts.

@@ -70,7 +70,6 @@ ADD --checksum=${LIBCAMERA_IPA_DEB_DIGEST} ${LIBCAMERA_IPA_DEB_URL} /tmp/libcame
 ADD --checksum=${GSTREAMER_LIBCAMERA_DEB_DIGEST} ${GSTREAMER_LIBCAMERA_DEB_URL} /tmp/gstreamer1.0-libcamera.deb
 ADD --checksum=${QTIQMMFSRC_DIGEST} ${QTIQMMFSRC_URL} /tmp/qtiqmmfsrc.tar.gz
 ADD --checksum=${GSTREAMER_PLUGINS_GOOD_DEB_DIGEST} ${GSTREAMER_PLUGINS_GOOD_DEB_URL} /tmp/gstreamer-good.deb
-ADD --checksum=sha256:c53aceea2dcf5b4098099c0c4d0a061d17e178a049317b42a422b1a9f7f8eb59 https://raw.githubusercontent.com/googlefonts/opensans/bd7e37632246368c60fdcbd374dbf9bad11969b6/fonts/ttf/OpenSans-Regular.ttf /home/app/.fonts/OpenSans.ttf
 
 # Copy the installed dependencies from the 'builder' stage
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
