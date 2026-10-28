@@ -86,7 +86,7 @@ from datetime import datetime, UTC
 import yaml
 
 from common.model_size import METADATA_NAME, is_bookkeeping_name  # noqa: F401 - re-exported
-from common.models_list import MODELS_LIST_PATH, find_matching_model, load_models_list
+from common.models_list import MODELS_LIST_PATH, SAFE_LOADER, find_matching_model, load_models_list
 
 _HEADER = (
     "# Written by the Arduino models-downloader after a successful download.\n"
@@ -413,7 +413,9 @@ def read_metadata(path):
         path = os.path.join(path, METADATA_NAME)
     try:
         with open(path) as f:
-            data = yaml.safe_load(f)
+            # The listing reads every record file several times per run: the C loader
+            # parses one in a tenth of the time of the pure-Python one.
+            data = yaml.load(f, Loader=SAFE_LOADER)
     except (OSError, yaml.YAMLError):
         return None
     return data if isinstance(data, dict) else None
