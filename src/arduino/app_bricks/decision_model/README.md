@@ -113,9 +113,9 @@ def triage_ticket():
 App.run(triage_ticket)
 ```
 
-### Checking Sensor Readings
+### Grading Sensor Readings
 
-`check()` answers a yes/no question; the optional descriptions of the two answers help the model understand your domain. The readings are written in a sentence with their units, which the model reads much better than the same numbers in a JSON object.
+`score()` places the state on a scale of levels you describe, lowest first, and `level` is the description of the most probable one, ready to print. Write the limits in the levels: the model compares a reading with a limit very reliably, but does not judge reliably by itself how hot is too hot. The readings are written in a sentence with their units, which the model reads much better than the same numbers in a JSON object.
 
 ```python
 from arduino.app_bricks.decision_model import DecisionModel
@@ -126,18 +126,19 @@ decision_model = DecisionModel()
 # The readings described in a sentence, with their units
 READINGS = "Server closet: temperature 45.3 °C, humidity 71 %, cooling fan speed 0 rpm, door closed."
 
+# The levels with their limits, lowest first
+LEVELS = [
+    "Normal: below 30 °C and the cooling fan is running",
+    "Warning: between 30 °C and 40 °C, or the cooling fan is stopped",
+    "Critical: above 40 °C",
+]
+
 
 def assess_readings():
-    overheating = decision_model.check(
-        state=READINGS,
-        instructions="Is the equipment in this room at risk of overheating?",
-        true_description="Temperature or humidity are high and the cooling is not working",
-        false_description="The environment is within normal operating conditions",
-    )
-    if overheating.is_true:
-        print(f"Overheating risk (probability {overheating.probability:.2f})")
-    else:
-        print(f"All good (probability of a problem {overheating.probability:.2f})")
+    condition = decision_model.score(state=READINGS, instructions="How safe is this room for the equipment?", levels=LEVELS)
+    print(condition.level)
+    if condition.level == LEVELS[-1]:
+        print("The equipment may overheat: check the cooling now")
     raise StopIteration
 
 
