@@ -39,9 +39,11 @@ GGUF_SCALARS = {
 }
 # fmt: on
 GGUF_BOOL, GGUF_STRING, GGUF_ARRAY = 7, 8, 9
+GGUF_STRING_LENGTH = struct.Struct("<Q")
 
-# Metadata arrays longer than this are token vocabularies: they are read past without
-# being kept, so that a 150k-entry vocabulary costs no memory here.
+# Metadata arrays longer than this are token vocabularies: they are skipped without being
+# decoded, since a header holds up to ~1.3M of those values (token and merge strings,
+# scores, types) and every installed model is read at start.
 MAX_KEPT_ARRAY = 1024
 
 
@@ -76,9 +78,25 @@ class GgufReader:
             return self.string()
         if value_type == GGUF_ARRAY:
             item_type, count = self.u32(), self.u64()
-            items = [self.value(item_type) for _ in range(count)]
-            return items if count <= MAX_KEPT_ARRAY else None
+            if count > MAX_KEPT_ARRAY:
+                self.skip(item_type, count)
+                return None
+            return [self.value(item_type) for _ in range(count)]
         raise ValueError(f"unknown GGUF value type {value_type}")
+
+    def skip(self, item_type: int, count: int) -> None:
+        """Move past *count* values of *item_type* without decoding them."""
+        if item_type in GGUF_SCALARS:
+            self.file.seek(count * GGUF_SCALARS[item_type][1], os.SEEK_CUR)
+        elif item_type == GGUF_STRING:
+            # Once per token and merge: the calls are bound locally rather than made
+            # through u64().
+            read, seek, length = self.file.read, self.file.seek, GGUF_STRING_LENGTH.unpack
+            for _ in range(count):
+                seek(length(read(8))[0], os.SEEK_CUR)
+        else:
+            for _ in range(count):
+                self.value(item_type)
 
 
 def read_gguf_header(reader: GgufReader) -> tuple[int, dict]:
