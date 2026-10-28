@@ -48,14 +48,16 @@ if [ "${EFFECTIVE_CTX_SIZE}" != "${REQUESTED_CTX_SIZE}" ]; then
   export LLAMA_ARG_CTX_SIZE="${EFFECTIVE_CTX_SIZE}"
 fi
 
-# Build --device argument from GGML_HEXAGON_DEVICES (which accepts a session count, like
-# the GGML_HEXAGON_NDEV it replaced — still honored for older app configs), falling back
-# to the number of Hexagon sessions the installed models require, sized for the context the
+# Number of Hexagon sessions required by the installed models, sized for the context the
 # server will actually run at: more than 1 means at least one model too big for a session.
 # When the models cannot be sized at all, every session is configured: too many only
-# cost throughput, too few a model that does not load. Sizing reads every installed GGUF
-# header, so it only runs when no session count is configured.
+# cost throughput, too few a model that does not load.
 MAX_SESSIONS=4
+DETECTED_NDEV="$(size_models --print-ndev "${EFFECTIVE_CTX_SIZE}" "${MAX_SESSIONS}")"
+
+# Build --device argument from GGML_HEXAGON_DEVICES (which accepts a session count, like
+# the GGML_HEXAGON_NDEV it replaced — still honored for older app configs), falling back
+# to the value detected from the installed models (default: 1)
 if [ -n "${GGML_HEXAGON_DEVICES}" ]; then
   NDEV="${GGML_HEXAGON_DEVICES}"
   echo "Using externally configured GGML_HEXAGON_DEVICES=${NDEV}"
@@ -63,7 +65,7 @@ elif [ -n "${GGML_HEXAGON_NDEV}" ]; then
   NDEV="${GGML_HEXAGON_NDEV}"
   echo "Using externally configured GGML_HEXAGON_NDEV=${NDEV} (deprecated: set GGML_HEXAGON_DEVICES instead)"
 else
-  NDEV="$(size_models --print-ndev "${EFFECTIVE_CTX_SIZE}" "${MAX_SESSIONS}")"
+  NDEV="${DETECTED_NDEV}"
   echo "GGML_HEXAGON_DEVICES not set: auto-detected ${NDEV} session(s) from installed models"
 fi
 export GGML_HEXAGON_DEVICES="${NDEV}"
