@@ -8,7 +8,9 @@ Reads models-list.yaml and checks whether each model with a deployment
 section is present under /models (or a custom base path). GGUF models found under
 /models/llamacpp that no entry declares are listed too, since any Hugging Face
 repository can be downloaded ad hoc; ``model_origin`` says which of the two a listed
-model is ("built_in" or "user").
+model is ("built_in" or "user"). A GGUF with a projector next to it is two models,
+and which of them is installed also depends on its download records
+(``find_llamacpp_models``).
 
 Usage:
     python list_models.py
@@ -30,6 +32,12 @@ listing rewrites it: a download when it starts (its ".download" marker makes the
 cache, written best effort: the listing is the authority, and a failed write never
 fails the action that triggered it. A SIGKILLed download leaves it saying
 "downloading", which is what the listing says too, as the marker survives as well.
+
+Every release writes the same file, but builds it from its own models-list.yaml: the
+catalog, the declared sizes and the outdated check of one release are not those of
+another. The file names the release that wrote it (``bricks_release_version``, the
+tag of the models-downloader image), so a reader expecting another release runs the
+list action instead of trusting it.
 """
 
 import argparse
@@ -44,10 +52,20 @@ import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common.download_marker import read_marker
-from common.gguf_naming import LLAMACPP_SUBDIR, declaration_covers, declared_gguf_files, gguf_basename, gguf_model_name
+from common.gguf_naming import (
+    LLAMACPP_SUBDIR,
+    declaration_covers,
+    declared_gguf_files,
+    gguf_basename,
+    gguf_model_name,
+    multimodal_model_name,
+)
 from common.model_metadata import (
+    KIND_MULTIMODAL,
+    KIND_TEXT,
     ORIGIN_BUILTIN,
     ORIGIN_USER,
+    file_kinds,
     file_record,
     is_bookkeeping_name,
     read_metadata,
@@ -77,6 +95,9 @@ MODELS_ROOT_DIR = "/models-root"
 # without the lock still never sees a partial file, only a possibly older one.
 LISTING_NAME = "models.yaml"
 LISTING_LOCK_NAME = f"{LISTING_NAME}.lock"
+
+# The release of this image, set from its tag at build time; unset outside the image.
+RELEASE_VERSION_ENV = "BRICKS_RELEASE_VERSION"
 
 # "model_origin" says where a listed model comes from, using the same two values the
 # ".arduino_metadata.yaml" record does. A model declared in models-list.yaml is curated
@@ -368,6 +389,16 @@ def marker_covers_file(marker, filename):
     return any(isinstance(p, str) and fnmatch.fnmatch(filename, p) for p in patterns)
 
 
+def marker_is_multimodal(marker):
+    """True when *marker* stands for a multimodal model: it is fetching a projector.
+
+    A multimodal download over its installed text model fetches only the projector, so
+    its marker names that file alone and the text model keeps reading as installed.
+    """
+    patterns = marker.get("file_patterns")
+    return isinstance(patterns, list) and any(isinstance(p, str) and "mmproj" in p for p in patterns)
+
+
 def scanned_publisher(record, marker, rel_dir):
     """The publisher of a GGUF found under the llamacpp tree.
 
@@ -389,9 +420,14 @@ def scanned_publisher(record, marker, rel_dir):
 def find_llamacpp_models(models_base_dir, declarations=()):
     """Scan for .gguf models under the llamacpp directory.
 
-    Mirrors the grouping used when generating models.ini: ``*mmproj*.gguf``
-    files are not standalone models but the multimodal projection belonging to
-    the main GGUF in the same directory, so they are not listed separately.
+    Mirrors the sections written to models.ini: ``*mmproj*.gguf`` files are not
+    standalone models but the multimodal projector of the main GGUF in the same
+    directory, which makes that GGUF two models — the text model, the file alone, and
+    the multimodal model (``multimodal_model_name``), the file with the projector.
+    Which of the two is installed is decided by the download records of the file
+    (``file_kinds``): a model whose files are there but was never downloaded — the
+    text model deleted while the multimodal one stayed, a projector copied by hand —
+    is listed as not installed. A GGUF without any record is installed by its files.
 
     Models are named with ``gguf_model_name`` from their ".arduino_metadata.yaml"
     download record, mirroring the models.ini sections: the path-qualified name for
@@ -403,10 +439,11 @@ def find_llamacpp_models(models_base_dir, declarations=()):
 
     A download with no GGUF on disk yet (only a ".download" marker) is still surfaced,
     using the marker info for the entry — including when the directory does hold other
-    GGUFs, since those are other quantizations rather than the pending model.
+    GGUFs, since those are other quantizations rather than the pending model, and when
+    it holds the very GGUF a multimodal download is fetching the projector for.
 
-    Every entry carries the private ``_rel_dir``/``_filename`` location keys main()
-    matches against the models-list.yaml declarations and strips before output.
+    Every entry carries the private ``_rel_dir``/``_filename``/``_multimodal`` keys
+    main() matches against the models-list.yaml declarations and strips before output.
     """
     llamacpp_dir = os.path.join(models_base_dir, LLAMACPP_SUBDIR)
     results = []
@@ -421,15 +458,15 @@ def find_llamacpp_models(models_base_dir, declarations=()):
         rel_dir = os.path.relpath(root, llamacpp_dir).replace(os.sep, "/")
         rel_dir = "" if rel_dir == "." else rel_dir
         mmproj_files = [f for f in gguf_files if "mmproj" in f]
+        mmproj_path = os.path.join(root, mmproj_files[0]) if mmproj_files else None
+        marker_multimodal = marker is not None and marker_is_multimodal(marker)
 
-        # Whether the marker was accounted for by a GGUF listed below; if it was not, the
+        # Whether the marker was accounted for by a model listed below; if it was not, the
         # download it stands for has nothing on disk yet and is reported on its own.
         marker_listed = False
         for f in gguf_files:
             if "mmproj" in f:
                 continue
-            downloading = marker is not None and marker_covers_file(marker, f)
-            marker_listed = marker_listed or downloading
             full_path = os.path.join(root, f)
             rel_path = f"{rel_dir}/{f}" if rel_dir else f
             # The record can sit above a nested per-quantization folder, so it is
@@ -437,42 +474,65 @@ def find_llamacpp_models(models_base_dir, declarations=()):
             # directory is shared by every quantization of a repository: the file is
             # described by its own download's record, never a sibling's.
             record = file_record(full_path, llamacpp_dir)
-            model_name = gguf_model_name(rel_path, record)
-            if record is None and downloading:
-                # Landed by a download still in flight: its record is written last,
-                # so predict the finished id the way the pending branch below does —
-                # a declared location keeps the stem, anything else is qualified.
-                if not any(declaration_covers(d, n, rel_dir, f) for d, n, _mid in declarations):
-                    model_name = rel_path[: -len(".gguf")]
-            # The mmproj file in the same directory is part of this model, and the two
-            # are summed in bytes, like the downloader sizes the same files.
-            model_files = [full_path] + ([os.path.join(root, mmproj_files[0])] if mmproj_files else [])
-            disk_size_mb = size_mb(paths_size_bytes(model_files))
-            entry = {
-                "id": f"llamacpp:{model_name}",
-                "name": model_name,
-                "handler": HANDLER_HUGGING_FACE,
-                "runtime": model_runtime(HANDLER_HUGGING_FACE),
-                "model_publisher": scanned_publisher(record, marker if downloading else None, rel_dir),
-                # Found on disk. main() overrides this when the id matches a
-                # models-list.yaml entry, which makes it a curated model instead.
-                "model_origin": ORIGIN_USER,
-                "path": full_path,
-                "installed": not downloading,
-                "downloading": downloading,
-                "size_mb": listed_size_mb(not downloading, disk_size_mb, None, marker.get("size_mb") if downloading and marker else None),
-                "_rel_dir": rel_dir,
-                "_filename": f,
-            }
-            if not downloading and disk_size_mb is not None:
-                entry["disk_size_mb"] = disk_size_mb
-            if mmproj_files:
-                entry["mmproj"] = os.path.join(root, mmproj_files[0])
-            if record is not None:
-                entry["download_metadata"] = record
-            results.append(entry)
+            # Which of the two models the records say were downloaded: a model whose
+            # files are there but was never downloaded (the text model deleted while
+            # the multimodal one stayed, a projector copied by hand) is not installed.
+            # A GGUF without any record is installed by its files alone.
+            kinds = file_kinds(full_path, llamacpp_dir)
+            # The text model, then the multimodal one when a projector is there: their
+            # files are summed in bytes, like the downloader sizes the same files.
+            models = [(False, [full_path])] + ([(True, [full_path, mmproj_path])] if mmproj_path else [])
+            for multimodal, model_files in models:
+                downloading = marker is not None and any(marker_covers_file(marker, os.path.basename(p)) for p in model_files)
+                if downloading and multimodal == marker_multimodal:
+                    marker_listed = True
+                kind = KIND_MULTIMODAL if multimodal else KIND_TEXT
+                installed = not downloading and (not kinds or kind in kinds)
+                model_name = gguf_model_name(rel_path, record)
+                if record is None and downloading:
+                    # Landed by a download still in flight: its record is written last,
+                    # so predict the finished id the way the pending branch below does —
+                    # a declared location keeps the stem, anything else is qualified.
+                    if not any(declaration_covers(d, rel_dir, f, multimodal) for d in declarations):
+                        model_name = rel_path[: -len(".gguf")]
+                if multimodal:
+                    model_name = multimodal_model_name(model_name)
+                disk_size_mb = size_mb(paths_size_bytes(model_files))
+                # The text model's record, the multimodal one's, when each has its own;
+                # the multimodal model never takes the text record, whose inputs name
+                # no projector and would flag it outdated. A record from before the
+                # split names the projector under the text id and counts for the text
+                # model too (see model_metadata.recorded_kinds).
+                own_record = file_record(full_path, llamacpp_dir, multimodal=multimodal)
+                if own_record is None and not multimodal and KIND_TEXT in kinds:
+                    own_record = record
+                entry = {
+                    "id": f"llamacpp:{model_name}",
+                    "name": model_name,
+                    "handler": HANDLER_HUGGING_FACE,
+                    "runtime": model_runtime(HANDLER_HUGGING_FACE),
+                    "model_publisher": scanned_publisher(own_record, marker if downloading else None, rel_dir),
+                    # Found on disk. main() overrides this when the id matches a
+                    # models-list.yaml entry, which makes it a curated model instead.
+                    "model_origin": ORIGIN_USER,
+                    "path": full_path,
+                    "installed": installed,
+                    "downloading": downloading,
+                    "size_mb": listed_size_mb(installed, disk_size_mb, None, marker.get("size_mb") if downloading and marker else None),
+                    "_rel_dir": rel_dir,
+                    "_filename": f,
+                    "_multimodal": multimodal,
+                }
+                if installed and disk_size_mb is not None:
+                    entry["disk_size_mb"] = disk_size_mb
+                if multimodal:
+                    entry["mmproj"] = mmproj_path
+                if own_record is not None:
+                    entry["download_metadata"] = own_record
+                results.append(entry)
 
-        # Download in progress but no main GGUF on disk yet: surface the
+        # Download in progress with nothing of its model on disk yet — no GGUF at all,
+        # or, for a multimodal download, no projector next to the GGUF: surface the
         # pending model from the marker so it still shows up in the listing.
         if marker is not None and not marker_listed:
             model_name = llamacpp_name_from_marker(marker, root)
@@ -480,11 +540,14 @@ def find_llamacpp_models(models_base_dir, declarations=()):
             # Same naming as an installed file: declared downloads keep the marker
             # name (main() merges them into their entry), ad-hoc ones are qualified
             # by location so the id matches the one the finished install will get.
-            if not any(declaration_covers(d, n, rel_dir, filename) for d, n, _mid in declarations):
+            if not any(declaration_covers(d, rel_dir, filename, marker_multimodal) for d in declarations):
                 model_name = f"{rel_dir}/{model_name}" if rel_dir else model_name
+            if marker_multimodal:
+                model_name = multimodal_model_name(model_name)
             # A record for the file being fetched is a previous install of the same
-            # model (a re-download); a record naming only other files is a sibling's.
-            record = file_record(os.path.join(root, filename), llamacpp_dir) if filename else None
+            # model (a re-download); a record naming only other files is a sibling's,
+            # and so is the text model's record on the GGUF a projector is fetched for.
+            record = file_record(os.path.join(root, filename), llamacpp_dir, multimodal=True if marker_multimodal else None) if filename else None
             entry = {
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
@@ -498,6 +561,7 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                 "size_mb": marker.get("size_mb"),
                 "_rel_dir": rel_dir,
                 "_filename": filename,
+                "_multimodal": marker_multimodal,
             }
             if record is not None:
                 entry["download_metadata"] = record
@@ -505,19 +569,20 @@ def find_llamacpp_models(models_base_dir, declarations=()):
     return results
 
 
-def declared_model_id(declarations, rel_dir, filename, taken):
-    """The id of the models-list.yaml entry declaring the GGUF at *rel_dir*/*filename*.
+def declared_model_id(declarations, rel_dir, filename, taken, multimodal=False):
+    """The id of the models-list.yaml entry declaring the GGUF at *rel_dir*/*filename*,
+    as the multimodal model when *multimodal* is set and as the text model otherwise.
 
     A declaration matches at most one file per listing — *taken* holds the ids
     already matched — so a directory-level declaration cannot absorb every
     quantization sharing the repository directory. None when no entry declares the
     file: an ad-hoc download.
     """
-    for directory, declared_name, model_id in declarations:
-        if model_id in taken:
+    for declaration in declarations:
+        if declaration.model_id in taken:
             continue
-        if declaration_covers(directory, declared_name, rel_dir, filename):
-            return model_id
+        if declaration_covers(declaration, rel_dir, filename, multimodal):
+            return declaration.model_id
     return None
 
 
@@ -613,7 +678,8 @@ def build_listing(models_dir, yaml_path, supported_board=None):
     for m in find_llamacpp_models(models_dir, declarations):
         rel_dir = m.pop("_rel_dir")
         filename = m.pop("_filename")
-        declared_id = declared_model_id(declarations, rel_dir, filename, merged_ids)
+        multimodal = m.pop("_multimodal")
+        declared_id = declared_model_id(declarations, rel_dir, filename, merged_ids, multimodal)
         existing = by_id.get(declared_id) if declared_id else None
         if existing is not None:
             merged_ids.add(declared_id)
@@ -671,16 +737,18 @@ _LISTING_HEADER = (
 def write_listing(models_dir, results):
     """Write *results* to ``<models_dir>/models.yaml`` atomically; return its path.
 
-    The document is the ``models`` list and nothing else, dumped like the
+    The document is the release that wrote it, ``bricks_release_version`` (null outside
+    the image, which matches no release), and the ``models`` list, dumped like the
     ".arduino_metadata.yaml" records: the ``event`` wrapper belongs to the stdout
     protocol of the list action, not to a file.
     """
     path = os.path.join(models_dir, LISTING_NAME)
     tmp_path = f"{path}.tmp"
+    document = {"bricks_release_version": os.environ.get(RELEASE_VERSION_ENV) or None, "models": results}
     with open(tmp_path, "w") as f:
         f.write(_LISTING_HEADER)
         # width: keep long URLs and paths on one line rather than folded.
-        yaml.safe_dump({"models": results}, f, sort_keys=False, default_flow_style=False, allow_unicode=True, width=4096)
+        yaml.safe_dump(document, f, sort_keys=False, default_flow_style=False, allow_unicode=True, width=4096)
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp_path, path)

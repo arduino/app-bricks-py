@@ -117,7 +117,7 @@ RUN if ! find "${ADSP_DIR}" -type f -name "*.so" | grep -q . ; then \
 FROM base AS fastrpc-builder
 
 # fastrpc version to build (git tag) as per QAIRT framework
-ENV FASTRPC_VER=1.0.6
+ENV FASTRPC_VER=1.0.7
 
 RUN set -ex && apt-get update && \
     apt-get install -y --no-install-recommends \

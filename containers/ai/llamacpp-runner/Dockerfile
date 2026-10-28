@@ -10,8 +10,8 @@ FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG LLAMA_CPP_URL=https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20261020/llamacpp-cpu-20261020.tar.gz
-ARG LLAMA_CPP_DIGEST=sha256:4d62ed0f5d577d054f76419b20a1b6ecd4c45eae0271e3b1ae7e905e029712f4
+ARG LLAMA_CPP_URL=https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20261028/llamacpp-cpu-20261028.tar.gz
+ARG LLAMA_CPP_DIGEST=sha256:63bdd0423bdeb408e0fcc9cade61e0a190362bcb8fd621697c5bc00e5ca0ad9f
 
 ADD --checksum=${LLAMA_CPP_DIGEST} ${LLAMA_CPP_URL} /tmp/llamacpp.tar.gz
 

@@ -15,12 +15,11 @@ import numpy as np
 import pytest
 
 from arduino.app_bricks.asr import WAVAutomaticSpeechRecognition
-from arduino.app_peripherals.microphone import chunk_level
+from arduino.app_peripherals.microphone import SpeechSegmenter, chunk_level
 from arduino.app_bricks.asr.local_asr import (
     _END_SENTINEL,
     _FLUSH_MARK,
     SessionInfo,
-    _PauseFlushPolicy,
 )
 
 RATE = 16000
@@ -31,13 +30,14 @@ DIP = 10 ** (-32 / 20)  # ...with 12 dB dips between them, one chunk every four
 NOISE = 10 ** (-80 / 20)  # quiet room
 
 
-def _policy(**kw) -> _PauseFlushPolicy:
-    args = {"min_s": 3.0, "max_s": 10.0, "pause_s": 0.25, "min_voiced_s": 0.5}
+def _policy(**kw) -> SpeechSegmenter:
+    """The segmenter as the ASR brick configures it for its early transcripts."""
+    args = {"min_s": 3.0, "max_s": 10.0, "pause_s": 0.25, "min_speech_s": 0.5}
     args.update(kw)
-    return _PauseFlushPolicy(**args)
+    return SpeechSegmenter(**args)
 
 
-def _feed(policy: _PauseFlushPolicy, pattern: list[tuple[float, float]]) -> list[float]:
+def _feed(policy: SpeechSegmenter, pattern: list[tuple[float, float]]) -> list[float]:
     """Feed (level, seconds) runs chunk by chunk; return the times at which a flush was due.
     A SPEECH run is modulated like real speech: syllables with short dips."""
     t, flushes = 0.0, []
@@ -45,7 +45,8 @@ def _feed(policy: _PauseFlushPolicy, pattern: list[tuple[float, float]]) -> list
         for i in range(round(seconds / CHUNK_S)):
             t += CHUNK_S
             chunk_level = DIP if level == SPEECH and i % 4 == 3 else level
-            if policy.update(chunk_level, CHUNK_S):
+            if policy.update_level(chunk_level, CHUNK_S):
+                policy.reset()  # as the reader thread does after each flush
                 flushes.append(round(t, 3))
     return flushes
 
@@ -72,7 +73,7 @@ class TestChunkLevel:
         assert chunk_level(np.zeros(0, dtype=np.int16)) == 0.0
 
 
-class TestPauseFlushPolicy:
+class TestFlushAtPauses:
     def test_flushes_at_first_pause_after_min(self):
         # 4 s of speech, then a breath: the cut lands 0.25 s into the pause
         flushes = _feed(_policy(), [(NOISE, 1.0), (SPEECH, 4.0), (NOISE, 1.0)])

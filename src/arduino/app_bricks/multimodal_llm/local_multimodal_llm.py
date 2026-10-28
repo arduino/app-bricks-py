@@ -1,0 +1,185 @@
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+from typing import Any
+from collections.abc import Iterator, Sequence
+
+from openai import APIError, BadRequestError
+
+from arduino.app_bricks.cloud_llm import ReasoningEffort
+from arduino.app_bricks.cloud_llm.audio import AudioInput
+from arduino.app_bricks.cloud_llm.cloud_llm import ToolLike
+from arduino.app_bricks.cloud_llm.memory import MessagePersistence
+from arduino.app_bricks.llm import LargeLanguageModel
+from arduino.app_utils import Logger, brick
+
+logger = Logger("MultimodalLanguageModel")
+
+
+@brick
+class MultimodalLanguageModel(LargeLanguageModel):
+    """A Brick for chatting with a locally hosted multimodal model using text, images and audio.
+
+    Each message is text, optionally combined with images, audio clips or both. It supports
+    both synchronous 'one-shot' responses and streaming output, with optional conversational memory.
+    """
+
+    _logger = logger
+    # Each turn would otherwise resend, and the runner re-encode, the images and audio of
+    # every earlier turn: only the latest turn with media keeps them in the history.
+    _latest_media_only = True
+
+    def __init__(
+        self,
+        system_prompt: str = "",
+        temperature: float | None = 0.0,
+        max_tokens: int = 512,
+        timeout: int | None = None,
+        tools: Sequence[ToolLike] | None = None,
+        model: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Initializes the MultimodalLanguageModel brick.
+
+        Args:
+            system_prompt (str): A system-level instruction that defines the AI's persona
+                and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
+            temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
+                Higher values make output more random/creative; lower values make it more
+                deterministic. Defaults to 0.0, so the same input always gets the same answer,
+                which suits counting, reading and transcription tasks. It is sent with every
+                request and overrides the model runner's own default.
+            max_tokens (int): The maximum number of tokens to generate in the response.
+                Defaults to 512.
+            timeout (Optional[int]): The maximum duration in seconds to wait for a response before
+                timing out. Defaults to None.
+            tools (Sequence[ToolLike]): BaseTool objects (from @tool or MCPClient.get_tools()) or plain
+                callables (auto-wrapped into tools). Defaults to None.
+            model (str): The model identifier to use (e.g., "llamacpp:gemma-4-E2B_q4_0-it-multimodal").
+                If not provided, the model is taken from the app configuration or the default brick configuration.
+            **kwargs: Additional arguments passed to the model constructor
+        """
+        super().__init__(
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            tools=tools,
+            model=model,
+            **kwargs,
+        )
+        super().with_memory(0)  # Initialize without memory enabled (0 means no history)
+
+    # The positional order differs from LargeLanguageModel.chat on purpose: `audio` follows `images`,
+    # and the inherited `reasoning_effort` comes last.
+    def chat(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self,
+        message: str,
+        images: Sequence[str | bytes] | None = None,
+        audio: AudioInput | Sequence[AudioInput] | None = None,
+        reasoning_effort: ReasoningEffort | str | int | None = None,
+    ) -> str:
+        """Sends a message to the AI and blocks until the complete response is received.
+
+        Images and audio can be passed alone or together. This method automatically manages
+        conversation history if memory is enabled.
+
+        Args:
+            message (str): The input text prompt from the user.
+            images (Sequence[str | bytes] | None): Optional sequence of image file paths or encoded image bytes
+                (e.g. JPEG) to include in the prompt. None (default) sends no image.
+            audio (AudioInput | Sequence[AudioInput] | None): Optional audio clip, or sequence of clips, to include
+                in the prompt. A clip is a .wav/.mp3 file path, WAV/MP3 file bytes, the array returned by
+                ``Microphone.record_wav()``, or the raw PCM array returned by ``Microphone.record_pcm()``
+                (int16 or float, assumed 16 kHz mono). None (default) sends no audio.
+            reasoning_effort (ReasoningEffort | str | int | None): Optional effort level or token budget,
+                as in `CloudLLM.chat`. None (default) keeps the default behavior; support depends on the local runner.
+
+        Returns:
+            str: The complete text response generated by the AI.
+
+        Raises:
+            RuntimeError: If the internal chain is not initialized or if the API request fails.
+            FileNotFoundError: If an image or audio file path does not exist.
+            ValueError: If an audio clip is not a supported file type or sample format, or if
+                `reasoning_effort` is not a supported level or budget.
+            TypeError: If `reasoning_effort` is not a ReasoningEffort, str, int, or None.
+        """
+        try:
+            return self._strip_think(super()._chat_invoke(message=message, images=images, reasoning_effort=reasoning_effort, audio=audio))
+        except (BadRequestError, APIError) as e:
+            self._handle_api_error(logger, e)
+
+    def chat_stream(
+        self,
+        message: str,
+        images: Sequence[str | bytes] | None = None,
+        audio: AudioInput | Sequence[AudioInput] | None = None,
+    ) -> Iterator[str]:
+        """Sends a message to the AI and yields response tokens as they are generated.
+
+        This allows for processing or displaying the response in real-time (streaming).
+        The generation can be interrupted by calling `stop_stream()`.
+
+        Args:
+            message (str): The input text prompt from the user.
+            images (Sequence[str | bytes] | None): Optional sequence of image file paths or encoded image bytes
+                (e.g. JPEG) to include in the prompt. None (default) sends no image.
+            audio (AudioInput | Sequence[AudioInput] | None): Optional audio clip, or sequence of clips, to include
+                in the prompt. A clip is a .wav/.mp3 file path, WAV/MP3 file bytes, the array returned by
+                ``Microphone.record_wav()``, or the raw PCM array returned by ``Microphone.record_pcm()``
+                (int16 or float, assumed 16 kHz mono). None (default) sends no audio.
+
+        Yields:
+            str: Chunks of text (tokens) from the AI response.
+
+        Raises:
+            RuntimeError: If the internal chain is not initialized or if the API request fails.
+            AlreadyGenerating: If a streaming session is already active.
+        """
+        yield from self._filter_think(self._chat_stream_guarded(message, images, audio))
+
+    def stop_stream(self) -> None:
+        """Signals the active streaming generation to stop.
+
+        This sets an internal flag that causes the `chat_stream` iterator to break
+        early. It has no effect if no stream is currently running.
+        """
+        super().stop_stream()
+
+    def clear_memory(self) -> None:
+        """Clears the conversational memory history.
+
+        Resets the stored context. This is useful for starting a new conversation
+        topic without previous context interfering. Only applies if memory is enabled.
+        """
+        super().clear_memory()
+
+    def with_memory(
+        self,
+        max_messages: int = 0,
+        persistence: bool | MessagePersistence | None = None,
+    ) -> "MultimodalLanguageModel":
+        """Enables conversational memory for this instance.
+
+        Configures the Brick to retain a window of previous messages, allowing the
+        AI to maintain context across multiple interactions. An optional persistence
+        backend stores the history so it can resume across restarts. The text of every
+        turn is kept, but only the latest message with images or audio keeps them: in
+        earlier messages each image becomes the text "[image]" and each audio clip
+        "[audio]". The persistence backend stores the placeholders only, so after a
+        restart no media is resent.
+
+        Args:
+            max_messages (int): The maximum number of messages.
+            persistence (bool | MessagePersistence | None): Optional persistence backend.
+                `None` or `False` keep history in memory only (default behavior).
+                `True` instantiates the default SQL-backed store. Pass a
+                `MessagePersistence` implementation directly for full control.
+
+        Returns:
+            MultimodalLanguageModel: The current instance, allowing for method chaining.
+        """
+        super().with_memory(max_messages=max_messages, persistence=persistence)
+        return self

@@ -63,15 +63,18 @@ Then the Hub is asked what the target actually is (``validate_hub_source``): the
 must exist and be readable *anonymously* — a private or gated repository is refused, and a
 token found in the environment cannot change that — and a URL, which pins one exact file at
 one exact commit, must name a file that is really in the repository. Only ``--hf-token``,
-which the operator has to pass explicitly, opens gated and private repositories. ``--check``
-and ``--delete`` skip this step: they only read the filesystem and stay usable offline.
+which the operator has to pass explicitly, opens the private repositories the token can read
+and the gated ones whose conditions its account accepted; the handler scripts pass it when
+the ``hf_token`` variable is set. ``--check`` and ``--delete`` skip this step: they only read
+the filesystem and stay usable offline.
 
 Key options
 -----------
 --output-dir DIR        Destination directory (default: current directory).
                         Files are saved under ``<output-dir>/<repo-id>/``.
 --hf-token KEY          Hugging Face API token. Without it only public, non-gated
-                        repositories can be downloaded.
+                        repositories can be downloaded; with it, also the private and
+                        gated ones the token can read.
 --verbose               Print resolved parameters before downloading.
 
 Where the files land
@@ -80,15 +83,20 @@ Everything is downloaded into ``<output-dir>/<repo-id>/``, so the quantizations 
 repository share a directory and coexist there. Only the files a request actually names
 decide whether it is already installed: a ``Q4_0`` on disk does not make ``Q3_K_S``
 present, and asking for the second one downloads it next to the first instead of
-reporting the repository as complete. The cleanup paths honour the same rule — an
-interrupted or failed download only discards the files it was fetching, never a sibling
-quantization that finished earlier. The shared ".arduino_metadata.yaml" follows suit:
+reporting the repository as complete. A request installed in part — a multimodal model
+over the text model whose GGUF it shares — fetches only the files it is missing. The
+cleanup paths honour the same rule — an interrupted or failed download only discards the
+files it was fetching, never a sibling quantization that finished earlier, nor the part
+of its own model that was already there. The shared ".arduino_metadata.yaml" follows suit:
 every download appends its own record (naming the files it fetched), and a delete drops
 only the records of the files it removed, so no quantization is ever described by
-another one's record.
+another one's record. The text model and the multimodal model of one GGUF each have
+their own record, and a delete of one of them goes by the records (``delete_model``):
+it removes only the files the other model, if the user downloaded it, does not need.
 
 After all files are downloaded, ``models.ini`` is written to ``<output-dir>``
-mapping each model name to its GGUF path (and mmproj path where present); names
+mapping each model name to its GGUF path, plus a ``<name>-multimodal`` section adding
+the mmproj path where a projector is present; names
 follow ``common/gguf_naming.py`` — the file stem for models the curated catalog
 declares, the output-dir-relative path for ad-hoc downloads.
 """
@@ -111,6 +119,8 @@ from huggingface_hub.hf_api import RepoFile
 import argparse
 import configparser
 from collections import ChainMap
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 from tqdm.auto import tqdm
@@ -119,17 +129,22 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import MARKER_NAME, read_marker, write_marker
-from common.gguf_naming import catalog_gguf_declarations, declaration_covers, gguf_model_name
+from common.gguf_naming import catalog_gguf_declarations, declaration_covers, gguf_model_name, multimodal_model_name
 from common.model_size import paths_size_mb, size_mb
 from common.model_metadata import (
+    KIND_MULTIMODAL,
+    KIND_TEXT,
     ORIGIN_BUILTIN,
     ORIGIN_USER,
     file_record,
+    forget_model_record,
     identify_model,
     is_bookkeeping_name,
+    metadata_records,
     prune_metadata_records,
     read_metadata,
     record_for_file,
+    recorded_kinds,
     write_metadata,
 )
 from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, load_models_list
@@ -460,10 +475,10 @@ def discard_incomplete_download(output_dir: str, base_dir: str, patterns: list[s
 def prune_emptied_repo_dir(output_dir: str, base_dir: str) -> bool:
     """Drop *output_dir* once its last GGUF is gone; return whether it was removed.
 
-    ``delete_matched_files`` unlinks the model files and prunes empty directories, but
-    the ".arduino_metadata.yaml" record it knows nothing about would keep the repo
-    directory alive as a ghost. Removing the whole directory only when no GGUF is left
-    means a sibling quantization is never touched.
+    ``delete_model`` unlinks the model files and prunes empty directories, but the
+    ".arduino_metadata.yaml" record left behind would keep the repo directory alive as
+    a ghost. Removing the whole directory only when no GGUF is left means a sibling
+    quantization is never touched.
     """
     if not os.path.isdir(output_dir):
         return False
@@ -485,8 +500,23 @@ def install_signal_handlers() -> None:
     signal.signal(signal.SIGTERM, _handler)
 
 
+@dataclass
+class Transfer:
+    """A download of several files reported as one, see ``JsonProgress.one_transfer``."""
+
+    total: int
+    done: int = 0
+    """Bytes of the files that completed."""
+    description: str = ""
+    """The file reported last, which the completion event names."""
+
+
 class JsonProgress(tqdm):
     """tqdm replacement that reports download progress as JSON events on stdout.
+
+    huggingface_hub gives every file its own bar. Inside ``one_transfer`` the bars of all
+    the files report one progress and one completion between them, so a GGUF and its
+    projector read 0-100% once; outside it each file is reported on its own.
 
     huggingface_hub's Xet downloader tracks two byte counters: bytes written to disk
     ("reconstruction") and bytes pulled from the network ("transfer"), and renders one
@@ -508,8 +538,32 @@ class JsonProgress(tqdm):
     # describe an implementation detail, so they are stripped from the reported description.
     DESC_SUFFIXES = (": reconstructing file", ": downloading bytes")
 
+    # The transfer every bar reports into while one_transfer() runs, None outside it.
+    transfer: Transfer | None = None
+
+    @classmethod
+    @contextmanager
+    def one_transfer(cls, total: int | None):
+        """Report the files downloaded inside the block as one transfer of *total* bytes.
+
+        Each bar carries on from the bytes of the files completed before it, out of
+        *total*, and the single "complete" event is emitted when the block ends without an
+        error. *total* is what the Hub listing says the files weigh, so the reported bytes
+        are capped at it and the completion reports it whatever the files added up to. With
+        no *total* (None or 0) every file is reported on its own, as outside the block.
+        """
+        if not total:
+            yield
+            return
+        transfer = cls.transfer = Transfer(total)
+        try:
+            yield
+        finally:
+            cls.transfer = None
+        cls._print_event("complete", transfer.description, total, total, "B")
+
     def __init__(self, *args, **kwargs):
-        self._complete_emitted = False
+        self._completed = False
         self._last_emit = 0.0
         self._transferred = 0
         super().__init__(*args, **kwargs)
@@ -537,16 +591,23 @@ class JsonProgress(tqdm):
         return desc
 
     def _emit(self, event_type):
-        """Helper to print the current state as JSON"""
+        """Print this file's state as JSON, as part of the transfer inside one_transfer()."""
         self._last_emit = time.monotonic()
-        current = self._current()
-        pct = round((current / self.total) * 100, 2) if self.total else 0
+        description, current, total = self._description(), self._current(), self.total
+        if self.transfer is not None:
+            self.transfer.description = description
+            current, total = min(self.transfer.done + current, self.transfer.total), self.transfer.total
+        self._print_event(event_type, description, current, total, self.unit)
+
+    @staticmethod
+    def _print_event(event_type, description, current, total, unit):
+        pct = round((current / total) * 100, 2) if total else 0
         data = {
             "event": event_type,
-            "description": self._description(),
+            "description": description,
             "current": current,
-            "total": self.total,
-            "unit": self.unit,
+            "total": total,
+            "unit": unit,
             "percentage": f"{pct}%",
         }
         print(json.dumps(data), flush=True)
@@ -577,9 +638,13 @@ class JsonProgress(tqdm):
 
     def close(self):
         # Only report completion if the transfer actually finished.
-        if self.total and self.n >= self.total and not self._complete_emitted:
-            self._complete_emitted = True
-            self._emit("complete")
+        if self.total and self.n >= self.total and not self._completed:
+            self._completed = True
+            if self.transfer is not None:
+                # One file of several: the transfer reports its own completion, once.
+                self.transfer.done += self.total
+            else:
+                self._emit("complete")
         # tqdm writes a bare newline when closing a bar with leave=True. No bar was ever
         # drawn, so there is nothing to leave on screen.
         self.leave = False
@@ -1208,48 +1273,41 @@ def public_repo_files(repo_id: str, revision: str | None = None, token: str | No
     the environment (``HF_TOKEN``, a cached login) cannot turn a repository nobody else can
     read into a valid model source. An explicit ``--hf-token`` is the one way in, because
     passing it is a deliberate act of whoever runs the downloader rather than something a
-    model URL can arrange by itself.
+    model URL can arrange by itself. With it, the repositories the token can read are model
+    sources like any public one: the operator's private ones, and the gated ones whose
+    conditions they accepted.
 
     Returns:
         The repo-relative paths of every file in the repository at *revision*.
 
     Raises:
-        ValueError: when the repository does not exist, is private, gated or disabled, when
-            *revision* is not in it, or when the Hub cannot be reached to tell.
+        ValueError: when the repository does not exist or cannot be read with the access
+            given, is gated and no token was given, is disabled, when *revision* is not in
+            it, or when the Hub cannot be reached to tell.
     """
+    gated_message = (
+        f"Hugging Face repository '{repo_id}' is gated: its files are only served after its conditions "
+        "are accepted on huggingface.co. Accept them and configure an hf_token to download it."
+    )
     try:
         info = HfApi().model_info(repo_id, revision=revision, token=token or False)
     except GatedRepoError as exc:  # a subclass of RepositoryNotFoundError: must come first
-        raise ModelSourceError(
-            ERR_MODEL_PRIVATE_OR_GATED,
-            f"Hugging Face repository '{repo_id}' is gated: its files are only served after its conditions "
-            "are accepted on huggingface.co. Only freely downloadable models can be configured.",
-        ) from exc
+        raise ModelSourceError(ERR_MODEL_PRIVATE_OR_GATED, gated_message) from exc
     except RevisionNotFoundError as exc:
         raise ModelSourceError(ERR_MODEL_NOT_FOUND, f"Revision '{revision}' does not exist in Hugging Face repository '{repo_id}'.") from exc
     except RepositoryNotFoundError as exc:
-        raise ModelSourceError(
-            ERR_MODEL_NOT_FOUND,
-            f"Hugging Face model repository '{repo_id}' does not exist, or is not public. Only public model repositories can be downloaded.",
-        ) from exc
+        reason = "the hf_token cannot read it" if token else "is not public. Configure an hf_token to download a private repository"
+        raise ModelSourceError(ERR_MODEL_NOT_FOUND, f"Hugging Face model repository '{repo_id}' does not exist, or {reason}.") from exc
     except DisabledRepoError as exc:
         raise ModelSourceError(ERR_MODEL_DISABLED, f"Hugging Face repository '{repo_id}' has been disabled by its authors.") from exc
     except Exception as exc:  # noqa: BLE001 - HTTP, DNS and proxy failures all land here
         raise ModelSourceError(ERR_HUB_UNREACHABLE, f"Could not verify Hugging Face repository '{repo_id}': {exc}") from exc
 
-    # The 404 above already covers a private repository seen anonymously; these fields are
-    # what remains once --hf-token makes it visible, and are checked so the token widens
-    # access to gated models the operator has accepted, not to repositories at large.
-    if info.private:
-        raise ModelSourceError(
-            ERR_MODEL_PRIVATE_OR_GATED, f"Hugging Face repository '{repo_id}' is private. Only public model repositories can be downloaded."
-        )
-    if info.gated:
-        raise ModelSourceError(
-            ERR_MODEL_PRIVATE_OR_GATED,
-            f"Hugging Face repository '{repo_id}' is gated: its files are only served after its conditions "
-            "are accepted on huggingface.co. Only freely downloadable models can be configured.",
-        )
+    # A gated repository shows its listing to anyone but serves its files only to an account
+    # that accepted its conditions, so without a token it is refused here rather than at the
+    # first file. A private one never gets this far anonymously: it answered 404 above.
+    if info.gated and not token:
+        raise ModelSourceError(ERR_MODEL_PRIVATE_OR_GATED, gated_message)
     if info.disabled:
         raise ModelSourceError(ERR_MODEL_DISABLED, f"Hugging Face repository '{repo_id}' has been disabled by its authors.")
     return {sibling.rfilename for sibling in info.siblings or []}
@@ -1309,7 +1367,8 @@ def fallback_model_id(model_type: str, downloaded: list[str], models_dir: str) -
     models.ini share: the fallback only applies when the record being written is
     user-configured, and a user-configured model is named by its models_dir-relative
     path (``gguf_model_name``), so the record and the listing agree on what to call
-    an ad-hoc download. mmproj files belong to the main GGUF and never name the model.
+    an ad-hoc download. mmproj files never name the model, but a download that fetched
+    one installed the multimodal model of its GGUF (``multimodal_model_name``).
     """
     main_gguf = next((p for p in sorted(downloaded) if "mmproj" not in os.path.basename(p)), None)
     if not main_gguf:
@@ -1319,6 +1378,8 @@ def fallback_model_id(model_type: str, downloaded: list[str], models_dir: str) -
         name = gguf_model_name(rel, {"model_origin": ORIGIN_USER})
     except ValueError:  # not under models_dir: name it by its stem alone
         name = Path(main_gguf).stem
+    if any("mmproj" in os.path.basename(p) for p in downloaded):
+        name = multimodal_model_name(name)
     # The key's model_type is the namespace when given; llamacpp is where GGUF models
     # live, and the prefix list_models.py uses (see common/gguf_naming.py).
     return f"{model_type or 'llamacpp'}:{name}"
@@ -1334,12 +1395,12 @@ def downloaded_size_mb(downloaded: list[str]) -> float | None:
     return paths_size_mb(downloaded)
 
 
-def expected_size_mb(repo_id: str, patterns: list[str]) -> float | None:
-    """The ``size_mb`` the files matching *patterns* will have once downloaded, or None.
+def expected_size_bytes(repo_id: str, patterns: list[str]) -> int | None:
+    """The bytes the files matching *patterns* will take once downloaded, or None.
 
-    Written into the ".download" marker, so the listing can size an ad-hoc download
-    before any of its files exist. Best effort: sizing the repository must never fail
-    or hold up the download it describes.
+    Read from the Hub listing, so a download is sized before any of its files exist.
+    Best effort: sizing the repository must never fail or hold up the download it
+    describes.
     """
     try:
         sizes = [f.size for f in list_repo_matches(repo_id, patterns)]
@@ -1347,7 +1408,7 @@ def expected_size_mb(repo_id: str, patterns: list[str]) -> float | None:
         return None
     if not sizes or any(size is None for size in sizes):
         return None
-    return size_mb(sum(sizes))
+    return sum(sizes)
 
 
 def no_match_error(repo_id: str, pattern: str | list[str]) -> NoMatchingFileError:
@@ -1406,7 +1467,6 @@ def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, 
     After deletion, removes any empty subdirectories but never output_dir itself.
     """
     base = Path(output_dir)
-    models_base_path = Path(models_base)
     if not base.exists():
         emit_json_info(f"Directory does not exist, nothing to delete: {output_dir}")
         return
@@ -1414,6 +1474,78 @@ def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, 
     if not matched:
         emit_json_info(f"No files matching '{allow_pattern}' found in {output_dir}")
         return
+    delete_files(matched, output_dir, models_base, verbose)
+
+
+def projector_in_use(output_dir: str, projector: Path, going: list[Path]) -> bool:
+    """Whether a record of *output_dir* still needs *projector* for a GGUF that stays.
+
+    Every quantization of a repository shares the projector: the record of another
+    installed multimodal quantization names it next to a main file that is neither
+    gone nor *going* with this delete.
+    """
+    base = Path(output_dir)
+    name = projector.name
+    for record in metadata_records(read_metadata(output_dir)):
+        files = [f for f in record.get("files") or [] if isinstance(f, str)]
+        if not any(f.split("/")[-1] == name for f in files):
+            continue
+        for main in (f for f in files if "mmproj" not in f.split("/")[-1]):
+            path = base / main
+            if path.is_file() and path not in going:
+                return True
+    return False
+
+
+def delete_model(output_dir: str, models_base: str, allow_pattern: str, mmproj_allow_pattern: str | None, verbose: bool = False):
+    """Delete the model the patterns name, keeping what the other model of its GGUF needs.
+
+    A GGUF with a projector next to it is two models, downloaded and deleted one at a
+    time, and the records of the repository directory say which of the two the user
+    has (``recorded_kinds``). Deleting the multimodal model (the request names a
+    projector) keeps the GGUF when the text model was downloaded too and removes the
+    projector alone; deleting the text model while the multimodal one was downloaded
+    removes nothing. The deleted model's record goes either way, and a projector another
+    installed quantization's record names stays. A GGUF with no record at all — an
+    install the downloader never recorded — loses the files the patterns name.
+    """
+    base = Path(output_dir)
+    if not base.is_dir():
+        emit_json_info(f"Directory does not exist, nothing to delete: {output_dir}")
+        return
+    kind, other = (KIND_MULTIMODAL, KIND_TEXT) if mmproj_allow_pattern else (KIND_TEXT, KIND_MULTIMODAL)
+
+    def named(pattern: str) -> list[Path]:
+        # Unlike matching_files, a delete also names the quantizations no longer
+        # supported, so a model downloaded before that check existed stays removable.
+        return [p for p in model_files(output_dir) if matches_pattern(p.relative_to(base).as_posix(), pattern)]
+
+    records = read_metadata(output_dir)
+    going: list[Path] = []
+    ggufs = [p for p in named(allow_pattern) if not is_mmproj_file(p.name)]
+    if not ggufs:
+        emit_json_info(f"No files matching '{allow_pattern}' found in {output_dir}")
+    for gguf in ggufs:
+        rel = gguf.relative_to(base).as_posix()
+        if other in recorded_kinds(records, rel):
+            emit_json_info(f"Keeping {rel}: its {other} model stays installed")
+        else:
+            going.append(gguf)
+        forget_model_record(output_dir, rel, kind)
+    if mmproj_allow_pattern:
+        for projector in named(mmproj_allow_pattern):
+            if projector_in_use(output_dir, projector, going):
+                emit_json_info(f"Keeping {projector.relative_to(base).as_posix()}: another installed model uses it")
+            else:
+                going.append(projector)
+    if going:
+        delete_files(going, output_dir, models_base, verbose)
+
+
+def delete_files(matched: list[Path], output_dir: str, models_base: str, verbose: bool = False):
+    """Delete *matched* files, then any subdirectory left empty, but never output_dir itself."""
+    base = Path(output_dir)
+    models_base_path = Path(models_base)
     dirs_to_check: set[Path] = set()
     for f in matched:
         if verbose:
@@ -1472,6 +1604,10 @@ def backfill_ootb_records(models_dir: Path, models_list_path: str = MODELS_LIST_
     model. A recordless file the catalog does not declare stays as it is: out of the
     box by the fallback rule, with nothing known to record about it.
 
+    A file with a projector next to it is two models, the text one and the multimodal
+    one, and each gets the record of the declaration of its kind: the text record names
+    the GGUF, the multimodal record the GGUF and the projector.
+
     Each declaration claims at most one file, and a file that already carries a
     record keeps whatever its record says — a backfill never rewrites history.
     """
@@ -1492,33 +1628,31 @@ def backfill_ootb_records(models_dir: Path, models_list_path: str = MODELS_LIST_
         rel = gguf_file.relative_to(models_dir)
         rel_dir = rel.parent.as_posix()
         rel_dir = "" if rel_dir == "." else rel_dir
-        matched = next(
-            (
-                (directory, model_id)
-                for directory, declared_name, model_id in declarations
-                if model_id not in taken and declaration_covers(directory, declared_name, rel_dir, gguf_file.name)
-            ),
-            None,
-        )
-        if matched is None:
-            continue
-        directory, model_id = matched
-        taken.add(model_id)
-        # The record goes where the downloader would have written it: the declared
-        # model directory, above a possibly nested quantization folder.
-        record_dir = models_dir / directory
-        files = [gguf_file.relative_to(record_dir).as_posix()]
-        files += sorted(p.relative_to(record_dir).as_posix() for p in gguf_file.parent.glob("*mmproj*.gguf"))
-        variables = catalog_entry_variables(model_id, board, models_list_path)
-        recorded = write_metadata(
-            str(record_dir),
-            handler="hf-handler",
-            env={key: str(value) for key, value in variables.items()},
-            identity={"model_id": model_id, "model_origin": ORIGIN_BUILTIN},
-            files=files,
-        )
-        if recorded:
-            emit_json_info(f"Recorded out-of-the-box model {model_id}")
+        mmproj_files = sorted(gguf_file.parent.glob("*mmproj*.gguf"))
+        for multimodal in (False, True) if mmproj_files else (False,):
+            declaration = next(
+                (d for d in declarations if d.model_id not in taken and declaration_covers(d, rel_dir, gguf_file.name, multimodal)),
+                None,
+            )
+            if declaration is None:
+                continue
+            taken.add(declaration.model_id)
+            # The record goes where the downloader would have written it: the declared
+            # model directory, above a possibly nested quantization folder.
+            record_dir = models_dir / declaration.directory
+            files = [gguf_file.relative_to(record_dir).as_posix()]
+            if multimodal:
+                files.append(mmproj_files[0].relative_to(record_dir).as_posix())
+            variables = catalog_entry_variables(declaration.model_id, board, models_list_path)
+            recorded = write_metadata(
+                str(record_dir),
+                handler="hf-handler",
+                env={key: str(value) for key, value in variables.items()},
+                identity={"model_id": declaration.model_id, "model_origin": ORIGIN_BUILTIN},
+                files=files,
+            )
+            if recorded:
+                emit_json_info(f"Recorded out-of-the-box model {declaration.model_id}")
 
 
 def generate_models_ini(models_dir: Path, models_list_path: str = MODELS_LIST_PATH):
@@ -1530,6 +1664,10 @@ def generate_models_ini(models_dir: Path, models_list_path: str = MODELS_LIST_PA
     user-configured model, the file stem otherwise — so every ad-hoc file keeps its
     own section instead of one silently shadowing the other, and each section
     matches the listing id of the same file.
+
+    A GGUF with a projector in its directory gets two sections: ``<name>``, which loads
+    the text model alone, and ``<name>-multimodal`` (``multimodal_model_name``), which
+    loads it with the projector.
     """
     backfill_ootb_records(models_dir, models_list_path)
     config = configparser.ConfigParser()
@@ -1538,13 +1676,12 @@ def generate_models_ini(models_dir: Path, models_list_path: str = MODELS_LIST_PA
     for gguf_file in gguf_files:
         record = file_record(str(gguf_file), str(models_dir))
         section = gguf_model_name(gguf_file.relative_to(models_dir).as_posix(), record)
-        config[section] = {}
-        config[section]["model"] = str(gguf_file.as_posix())
+        config[section] = {"model": str(gguf_file.as_posix())}
 
-        # Look for mmproj file in the same directory
+        # A projector in the same directory makes the multimodal model of this GGUF
         mmproj_files = sorted(gguf_file.parent.glob("*mmproj*.gguf"))
         if mmproj_files:
-            config[section]["mmproj"] = str(mmproj_files[0].as_posix())
+            config[multimodal_model_name(section)] = {"model": str(gguf_file.as_posix()), "mmproj": str(mmproj_files[0].as_posix())}
 
     output_path = models_dir / "models.ini"
     with open(output_path, "w") as f:
@@ -1606,7 +1743,8 @@ def main():
         type=str,
         metavar="KEY",
         help="Hugging Face API token. Without it, only public and non-gated repositories can be downloaded: "
-        "the access check is made anonymously, so a token present in the environment does not widen it.",
+        "the access check is made anonymously, so a token present in the environment does not widen it. "
+        "With it, the private repositories the token can read and the gated ones its account accepted can be downloaded too.",
     )
     parser.add_argument(
         "--verbose",
@@ -1742,11 +1880,9 @@ def main():
         refresh_listing_at_exit()
         if args.verbose:
             emit_json_info(f"Deleting files matching '{allow_pattern}' in {output_dir}")
-        delete_matched_files(output_dir, args.output_dir, allow_pattern, args.verbose)
-        if mmproj_allow_pattern:
-            if args.verbose:
-                emit_json_info(f"Deleting mmproj files matching '{mmproj_allow_pattern}' in {output_dir}")
-            delete_matched_files(output_dir, args.output_dir, mmproj_allow_pattern, args.verbose)
+        # The text model and the multimodal model of one GGUF are deleted one at a time:
+        # what goes depends on which of the two the records say the user downloaded.
+        delete_model(output_dir, args.output_dir, allow_pattern, mmproj_allow_pattern, args.verbose)
 
         if prune_emptied_repo_dir(output_dir, args.output_dir):
             if args.verbose:
@@ -1790,6 +1926,19 @@ def main():
             # it, so the two cannot disagree about a repository holding several
             # quantizations.
             identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], present, args.output_dir))
+            # The files can be there without this model's record: the projector landed
+            # with a sibling quantization, or the text model was deleted while the
+            # multimodal one stayed. Downloading it again is what records it.
+            kind = KIND_MULTIMODAL if mmproj_allow_pattern else KIND_TEXT
+            repo_dir = Path(output_dir).resolve()
+            recorded_files = sorted(Path(p).relative_to(repo_dir).as_posix() for p in present)
+            main_gguf = next((f for f in recorded_files if not is_mmproj_file(f)), None)
+            if main_gguf and kind not in recorded_kinds(read_metadata(output_dir), main_gguf):
+                refresh_listing_at_exit()
+                if write_metadata(output_dir, handler="hf-handler", env=metadata_env, identity=identity, files=recorded_files) is None:
+                    emit_json_error(f"Found {repo_id} installed, but its metadata record could not be written")
+                    raise SystemExit(1)
+                generate_models_ini(Path(args.output_dir))
             emit_json_info(
                 f"Model exists: {repo_id} ({installed})",
                 artifacts=present,
@@ -1816,6 +1965,13 @@ def main():
         allow_pattern = source["allow_pattern"]
         mmproj_allow_pattern = source["mmproj_allow_pattern"]
         patterns = source_patterns(source)
+        # A request can be installed in part: a multimodal model over the text model it
+        # shares its GGUF with has only the projector left to fetch. Only the missing
+        # files are fetched, marked as in flight and discarded on failure, so the part
+        # already there stays installed throughout; the record and the completion event
+        # still describe the whole model.
+        fetch = [pattern for pattern in patterns if not matching_files(output_dir, [pattern])]
+        model_bytes = expected_size_bytes(repo_id, patterns)
 
         os.makedirs(output_dir, exist_ok=True)
         write_marker(
@@ -1826,8 +1982,9 @@ def main():
             model_url=args.model_url or "",
             # Which files of a shared repository directory this download is for, so a
             # quantization already installed there is not reported as in progress.
-            file_patterns=patterns,
-            size_mb=expected_size_mb(repo_id, patterns),
+            file_patterns=fetch,
+            # The size of the model, not of the transfer: the listing reports it.
+            size_mb=size_mb(model_bytes),
         )
         # The listing now reports the model as downloading, and reports it again
         # however this run ends: installed (after the marker is cleared), or discarded.
@@ -1844,46 +2001,51 @@ def main():
         # complete file the listing ignores and the API cannot delete.
         recorded = None
         try:
-            if url_filename:
-                # Single-file download via direct URL
-                if args.verbose:
-                    emit_json_info(f"Downloading file '{url_filename}' from {repo_id} (revision: {url_revision})")
-                hf_hub_download(
-                    repo_id=repo_id,
-                    filename=url_filename,
-                    revision=url_revision,
-                    local_dir=output_dir,
-                    tqdm_class=tqdm_class,
-                )
-                if mmproj_url_filename:
-                    if args.verbose:
-                        emit_json_info(f"Downloading mmproj file '{mmproj_url_filename}' from {repo_id} (revision: {mmproj_url_revision})")
-                    hf_hub_download(
-                        repo_id=repo_id,
-                        filename=mmproj_url_filename,
-                        revision=mmproj_url_revision,
-                        local_dir=output_dir,
-                        tqdm_class=tqdm_class,
-                    )
-            else:
-                # Pattern-based download
-                if args.verbose:
-                    emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
-                download_matched_files(
-                    repo_id,
-                    allow_pattern,
-                    output_dir,
-                    tqdm_class,
-                    ignore_pattern="*mmproj*",
-                    verbose=args.verbose,
-                )
-
-                if mmproj_allow_pattern:
-                    if args.verbose:
-                        emit_json_info(
-                            f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
+            # The files still missing are reported as one transfer, so the host's progress
+            # runs from 0 to 100% once however many files the model is made of.
+            with JsonProgress.one_transfer(model_bytes if fetch == patterns else expected_size_bytes(repo_id, fetch)):
+                if url_filename:
+                    # Single-file download via direct URL
+                    if allow_pattern in fetch:
+                        if args.verbose:
+                            emit_json_info(f"Downloading file '{url_filename}' from {repo_id} (revision: {url_revision})")
+                        hf_hub_download(
+                            repo_id=repo_id,
+                            filename=url_filename,
+                            revision=url_revision,
+                            local_dir=output_dir,
+                            tqdm_class=tqdm_class,
                         )
-                    download_matched_files(repo_id, mmproj_allow_pattern, output_dir, tqdm_class, verbose=args.verbose)
+                    if mmproj_url_filename and mmproj_allow_pattern in fetch:
+                        if args.verbose:
+                            emit_json_info(f"Downloading mmproj file '{mmproj_url_filename}' from {repo_id} (revision: {mmproj_url_revision})")
+                        hf_hub_download(
+                            repo_id=repo_id,
+                            filename=mmproj_url_filename,
+                            revision=mmproj_url_revision,
+                            local_dir=output_dir,
+                            tqdm_class=tqdm_class,
+                        )
+                else:
+                    # Pattern-based download
+                    if allow_pattern in fetch:
+                        if args.verbose:
+                            emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
+                        download_matched_files(
+                            repo_id,
+                            allow_pattern,
+                            output_dir,
+                            tqdm_class,
+                            ignore_pattern="*mmproj*",
+                            verbose=args.verbose,
+                        )
+
+                    if mmproj_allow_pattern in fetch:
+                        if args.verbose:
+                            emit_json_info(
+                                f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
+                            )
+                        download_matched_files(repo_id, mmproj_allow_pattern, output_dir, tqdm_class, verbose=args.verbose)
 
             # Remove download caches
             cache_path = Path(output_dir) / ".cache"
@@ -1912,9 +2074,10 @@ def main():
         except BaseException as exc:
             # Network/extraction errors and SIGINT/SIGTERM-driven KeyboardInterrupt
             # leave an unrecorded download behind; discard it before exiting, without
-            # taking another quantization of the same repository down with it.
+            # taking another quantization of the same repository, or the part of this
+            # model that was installed before, down with it.
             if os.path.isdir(output_dir):
-                discard_incomplete_download(output_dir, args.output_dir, patterns)
+                discard_incomplete_download(output_dir, args.output_dir, fetch)
             if not isinstance(exc, KeyboardInterrupt):
                 # KeyboardInterrupt gets its own event from the top-level handler.
                 emit_json_error(f"Download failed: {exc}", code=error_code(exc))
