@@ -400,6 +400,39 @@ jobs:
             cp -a --parents "${keep[@]}" ../debian/qtiqmmfsrc/
           )
 
+          # Copyright file in Debian's machine-readable format, license texts taken from the built sources
+          license_text() { sed 's/[[:space:]]*$//; s/^$/./; s/^/ /' "$1"; }
+          # Both Qualcomm projects ship the same BSD-3-Clause-Clear text, listed once below
+          cmp qimsdk/LICENSE.txt camera-service/LICENSE.txt
+          mkdir -p debian/qtiqmmfsrc/usr/share/doc/qtiqmmfsrc
+          {
+            printf '%s\n' \
+              "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/" \
+              "Upstream-Name: qtiqmmfsrc" \
+              "Source: https://github.com/qualcomm/gst-plugins-imsdk" \
+              "" \
+              "Files: gst-plugins-imsdk/*" \
+              "Copyright: Qualcomm Technologies, Inc. and/or its subsidiaries" \
+              "License: BSD-3-Clause-Clear" \
+              "" \
+              "Files: camera-service/*" \
+              "Copyright: Qualcomm Technologies, Inc. and/or its subsidiaries" \
+              " 2016, The Linux Foundation" \
+              "License: BSD-3-Clause-Clear and BSD-3-Clause" \
+              "" \
+              "Files: system-media/camera/*" \
+              "Copyright: 2012 The Android Open Source Project" \
+              "License: Apache-2.0" \
+              "Comment: libcamera_metadata, built from camera_metadata.c with Android logging stubbed out" \
+              "" \
+              "License: BSD-3-Clause-Clear"
+            license_text qimsdk/LICENSE.txt
+            printf '\nLicense: BSD-3-Clause\n'
+            license_text camera-service/NOTICE
+            printf '\nLicense: Apache-2.0\n'
+            license_text system-media/NOTICE
+          } > debian/qtiqmmfsrc/usr/share/doc/qtiqmmfsrc/copyright
+
           QIMSDK_REF="${{ inputs.qimsdk_ref }}"
           VERSION="$QIMSDK_REF"
           [[ "$VERSION" =~ ^[0-9] ]] || VERSION="0~git$(git -C qimsdk rev-parse --short=12 HEAD)"
