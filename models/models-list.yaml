@@ -2464,7 +2464,6 @@ models:
         - ventunoq:
             variables:
               model_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/a1f9fa124e8d60ac02d1a2884b1dec5a3ec2fd21/vllm-d3-lite-Q8_0.gguf"
-              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/a1f9fa124e8d60ac02d1a2884b1dec5a3ec2fd21/mmproj-vllm-d3-lite-BF16.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-lite-GGUF"
     metadata:
@@ -2496,31 +2495,7 @@ models:
       model_size_mb: 1230
       source: "huggingface"
       source-model-id: "vllm-d3-lite-GGUF"
-      source-model-url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF"
- - "llamacpp:d1-omni-600M-Q8_0":
-    name : "d1-omni-600M"
-    description: >-
-      d1-omni-600M is a decision model developed by Liquid AI: it answers named, typed questions over a state (text, JSON, images or audio)
-      in one forward pass, with no generated tokens.
-    supported_boards: ["ventunoq", "unoq"]
-    bricks:
-      - id: "arduino:decision_model"
-        model_configuration:
-          GGML_HEXAGON_DEVICES: 1
-    deployment:
-      handler: "hf-handler"
-      platforms:
-        - ventunoq:
-            variables:
-              model_url: "https://huggingface.co/LiquidAI/d1-omni-600M-GGUF/blob/04397145ed8381350403aa556db0ec6a49dd8c07/d1-omni-600M-Q8_0.gguf"
-              model_mmproj_url: "https://huggingface.co/LiquidAI/d1-omni-600M-GGUF/blob/04397145ed8381350403aa556db0ec6a49dd8c07/mmproj-d1-omni-600M-F16.gguf"
-              models_repository: "llamacpp"
-              model_directory: "LiquidAI/d1-omni-600M-GGUF"
-    metadata:
-      model_size_mb: 1032
-      source: "huggingface"
-      source-model-id: "d1-omni-600M-GGUF"
-      source-model-url: "https://huggingface.co/LiquidAI/d1-omni-600M-GGUF"      
+      source-model-url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF"     
  - "ei:yolox-small-qnn-object-detection":
     name : "General purpose object detection - YoloX small"
     description: "General purpose object detection model based on YoloX-Small. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
