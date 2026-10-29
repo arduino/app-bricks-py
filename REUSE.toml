@@ -1,5 +1,27 @@
 version = 1
 
+# When several tables match a file, the last one wins
+
+# Configuration, documentation and data files, which take no license header
+[[annotations]]
+path = [
+  "**/*.md",
+  "**/*.yaml",
+  "**/*.yml",
+  "**/*.toml",
+  "**/*.json",
+  "**/*.lock",
+  "**/*.patch",
+  "**/*.txt",
+  "**/*.in",
+  "**/*.ini",
+  "**/.gitignore",
+  "**/.dockerignore",
+  ".python-version",
+]
+SPDX-FileCopyrightText = "Copyright (C) Arduino s.r.l. and/or its affiliated companies"
+SPDX-License-Identifier = "MPL-2.0"
+
 [[annotations]]
 path = ".licenses/**"
 precedence = "override"

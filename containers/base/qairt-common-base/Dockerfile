@@ -172,6 +172,7 @@ RUN mkdir -p /usr/share/qcom/conf.d && chown -R arduino:arduino /usr/share/qcom
 # 00-arduino-dsp-binaries.yaml: the fastrpc parser keeps the last alphabetical
 # match, so this file sorts first and acts as a fallback that any yaml
 # provided by the host overrides.
+# REUSE-IgnoreStart
 RUN mkdir -p /etc/fastrpc && \
     { \
       echo '# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies'; \
@@ -185,6 +186,7 @@ RUN mkdir -p /etc/fastrpc && \
       echo '  Qualcomm Technologies, Inc. IQ8 8275 Pro SKU EVK:'; \
       echo '    DSP_LIBRARY_PATH: qcs8300/Qualcomm/QCS8300-RIDE/dsp'; \
     } > /etc/fastrpc/hexagon-dsp-binaries.yaml
+# REUSE-IgnoreEnd
 
 # Use container libraries
 ENV ADSP_LIBRARY_PATH=/usr/lib/rfsa/adsp
