@@ -276,7 +276,7 @@ def unix_server() -> Iterator[tuple[str, list[tuple[str, str, dict[str, str]]]]]
     class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
         pass
 
-    # Not tmp_path: on macOS it is longer than the 104 bytes a socket path may take
+    # Not tmp_path: its nested folders can outgrow the 104 to 108 bytes a socket path may take
     with tempfile.TemporaryDirectory() as tmp:
         path = f"{tmp}/scanner with space.sock"
         httpd = UnixHTTPServer(path, Handler)
