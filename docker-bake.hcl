@@ -27,7 +27,8 @@
 #
 # python-apps-base installs the wheel from the "wheel" context (dist/, filled by
 # `task build:bricks`), models-downloader reads models-list.yaml from the "models"
-# context (models/).
+# context (models/), and the runners shipping third-party code or models copy their
+# license texts from the "licenses" context (LICENSES/).
 
 # Registry prefix the images are published under, with a trailing slash.
 variable "REGISTRY" {
@@ -254,7 +255,10 @@ target "ocr-runner" {
   tags       = image_tags("ocr-runner")
   cache-from = cache_from("ocr-runner")
   cache-to   = cache_to("ocr-runner")
-  contexts   = parent_context("aihub-onnx-models-runner")
+  contexts = merge(
+    { licenses = "LICENSES" },
+    parent_context("aihub-onnx-models-runner"),
+  )
 }
 
 target "edge-impulse-runner" {
