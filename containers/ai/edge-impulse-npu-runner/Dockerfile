@@ -18,6 +18,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 COPY --link --from=edge-impulse-server /app/ /app/
 # The QNN builds of the out-of-the-box models, next to the CPU ones
 COPY --chown=arduino:arduino --chmod=755 ./models/ei-ootb-models/arm64/*.eim /models/ootb/ei/
+COPY --chown=arduino:arduino ./models/ei-ootb-models/arm64/*.eim.license /models/ootb/ei/
 
 # Runtime settings expected from the compose file:
 # - the QNN .eim files mounted read-only at /models
@@ -50,3 +51,6 @@ ENV EI_ACCEL=qnn
 # The entrypoint wrapper merges the host DSP payload into /usr/share/qcom, then runs the server.
 # Base arguments, the compose file appends the limits of the board in "command"
 ENTRYPOINT ["/qairt-entrypoint.sh", "python3", "/app/inference_server.py", "--socket=/ipc/ei.sock", "--models-dir=/models"]
+
+# Texts of the licenses the models above declare in their SPDX tags
+COPY --from=licenses BSD-3-Clause.txt Apache-2.0.txt LICENSES/
