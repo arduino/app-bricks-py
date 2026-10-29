@@ -7,12 +7,8 @@ version: "3"
 
 vars:
   LICENSE_HEADER_EXCLUDE: '(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock)$'
-  # The tracked files that get the SPDX header: a file labeled by a hand-written .license sidecar is left alone, and so is the sidecar
-  LICENSE_HEADER_FILES: >-
-    git ls-files |
-    awk '{ files[NR] = $0; tracked[$0] = 1 } END { for (i = 1; i <= NR; i++) if (files[i] !~ /\.license$/ && !((files[i] ".license") in tracked)) print files[i] }' |
-    grep -Ev '{{.LICENSE_HEADER_EXCLUDE}}'
-  LICENSE_HEADER_ARGS: --skip-unrecognized --copyright-prefix spdx-string-c --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license MPL-2.0
+  # --skip-existing: a file that already declares its license, in its header or a .license sidecar, is left as written
+  LICENSE_HEADER_ARGS: --skip-existing --skip-unrecognized --copyright-prefix spdx-string-c --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license MPL-2.0
 
 tasks:
   # init: set up the development environment, a .venv per component with the locked dependencies
@@ -143,7 +139,7 @@ tasks:
       - |
         set -eu
         tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-        {{.LICENSE_HEADER_FILES}} | tr '\n' '\0' | tar --null -cf - -T - | tar -xf - -C "$tmp"
+        git ls-files -z | grep -zEv '{{.LICENSE_HEADER_EXCLUDE}}' | tar --null -cf - -T - | tar -xf - -C "$tmp"
         mkdir -p "$tmp/LICENSES" && cp LICENSE.txt "$tmp/LICENSES/MPL-2.0.txt"
         (cd "$tmp" && find . -type f -not -path './LICENSES/*' -print0 | xargs -0 uv run --project "$OLDPWD" reuse annotate {{.LICENSE_HEADER_ARGS}} >/dev/null)
         missing="$(cd "$tmp" && find . -type f -not -path './LICENSES/*' | while read -r f; do cmp -s "$f" "$OLDPWD/$f" || echo "${f#./}"; done)"
@@ -208,7 +204,8 @@ tasks:
     desc: Add the SPDX headers and refresh the license files (REUSE)
     cmds:
       - |
-        {{.LICENSE_HEADER_FILES}} |
+        git ls-files |
+        grep -Ev '{{.LICENSE_HEADER_EXCLUDE}}' |
         sed 's/ /\\ /g' |
         xargs uv run reuse annotate -r {{.LICENSE_HEADER_ARGS}}
       - uv run reuse download --all
