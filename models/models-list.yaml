@@ -2234,64 +2234,6 @@ models:
       source: "huggingface"
       source-model-id: "Qwen3.5-4B-GGUF"
       source-model-url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF"
- - "llamacpp:Laya-Q8_0":
-    name : "Laya"
-    description: >-
-      Laya is a 0.4 billion parameter decision model (ModernBERT) for the Decision Model brick.
-      Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
-      with calibrated probabilities in a single forward pass. It supports up to 255 options per question.
-    supported_boards: ["ventunoq", "unoq"]
-    bricks:
-      - id: "arduino:decision_model"
-        model_configuration:
-          GGML_HEXAGON_DEVICES: 1
-    deployment:
-      handler: "hf-handler"
-      platforms:
-        - ventunoq:
-            variables:
-              model_url: "https://huggingface.co/ggml-org/Laya-GGUF/blob/22265007700297ba9e128297e82540cf28c5d7d4/Laya-Q8_0.gguf"
-              models_repository: "llamacpp"
-              model_directory: "ggml-org/Laya-GGUF"
-        - unoq:
-            variables:
-              model_url: "https://huggingface.co/ggml-org/Laya-GGUF/blob/22265007700297ba9e128297e82540cf28c5d7d4/Laya-Q8_0.gguf"
-              models_repository: "llamacpp"
-              model_directory: "ggml-org/Laya-GGUF"
-    metadata:
-      model_size_mb: 429
-      source: "huggingface"
-      source-model-id: "Laya-GGUF"
-      source-model-url: "https://huggingface.co/ggml-org/Laya-GGUF"
- - "llamacpp:Julia-1-Q8_0":
-    name : "Julia 1"
-    description: >-
-      Julia 1 is a tiny 0.1 billion parameter decision model (mmBERT-small) for the Decision Model brick.
-      Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
-      with calibrated probabilities in a single forward pass. Each choice question takes between 2 and 20 options.
-    supported_boards: ["ventunoq", "unoq"]
-    bricks:
-      - id: "arduino:decision_model"
-        model_configuration:
-          GGML_HEXAGON_DEVICES: 1
-    deployment:
-      handler: "hf-handler"
-      platforms:
-        - ventunoq:
-            variables:
-              model_url: "https://huggingface.co/ggml-org/Julia-1-GGUF/blob/16fee17949206fbf58da9347daea44d792a81211/Julia-1-Q8_0.gguf"
-              models_repository: "llamacpp"
-              model_directory: "ggml-org/Julia-1-GGUF"
-        - unoq:
-            variables:
-              model_url: "https://huggingface.co/ggml-org/Julia-1-GGUF/blob/16fee17949206fbf58da9347daea44d792a81211/Julia-1-Q8_0.gguf"
-              models_repository: "llamacpp"
-              model_directory: "ggml-org/Julia-1-GGUF"
-    metadata:
-      model_size_mb: 160
-      source: "huggingface"
-      source-model-id: "Julia-1-GGUF"
-      source-model-url: "https://huggingface.co/ggml-org/Julia-1-GGUF"
  - "llamacpp:Kev-0.8B-Q8_0":
     name : "Kev 0.8B"
     description: >-
@@ -2307,11 +2249,6 @@ models:
       handler: "hf-handler"
       platforms:
         - ventunoq:
-            variables:
-              model_url: "https://huggingface.co/ggml-org/Kev-0.8B-GGUF/blob/e551e319d483ff57e1ff208924b349d397cffc1c/Kev-0.8B-Q8_0.gguf"
-              models_repository: "llamacpp"
-              model_directory: "ggml-org/Kev-0.8B-GGUF"
-        - unoq:
             variables:
               model_url: "https://huggingface.co/ggml-org/Kev-0.8B-GGUF/blob/e551e319d483ff57e1ff208924b349d397cffc1c/Kev-0.8B-Q8_0.gguf"
               models_repository: "llamacpp"
@@ -2352,7 +2289,31 @@ models:
       source-model-id: "vllm-d3-edge-GGUF"
       source-model-url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF"
  - "llamacpp:vllm-d3-lite-Q8_0":
-    name : "vLLM-SR d3-lite"
+    name : "vLLM-SR d3-lite - Text"
+    description: >-
+      d3-lite is a 0.8 billion parameter decision model (Decision 3.0 by vLLM Semantic Router, built on Qwen3.5) for the Decision Model brick.
+      Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
+      with a probability for every answer. It supports up to 255 options per question and is more accurate than d3-edge.
+    supported_boards: ["ventunoq", "unoq"]
+    bricks:
+      - id: "arduino:decision_model"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/a1f9fa124e8d60ac02d1a2884b1dec5a3ec2fd21/vllm-d3-lite-Q8_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/vllm-d3-lite-GGUF"
+    metadata:
+      model_size_mb: 1032
+      source: "huggingface"
+      source-model-id: "vllm-d3-lite-GGUF"
+      source-model-url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF"      
+ - "llamacpp:vllm-d3-lite-Q8_0-multimodal":
+    name : "vLLM-SR d3-lite - Multimodal"
     description: >-
       d3-lite is a 0.8 billion parameter decision model (Decision 3.0 by vLLM Semantic Router, built on Qwen3.5) for the Decision Model brick.
       Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
@@ -2369,11 +2330,6 @@ models:
             variables:
               model_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/a1f9fa124e8d60ac02d1a2884b1dec5a3ec2fd21/vllm-d3-lite-Q8_0.gguf"
               model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/a1f9fa124e8d60ac02d1a2884b1dec5a3ec2fd21/mmproj-vllm-d3-lite-BF16.gguf"
-              models_repository: "llamacpp"
-              model_directory: "ggml-org/vllm-d3-lite-GGUF"
-        - unoq:
-            variables:
-              model_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/a1f9fa124e8d60ac02d1a2884b1dec5a3ec2fd21/vllm-d3-lite-Q8_0.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-lite-GGUF"
     metadata:
