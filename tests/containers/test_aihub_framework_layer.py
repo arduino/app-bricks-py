@@ -2,19 +2,17 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""aihub-framework is a layer: a minimal image whose layers the runner bases add, the `aihub` framework.
+"""aihub-framework is the layer holding the `aihub` runner framework and the app skeleton.
 
-The layer holds only files, FROM scratch. An image imports it through a stage of its own
-(``FROM ${REGISTRY}app-bricks/aihub-framework:${BASE_IMAGE_VERSION} AS <alias>``), adds its layers
-with ``COPY --link`` and links it in docker-bake.hcl, and the runners deriving from those images
-import the framework as ``aihub``. These tests read the Dockerfiles, docker-bake.hcl and the Python
-sources as text, so they run without Docker.
+Both runner bases add it at /opt/aihub and /app and put /opt on PYTHONPATH, so their runners
+``import aihub``, and every ``aihub`` import of a runner must resolve in the layer. The layer contract
+itself is checked by test_layers.py. These tests read the Dockerfiles and the Python sources as text,
+so they run without Docker.
 """
 
 from __future__ import annotations
 
 import ast
-import re
 import sys
 from pathlib import Path, PurePosixPath
 
@@ -24,28 +22,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.container import Containers, target_blocks  # noqa: E402
+from scripts.container import Containers  # noqa: E402
+from tests.containers.test_layers import copies_from_layer  # noqa: E402
 
 LAYER = "aihub-framework"
 CONTAINERS = Containers(REPO_ROOT / "containers")
 LAYER_DIR = CONTAINERS.directory[LAYER]
-LAYER_DOCKERFILE = (LAYER_DIR / "Dockerfile").read_text(encoding="utf-8")
-BAKE = (REPO_ROOT / "docker-bake.hcl").read_text(encoding="utf-8")
-BLOCKS = target_blocks(BAKE)
-
 IMPORTERS = [name for name in CONTAINERS.names if LAYER in CONTAINERS.layers[name]]
-LAYER_STAGE = re.compile(rf"^FROM\s+\$\{{REGISTRY\}}app-bricks/{LAYER}:\$\{{BASE_IMAGE_VERSION\}}\s+AS\s+(\S+)\s*$", re.MULTILINE | re.IGNORECASE)
-COPY = re.compile(r"^COPY\s+((?:--\S+\s+)*)(\S+)\s+(\S+)\s*$", re.MULTILINE)
-
-
-def instructions(dockerfile: str) -> list[str]:
-    """The instruction keywords of a Dockerfile, comments and continuations aside."""
-    return [line.split()[0].upper() for line in dockerfile.splitlines() if line.strip() and not line.startswith((" ", "\t", "#"))]
-
-
-def layer_paths() -> dict[PurePosixPath, Path]:
-    """Map each path the layer holds to the directory of the layer's build context it comes from."""
-    return {PurePosixPath(dest): LAYER_DIR / src for flags, src, dest in COPY.findall(LAYER_DOCKERFILE) if not flags}
 
 
 def runners_of(importer: str) -> list[str]:
@@ -56,13 +39,7 @@ def runners_of(importer: str) -> list[str]:
     return names
 
 
-def test_the_layer_is_a_scratch_image_of_files_only():
-    assert CONTAINERS.base[LAYER] == "scratch"
-    assert CONTAINERS.parent[LAYER] is None and CONTAINERS.layers[LAYER] == []
-    # scratch has no shell: a RUN would fail, and nothing but files belongs in a layer.
-    assert set(instructions(LAYER_DOCKERFILE)) == {"FROM", "COPY"}
-    for path, source in layer_paths().items():
-        assert source.is_dir(), f"the layer copies {source} into {path}, which is not a directory"
+def test_the_layer_holds_the_package_and_the_app_skeleton():
     assert (LAYER_DIR / "aihub" / "__init__.py").is_file() and (LAYER_DIR / "app" / "main.py").is_file()
 
 
@@ -70,47 +47,12 @@ def test_both_runner_bases_import_the_layer():
     assert IMPORTERS == ["aihub-litert-models-runner", "aihub-onnx-models-runner"]
 
 
-def copies_from_layer(dockerfile: str) -> list[tuple[list[str], PurePosixPath]]:
-    """The ``COPY`` instructions reading from the layer's stage: their flags and source path."""
-    aliases = LAYER_STAGE.findall(dockerfile)
-    assert len(aliases) == 1, f"the layer must be imported through exactly one stage, found {aliases}"
-    return [(flags.split(), PurePosixPath(src)) for flags, src, _ in COPY.findall(dockerfile) if f"--from={aliases[0]}" in flags.split()]
-
-
 @pytest.mark.parametrize("importer", IMPORTERS)
-def test_an_importer_links_the_layer_and_adds_only_what_it_holds(importer: str):
+def test_an_importer_puts_the_framework_on_the_python_path(importer: str):
     dockerfile = (CONTAINERS.directory[importer] / "Dockerfile").read_text(encoding="utf-8")
-    start, end = BLOCKS[importer]
-    assert f'parent_context("{LAYER}")' in BAKE[start:end], f"bake target '{importer}' does not link {LAYER}, bake would pull it"
-
-    copies = copies_from_layer(dockerfile)
-    assert copies, f"{importer} imports {LAYER} but adds nothing of it"
-    copied = [path for _, path in copies]
-    held = layer_paths()
-    for path in copied:
-        assert any(path == root or root in path.parents for root in held), f"{importer} copies {path}, which {LAYER} does not hold"
     # The framework lands in /opt/aihub and is imported as `aihub`.
-    assert PurePosixPath("/opt/aihub") in copied
+    assert PurePosixPath("/opt/aihub") in [path for _, path in copies_from_layer(dockerfile, LAYER)]
     assert 'ENV PYTHONPATH="/opt"' in dockerfile
-
-
-@pytest.mark.parametrize("importer", IMPORTERS)
-def test_an_importer_adds_the_layer_blobs_rather_than_copying_the_files(importer: str):
-    """Only --link reproduces the layer's own layers; a plain COPY --from writes the files into new ones."""
-    dockerfile = (CONTAINERS.directory[importer] / "Dockerfile").read_text(encoding="utf-8")
-    plain = [str(path) for flags, path in copies_from_layer(dockerfile) if "--link" not in flags]
-    assert not plain, f"{importer} copies {plain} out of {LAYER} without --link, as new layers instead of the layer's own"
-
-
-def test_a_plain_copy_out_of_the_layer_is_told_apart_from_a_linked_one():
-    dockerfile = (
-        f"FROM ${{REGISTRY}}app-bricks/{LAYER}:${{BASE_IMAGE_VERSION}} AS fw\n"
-        "FROM python:3.13\n"
-        "COPY --link --from=fw /opt/aihub/ /opt/aihub/\n"
-        "COPY --from=fw /app/ ./\n"
-        "COPY --link --from=other /x /x\n"
-    )
-    assert [("--link" in flags, str(path)) for flags, path in copies_from_layer(dockerfile)] == [(True, "/opt/aihub"), (False, "/app")]
 
 
 def defined_names(module: Path) -> set[str]:

@@ -287,6 +287,30 @@ def test_show_lists_the_layers_and_the_images_copying_from_them(tmp_path):
     assert "  copied by:  aihub-models-runner, aihub-onnx-models-runner\n" in containers.describe("aihub-framework")
 
 
+def test_a_layer_is_left_out_of_the_published_containers(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, LAYERED))
+    assert containers.is_layer("aihub-framework") and not containers.is_layer("aihub-onnx-models-runner")
+    assert "aihub-framework" not in containers.published
+    assert set(containers.published) | {"aihub-framework"} == set(containers.names)
+
+
+def test_list_published_leaves_the_layers_out(tmp_path, capsys):
+    make_containers_dir(tmp_path, LAYERED)
+    assert main(["--repo-root", str(tmp_path), "list"]) == 0
+    assert '"aihub-framework"' in capsys.readouterr().out
+    assert main(["--repo-root", str(tmp_path), "list", "--published"]) == 0
+    assert '"aihub-framework"' not in capsys.readouterr().out
+
+
+def test_check_bake_refuses_tags_on_a_layer(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, LAYERED))
+    definition = layered_bake_definition(**LAYER_LINKS)
+    definition["target"]["aihub-framework"]["tags"] = ["ghcr.io/arduino/app-bricks/aihub-framework:local"]
+    assert containers.check_bake(definition) == [
+        "bake target 'aihub-framework' has tags but its Dockerfile builds FROM scratch, a layer is never published",
+    ]
+
+
 # --- scaffold
 
 BAKE = """group "default" {

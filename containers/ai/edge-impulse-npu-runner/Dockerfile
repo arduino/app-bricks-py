@@ -7,15 +7,15 @@ ARG BASE_IMAGE_VERSION=latest
 
 FROM ghcr.io/astral-sh/uv:0.10.3@sha256:7a88d4c4e6f44200575000638453a5a381db0ae31ad5c3a51b14f8687c9d93a3 AS uv
 
+# The inference server and its locked packages, shared with edge-impulse-runner
+FROM ${REGISTRY}app-bricks/edge-impulse-server:${BASE_IMAGE_VERSION} AS edge-impulse-server
+
 FROM ${REGISTRY}app-bricks/qairt-common-base:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# The server and its locked packages come from the "server" context,
-# containers/ai/edge-impulse-runner, linked in docker-bake.hcl.
-# Standalone build: docker build --build-context server=../edge-impulse-runner .
-COPY --from=server ./src /app
-COPY --from=server ./pyproject.toml ./uv.lock /tmp/deps/
+# The server: the layer of edge-impulse-server itself, the very blob edge-impulse-runner carries
+COPY --link --from=edge-impulse-server /app/ /app/
 # The QNN builds of the out-of-the-box models, next to the CPU ones
 COPY --chown=arduino:arduino --chmod=755 ./models/ei-ootb-models/arm64/*.eim /models/ootb/ei/
 
@@ -27,11 +27,11 @@ COPY --chown=arduino:arduino --chmod=755 ./models/ei-ootb-models/arm64/*.eim /mo
 # - a tmpfs /tmp for the .eim sockets
 # - shm_size for the feature buffers
 # - cap_drop ALL
-# uv is only mounted while installing, it is not part of the image
+# uv and the server's lock are only mounted while installing, they are not part of the image
 RUN --mount=from=uv,source=/uv,target=/bin/uv \
+    --mount=from=edge-impulse-server,source=/deps,target=/deps \
     set -ex; \
-    uv export --frozen --project /tmp/deps | uv pip install --system --no-cache-dir --require-hashes -r -; \
-    rm -rf /tmp/deps; \
+    uv export --frozen --project /deps | uv pip install --system --no-cache-dir --require-hashes -r -; \
     # The numpy test suites are never run by the server
     find /usr/local/lib/python3.13/site-packages -type d -name tests -prune -exec rm -rf {} +; \
     # precompile python files to .pyc to speed up startup time

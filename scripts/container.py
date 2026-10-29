@@ -9,14 +9,15 @@ the group (ai, base, bricks) telling what the image is for. The base image of ea
 exactly once, in the ``FROM`` of its Dockerfile's final stage: this module resolves it through
 multi-stage builds and tells whether it is another container of this repository
 (``FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION}``) or an external image. An image can
-also copy files out of a container of this repository, a layer, through a stage of its own
-(``FROM ${REGISTRY}app-bricks/<layer>:${BASE_IMAGE_VERSION} AS <alias>`` then ``COPY --link --from=<alias>``):
-the layer is a build dependency like the parent, without being the image it builds on. CI needs no
-second, drift-prone copy of the graph; ``docker-bake.hcl`` links the same parents and layers so bake
-builds them in order, and ``check-bake`` verifies the two agree.
+also add a layer, a container of this repository ``FROM scratch`` holding files only, through a stage of
+its own (``FROM ${REGISTRY}app-bricks/<layer>:${BASE_IMAGE_VERSION} AS <alias>`` then ``COPY --link --from=<alias>``):
+the layer is a build dependency like the parent, without being the image it builds on, and bake builds
+it in-graph without ever publishing it. CI needs no second, drift-prone copy of the graph;
+``docker-bake.hcl`` links the same parents and layers so bake builds them in order, and ``check-bake``
+verifies the two agree.
 
     python3 -m scripts.container                  # JSON map of base image, parent and layers per container
-    python3 -m scripts.container list             # JSON array of every container
+    python3 -m scripts.container list             # JSON array of every container, --published leaves the layers out
     python3 -m scripts.container closure NAME...  # the selection widened with its dependencies and dependents
     python3 -m scripts.container tree             # the hierarchy, grouped by external base image
     python3 -m scripts.container show NAME        # base image, parent, layers, children and files of one container
@@ -43,6 +44,9 @@ DOCKERFILE_GLOB = "*/*/Dockerfile"
 
 FROM_PATTERN = re.compile(r"^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?\s*$", re.IGNORECASE)
 PARENT_PATTERN = re.compile(r"^\$\{REGISTRY\}app-bricks/([a-z0-9._-]+):\$\{BASE_IMAGE_VERSION\}$")
+
+# The base of a layer: an image holding files only, never run and never published.
+SCRATCH = "scratch"
 
 
 class ContainerError(RuntimeError):
@@ -130,6 +134,15 @@ class Containers:
         """Every container name, sorted."""
         return sorted(self.directory)
 
+    def is_layer(self, name: str) -> bool:
+        """Whether ``name`` is a layer: an image FROM scratch other containers add, never run and never published."""
+        return self.base[name] == SCRATCH
+
+    @property
+    def published(self) -> list[str]:
+        """Every container published as an image, the layers left out."""
+        return [name for name in self.names if not self.is_layer(name)]
+
     def children(self, name: str) -> list[str]:
         """The containers building FROM ``name``."""
         return sorted(child for child, parent in self.parent.items() if parent == name)
@@ -170,15 +183,17 @@ class Containers:
         """Return what disagrees between a ``docker buildx bake --print`` definition and the Dockerfiles.
 
         Every container must be a target of the default group, every target must
-        be a container, and a target must link exactly the parent its Dockerfile
-        builds FROM and the layers it copies from: bake rewrites those FROM lines
-        to the freshly built images only through the links, without them the
-        images are pulled from the registry instead.
+        be a container, a layer must carry no tags, and a target must link exactly
+        the parent its Dockerfile builds FROM and the layers it copies from: bake
+        rewrites those FROM lines to the freshly built images only through the
+        links, without them the images are pulled from the registry instead.
         """
         targets = definition.get("target") or {}
         problems = [f"'{name}' has a Dockerfile but no bake target in the default group" for name in sorted(set(self.names) - set(targets))]
         problems += [f"bake target '{name}' has no Dockerfile under containers/" for name in sorted(set(targets) - set(self.names))]
         for name in sorted(set(self.names) & set(targets)):
+            if self.is_layer(name) and targets[name].get("tags"):
+                problems.append(f"bake target '{name}' has tags but its Dockerfile builds FROM scratch, a layer is never published")
             contexts = targets[name].get("contexts") or {}
             linked = sorted(value.removeprefix("target:") for value in contexts.values() if value.startswith("target:"))
             if linked != sorted(self.dependencies(name)):
@@ -467,7 +482,8 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT, help=argparse.SUPPRESS)
     subparsers = parser.add_subparsers(dest="command")
-    subparsers.add_parser("list", help="Print every container name as a JSON array.")
+    list_parser = subparsers.add_parser("list", help="Print every container name as a JSON array.")
+    list_parser.add_argument("--published", action="store_true", help="Leave out the layers, which are never published.")
     closure_parser = subparsers.add_parser("closure", help="Widen a selection with its parents and children, as a JSON array.")
     closure_parser.add_argument("containers", nargs="+", help="Selected container names.")
     subparsers.add_parser("tree", help="Print the container hierarchy.")
@@ -499,7 +515,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         containers = Containers(args.repo_root / "containers")
         if args.command == "list":
-            print(json.dumps(containers.names))
+            print(json.dumps(containers.published if args.published else containers.names))
         elif args.command == "closure":
             print(json.dumps(containers.closure(args.containers)))
         elif args.command == "tree":

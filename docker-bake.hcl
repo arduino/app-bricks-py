@@ -7,18 +7,19 @@
 # A container deriving from another container of this repository declares it
 # in its Dockerfile (FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION})
 # and links it here with parent_context(): bake then builds the parent in-graph,
-# in dependency order, however deep the chain. A container copying files out of
-# a layer of this repository, an image like aihub-framework that is never run,
-# declares it the same way in a stage of its own
-# (FROM ${REGISTRY}app-bricks/<layer>:${BASE_IMAGE_VERSION} AS <alias>, then
-# COPY --link --from=<alias>, which adds the layer's own blobs) and links it with
-# parent_context() next to its parent.
+# in dependency order, however deep the chain. A container adding a layer of
+# this repository, an image FROM scratch like aihub-framework that holds files
+# only and is never run nor published, declares it the same way in a stage of
+# its own (FROM ${REGISTRY}app-bricks/<layer>:${BASE_IMAGE_VERSION} AS <alias>,
+# then COPY --link --from=<alias>, which adds the layer's own blobs) and links it
+# with parent_context() next to its parent. Layers inherit _layer: built
+# in-graph, cache only, no tags.
 # scripts/container.py reads the same FROM lines and the release checks that the
 # two agree. Targets are listed parents and layers first, each followed by the
 # containers deriving from it.
 #
 # Build arguments specific to a container (download URLs and digests) are the
-# ARG defaults of its Dockerfile, so it also builds standalone.
+# ARG defaults of its Dockerfile; the targets carry only the common ones.
 #
 #   docker buildx bake --print                  # inspect the resolved definition
 #   docker buildx bake python-apps-base         # build a container and its parents
@@ -127,10 +128,21 @@ target "_downstream" {
   }
 }
 
-# Every container: a release builds and publishes them all.
+# Layers: images FROM scratch holding only files other containers add with
+# COPY --link. Built in-graph when an image adding them is built, never run and
+# never published: no tags, no registry cache, no SBOM of their own since their
+# files are in the SBOM of the images adding them.
+target "_layer" {
+  platforms = ["linux/arm64"]
+  attest    = ["type=provenance,disabled=true"]
+  output    = ["type=cacheonly"]
+}
+
+# Every container: a release builds them all and publishes all but the layers.
 group "default" {
   targets = [
     "aihub-framework",
+    "edge-impulse-server",
     "python-slim",
     "llamacpp-runner",
     "models-downloader",
@@ -151,14 +163,18 @@ group "default" {
   ]
 }
 
-# The `aihub` runner framework and the app skeleton, a layer FROM scratch that
-# aihub-litert-models-runner and aihub-onnx-models-runner copy from.
+# The `aihub` runner framework and the app skeleton, a layer that
+# aihub-litert-models-runner and aihub-onnx-models-runner add.
 target "aihub-framework" {
-  inherits   = ["_common"]
-  context    = "containers/base/aihub-framework"
-  tags       = image_tags("aihub-framework")
-  cache-from = cache_from("aihub-framework")
-  cache-to   = cache_to("aihub-framework")
+  inherits = ["_layer"]
+  context  = "containers/base/aihub-framework"
+}
+
+# The Edge Impulse inference server and its locked packages, a layer that
+# edge-impulse-runner and edge-impulse-npu-runner add.
+target "edge-impulse-server" {
+  inherits = ["_layer"]
+  context  = "containers/base/edge-impulse-server"
 }
 
 target "python-slim" {
@@ -247,7 +263,10 @@ target "edge-impulse-runner" {
   tags       = image_tags("edge-impulse-runner")
   cache-from = cache_from("edge-impulse-runner")
   cache-to   = cache_to("edge-impulse-runner")
-  contexts   = parent_context("python-slim")
+  contexts = merge(
+    parent_context("python-slim"),
+    parent_context("edge-impulse-server"),
+  )
 }
 
 target "qairt-common-base" {
@@ -304,8 +323,8 @@ target "edge-impulse-npu-runner" {
   cache-from = cache_from("edge-impulse-npu-runner")
   cache-to   = cache_to("edge-impulse-npu-runner")
   contexts = merge(
-    { server = "containers/ai/edge-impulse-runner" },
     parent_context("qairt-common-base"),
+    parent_context("edge-impulse-server"),
   )
 }
 
