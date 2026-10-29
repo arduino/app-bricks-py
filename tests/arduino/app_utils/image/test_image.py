@@ -6,7 +6,7 @@ import io
 
 from PIL import Image
 
-from arduino.app_utils.image.image import FONT_FILE, Shape, draw_anomaly_markers, draw_bounding_boxes, get_image_bytes, get_image_type, label_font
+from arduino.app_utils.image.image import Shape, draw_anomaly_markers, draw_bounding_boxes, get_image_bytes, get_image_type
 
 
 def _image() -> Image.Image:
@@ -43,10 +43,3 @@ def test_image_bytes_of_a_path(tmp_path):
     path.write_bytes(b"png")
     assert get_image_bytes(path) == b"png"
     assert get_image_bytes(str(path)) == b"png"
-
-
-def test_the_label_font_ships_with_the_library():
-    assert FONT_FILE.exists()
-    font = label_font(12)
-    assert font.getname()[0] == "Open Sans", "the static SemiBold instance names only its family"
-    assert label_font(12) is font, "one face per size"
