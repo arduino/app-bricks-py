@@ -299,7 +299,10 @@ target "gesture-recognition-runner" {
   tags       = image_tags("gesture-recognition-runner")
   cache-from = cache_from("gesture-recognition-runner")
   cache-to   = cache_to("gesture-recognition-runner")
-  contexts   = parent_context("aihub-litert-models-runner")
+  contexts = merge(
+    { licenses = "LICENSES" },
+    parent_context("aihub-litert-models-runner"),
+  )
 }
 
 target "pose-estimation-runner" {
@@ -308,7 +311,10 @@ target "pose-estimation-runner" {
   tags       = image_tags("pose-estimation-runner")
   cache-from = cache_from("pose-estimation-runner")
   cache-to   = cache_to("pose-estimation-runner")
-  contexts   = parent_context("aihub-litert-models-runner")
+  contexts = merge(
+    { licenses = "LICENSES" },
+    parent_context("aihub-litert-models-runner"),
+  )
 }
 
 target "llamacpp-npu-runner" {

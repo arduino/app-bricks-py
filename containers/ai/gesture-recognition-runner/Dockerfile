@@ -12,3 +12,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Code and models only: OpenCV and ai-edge-litert, which this runner used to install
 # itself, now come from the base image, where every LiteRT runner shares one copy.
 COPY . .
+
+# Text of the third-party license the models above declare in their SPDX tags
+COPY --from=licenses Apache-2.0.txt LICENSES/

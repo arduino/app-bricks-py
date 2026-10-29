@@ -6,7 +6,12 @@ version: "3"
 # Every task here runs on a developer machine. What runs only in CI lives in Taskfile.ci.yml.
 
 vars:
-  LICENSE_HEADER_EXCLUDE: '(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock|ttf|ttf\.license)$'
+  LICENSE_HEADER_EXCLUDE: '(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock)$'
+  # The tracked files that get the SPDX header: a file labeled by a hand-written .license sidecar is left alone, and so is the sidecar
+  LICENSE_HEADER_FILES: >-
+    git ls-files |
+    awk '{ files[NR] = $0; tracked[$0] = 1 } END { for (i = 1; i <= NR; i++) if (files[i] !~ /\.license$/ && !((files[i] ".license") in tracked)) print files[i] }' |
+    grep -Ev '{{.LICENSE_HEADER_EXCLUDE}}'
   LICENSE_HEADER_ARGS: --skip-unrecognized --copyright-prefix spdx-string-c --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license MPL-2.0
 
 tasks:
@@ -138,7 +143,7 @@ tasks:
       - |
         set -eu
         tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-        git ls-files -z | grep -zEv '{{.LICENSE_HEADER_EXCLUDE}}' | tar --null -cf - -T - | tar -xf - -C "$tmp"
+        {{.LICENSE_HEADER_FILES}} | tr '\n' '\0' | tar --null -cf - -T - | tar -xf - -C "$tmp"
         mkdir -p "$tmp/LICENSES" && cp LICENSE.txt "$tmp/LICENSES/MPL-2.0.txt"
         (cd "$tmp" && find . -type f -not -path './LICENSES/*' -print0 | xargs -0 uv run --project "$OLDPWD" reuse annotate {{.LICENSE_HEADER_ARGS}} >/dev/null)
         missing="$(cd "$tmp" && find . -type f -not -path './LICENSES/*' | while read -r f; do cmp -s "$f" "$OLDPWD/$f" || echo "${f#./}"; done)"
@@ -203,19 +208,12 @@ tasks:
     desc: Add the SPDX headers and refresh the license files (REUSE)
     cmds:
       - |
-        git ls-files |
-        grep -Ev '{{.LICENSE_HEADER_EXCLUDE}}' |
+        {{.LICENSE_HEADER_FILES}} |
         sed 's/ /\\ /g' |
         xargs uv run reuse annotate -r {{.LICENSE_HEADER_ARGS}}
       - uv run reuse download --all
-      - |
-        licenses_dir="LICENSES"
-        if [ -d "$licenses_dir" ]; then
-          if [ -f "$licenses_dir/MPL-2.0.txt" ]; then
-            mv "$licenses_dir/MPL-2.0.txt" LICENSE.txt
-          fi
-          rm -rf "$licenses_dir"
-        fi
+      # MPL-2.0 is the project license, kept in LICENSE.txt; the other texts stay in LICENSES/ for REUSE
+      - if [ -f LICENSES/MPL-2.0.txt ]; then mv LICENSES/MPL-2.0.txt LICENSE.txt; fi
       # The upstream SPDX texts fetched by reuse carry trailing spaces that break parsers such as licensed
       - cmd: find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i '' 's/[[:space:]]*$//' {} +
         platforms: [darwin]
