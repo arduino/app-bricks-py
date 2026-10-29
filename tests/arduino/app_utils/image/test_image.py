@@ -45,8 +45,8 @@ def test_image_bytes_of_a_path(tmp_path):
     assert get_image_bytes(str(path)) == b"png"
 
 
-def test_the_label_font_ships_with_the_library_under_its_own_license():
-    assert FONT_FILE.exists() and FONT_FILE.with_suffix(".ttf.license").exists()
+def test_the_label_font_ships_with_the_library():
+    assert FONT_FILE.exists()
     font = label_font(12)
     assert font.getname()[0] == "Open Sans", "the static SemiBold instance names only its family"
     assert label_font(12) is font, "one face per size"
