@@ -27,8 +27,8 @@
 #
 # python-apps-base installs the wheel from the "wheel" context (dist/, filled by
 # `task build:bricks`), models-downloader reads models-list.yaml from the "models"
-# context (models/), and the runners shipping third-party code or models copy their
-# license texts from the "licenses" context (LICENSES/).
+# context (models/), and the runners shipping code or models under licenses other
+# than MPL-2.0 copy their texts from the "licenses" context (LICENSES/).
 
 # Registry prefix the images are published under, with a trailing slash.
 variable "REGISTRY" {
@@ -299,7 +299,10 @@ target "gesture-recognition-runner" {
   tags       = image_tags("gesture-recognition-runner")
   cache-from = cache_from("gesture-recognition-runner")
   cache-to   = cache_to("gesture-recognition-runner")
-  contexts   = parent_context("aihub-litert-models-runner")
+  contexts = merge(
+    { licenses = "LICENSES" },
+    parent_context("aihub-litert-models-runner"),
+  )
 }
 
 target "pose-estimation-runner" {
@@ -308,7 +311,10 @@ target "pose-estimation-runner" {
   tags       = image_tags("pose-estimation-runner")
   cache-from = cache_from("pose-estimation-runner")
   cache-to   = cache_to("pose-estimation-runner")
-  contexts   = parent_context("aihub-litert-models-runner")
+  contexts = merge(
+    { licenses = "LICENSES" },
+    parent_context("aihub-litert-models-runner"),
+  )
 }
 
 target "llamacpp-npu-runner" {
@@ -327,6 +333,7 @@ target "edge-impulse-npu-runner" {
   cache-from = cache_from("edge-impulse-npu-runner")
   cache-to   = cache_to("edge-impulse-npu-runner")
   contexts = merge(
+    { licenses = "LICENSES" },
     parent_context("qairt-common-base"),
     parent_context("edge-impulse-server"),
   )
@@ -338,6 +345,9 @@ target "ei-models-runner" {
   tags       = image_tags("ei-models-runner")
   cache-from = cache_from("ei-models-runner")
   cache-to   = cache_to("ei-models-runner")
+  contexts = {
+    licenses = "LICENSES"
+  }
 }
 
 target "ei-qnn-models-runner" {
@@ -346,4 +356,7 @@ target "ei-qnn-models-runner" {
   tags       = image_tags("ei-qnn-models-runner")
   cache-from = cache_from("ei-qnn-models-runner")
   cache-to   = cache_to("ei-qnn-models-runner")
+  contexts = {
+    licenses = "LICENSES"
+  }
 }

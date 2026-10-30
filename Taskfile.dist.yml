@@ -5,10 +5,6 @@ version: "3"
 # intent covers both. check:* tasks only verify and exit non-zero, fix:* tasks apply the same rules.
 # Every task here runs on a developer machine. What runs only in CI lives in Taskfile.ci.yml.
 
-vars:
-  LICENSE_HEADER_EXCLUDE: '(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock|ttf|ttf\.license)$'
-  LICENSE_HEADER_ARGS: --skip-unrecognized --copyright-prefix spdx-string-c --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license MPL-2.0
-
 tasks:
   # init: set up the development environment, a .venv per component with the locked dependencies
 
@@ -132,18 +128,9 @@ tasks:
       - uv run ruff check .
 
   check:license-headers:
-    desc: Fail if a source file lacks its SPDX header, run task fix:license-headers
+    desc: Fail if a tracked file lacks its copyright and license, in its header, a .license sidecar or REUSE.toml, run task fix:license-headers
     cmds:
-      # Annotates a copy of the tracked files and reports the ones the fixer would change
-      - |
-        set -eu
-        tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-        git ls-files -z | grep -zEv '{{.LICENSE_HEADER_EXCLUDE}}' | tar --null -cf - -T - | tar -xf - -C "$tmp"
-        mkdir -p "$tmp/LICENSES" && cp LICENSE.txt "$tmp/LICENSES/MPL-2.0.txt"
-        (cd "$tmp" && find . -type f -not -path './LICENSES/*' -print0 | xargs -0 uv run --project "$OLDPWD" reuse annotate {{.LICENSE_HEADER_ARGS}} >/dev/null)
-        missing="$(cd "$tmp" && find . -type f -not -path './LICENSES/*' | while read -r f; do cmp -s "$f" "$OLDPWD/$f" || echo "${f#./}"; done)"
-        if [ -n "$missing" ]; then printf 'Missing SPDX headers, run task fix:license-headers:\n%s\n' "$missing"; exit 1; fi
-        echo "SPDX headers are in place"
+      - git ls-files -z | xargs -0 uv run reuse lint-file
 
   check:licenses:
     desc: Fail on dependency license problems as CI does, listing outdated records under .licenses/ without rewriting them (licensed, via Docker)
@@ -200,27 +187,21 @@ tasks:
       - uv run ruff check --fix .
 
   fix:license-headers:
-    desc: Add the SPDX headers and refresh the license files (REUSE)
+    desc: Add the Arduino MPL-2.0 header to the tracked files the license check reports, and refresh the license texts (REUSE)
     cmds:
+      # A file type that takes no comment is skipped, it needs a hand-written .license sidecar or a REUSE.toml entry
       - |
-        git ls-files |
-        grep -Ev '{{.LICENSE_HEADER_EXCLUDE}}' |
-        sed 's/ /\\ /g' |
-        xargs uv run reuse annotate -r {{.LICENSE_HEADER_ARGS}}
+        git ls-files -z | xargs -0 uv run reuse lint-file |
+        sed -nE 's/: no (license identifier|copyright notice)$//p' | sort -u | tr '\n' '\0' |
+        xargs -0 -r uv run reuse annotate --skip-unrecognized --copyright-prefix spdx-string-c --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license MPL-2.0
       - uv run reuse download --all
-      - |
-        licenses_dir="LICENSES"
-        if [ -d "$licenses_dir" ]; then
-          if [ -f "$licenses_dir/MPL-2.0.txt" ]; then
-            mv "$licenses_dir/MPL-2.0.txt" LICENSE.txt
-          fi
-          rm -rf "$licenses_dir"
-        fi
       # The upstream SPDX texts fetched by reuse carry trailing spaces that break parsers such as licensed
-      - cmd: find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i '' 's/[[:space:]]*$//' {} +
+      - cmd: sed -i '' 's/[[:space:]]*$//' LICENSES/*.txt
         platforms: [darwin]
-      - cmd: find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i 's/[[:space:]]*$//' {} +
+      - cmd: sed -i 's/[[:space:]]*$//' LICENSES/*.txt
         platforms: [linux, windows]
+      # LICENSE.txt is the copy of the project license that GitHub and PyPI look for
+      - cp LICENSES/MPL-2.0.txt LICENSE.txt
 
   fix:licenses:
     desc: Update the dependency license records under .licenses/ from the locks (licensed cache, via Docker)
