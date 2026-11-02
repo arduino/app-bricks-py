@@ -2161,7 +2161,7 @@ models:
                models_repository: "llamacpp"
                model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
      metadata:
-       model_size_mb: 611
+       model_size_mb: 680
        source: "huggingface"
        source-model-id: "Qwen3.5-0.8B-Q4_0"
        source-model-url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF"
@@ -2397,7 +2397,7 @@ models:
               models_repository: "llamacpp"
               model_directory: "ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"              
     metadata:
-      model_size_mb: 546
+      model_size_mb: 521
       source: "huggingface"
       source-model-id: "ggml-org/SmolVLM2-500M-Video-Instruct-Q8_0"
       source-model-url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"
@@ -2434,7 +2434,7 @@ models:
               models_repository: "llamacpp"
               model_directory: "ggml-org/SmolVLM2-256M-Video-Instruct-GGUF"             
     metadata:
-      model_size_mb: 279
+      model_size_mb: 266
       source: "huggingface"
       source-model-id: "ggml-org/SmolVLM2-256M-Video-Instruct-Q8_0"
       source-model-url: "https://huggingface.co/ggml-org/SmolVLM2-256M-Video-Instruct-GGUF"
