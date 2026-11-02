@@ -2,14 +2,13 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Conversion of every supported audio input into an ``input_audio`` content part.
+"""Encoding of every supported audio input into a WAV or MP3 file.
 
 The inputs mirror what an app has at hand: a file, file bytes, or the arrays the
 Microphone peripheral returns (``record_wav()`` gives a uint8 WAV file, ``record_pcm()``
-raw samples). A raw PCM array must come out as a WAV file llama.cpp can decode.
+raw samples). A raw PCM array must come out as a WAV file a decoder can read.
 """
 
-import base64
 import io
 import wave
 from types import SimpleNamespace
@@ -17,8 +16,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from arduino.app_bricks.cloud_llm.audio import as_audio_list, audio_to_content_part, detect_audio_format
 from arduino.app_peripherals.microphone.base_microphone import BaseMicrophone
+from arduino.app_utils import AudioClip
 
 MP3_FRAME = bytes([0xFF, 0xFB, 0x90, 0x64]) + b"\x00" * 60
 
@@ -33,11 +32,6 @@ def _wav_bytes(samples: np.ndarray, rate: int = 16000, channels: int = 1) -> byt
     return buffer.getvalue()
 
 
-def _decode_part(part: dict) -> tuple[str, bytes]:
-    assert part["type"] == "input_audio"
-    return part["input_audio"]["format"], base64.b64decode(part["input_audio"]["data"])
-
-
 def _read_wav(data: bytes) -> tuple[int, int, int, np.ndarray]:
     with wave.open(io.BytesIO(data), "rb") as wav_file:
         frames = wav_file.readframes(wav_file.getnframes())
@@ -49,14 +43,14 @@ def test_wav_file_path(tmp_path):
     path = tmp_path / "clip.WAV"
     path.write_bytes(data)
 
-    assert _decode_part(audio_to_content_part(str(path))) == ("wav", data)
+    assert AudioClip.from_input(str(path)) == AudioClip(data, "wav")
 
 
 def test_mp3_file_path(tmp_path):
     path = tmp_path / "clip.mp3"
     path.write_bytes(MP3_FRAME)
 
-    assert _decode_part(audio_to_content_part(str(path))) == ("mp3", MP3_FRAME)
+    assert AudioClip.from_input(str(path)) == AudioClip(MP3_FRAME, "mp3")
 
 
 def test_unsupported_extension_is_rejected(tmp_path):
@@ -64,12 +58,12 @@ def test_unsupported_extension_is_rejected(tmp_path):
     path.write_bytes(b"OggS")
 
     with pytest.raises(ValueError, match=r"\.wav and \.mp3"):
-        audio_to_content_part(str(path))
+        AudioClip.from_input(str(path))
 
 
 def test_missing_file_is_reported():
     with pytest.raises(FileNotFoundError):
-        audio_to_content_part("does-not-exist.wav")
+        AudioClip.from_input("does-not-exist.wav")
 
 
 @pytest.mark.parametrize(
@@ -81,27 +75,26 @@ def test_missing_file_is_reported():
     ],
 )
 def test_encoded_bytes_are_detected(data, expected):
-    assert detect_audio_format(data) == expected
-    assert _decode_part(audio_to_content_part(data)) == (expected, data)
+    assert AudioClip.detect_format(data) == expected
+    assert AudioClip.from_input(data) == AudioClip(data, expected)
 
 
 def test_unknown_bytes_are_rejected():
     with pytest.raises(ValueError, match="WAV or MP3"):
-        audio_to_content_part(b"not audio at all")
+        AudioClip.from_input(b"not audio at all")
 
 
-def test_record_wav_output_is_sent_as_is():
+def test_record_wav_output_is_kept_as_is():
     """``Microphone.record_wav()`` returns the WAV file as a uint8 array: it must not be re-wrapped as PCM."""
     mic = SimpleNamespace(sample_rate=22050, channels=2, format_is_packed=False)
     samples = np.arange(-50, 50, dtype=np.int16)
     record_wav_output = BaseMicrophone._pcm_to_wav(mic, samples)
     assert record_wav_output.dtype == np.uint8
 
-    audio_format, data = _decode_part(audio_to_content_part(record_wav_output))
+    clip = AudioClip.from_input(record_wav_output)
 
-    assert audio_format == "wav"
-    assert data == record_wav_output.tobytes()
-    rate, channels, _, decoded = _read_wav(data)
+    assert clip == AudioClip(record_wav_output.tobytes(), "wav")
+    rate, channels, _, decoded = _read_wav(clip.data)
     assert (rate, channels) == (22050, 2)
     np.testing.assert_array_equal(decoded, samples)
 
@@ -110,20 +103,30 @@ def test_int16_pcm_is_wrapped_as_16khz_mono_wav():
     """``Microphone.record_pcm()`` returns flat int16 samples at the Microphone defaults."""
     samples = np.array([0, 1000, -1000, 32767, -32768], dtype=np.int16)
 
-    audio_format, data = _decode_part(audio_to_content_part(samples))
+    clip = AudioClip.from_input(samples)
 
-    assert audio_format == "wav"
-    rate, channels, width, decoded = _read_wav(data)
+    assert clip.format == "wav"
+    rate, channels, width, decoded = _read_wav(clip.data)
     assert (rate, channels, width) == (16000, 1, 2)
+    np.testing.assert_array_equal(decoded, samples)
+
+
+def test_pcm_with_explicit_rate_and_channels():
+    samples = np.arange(-8, 8, dtype=np.int16)
+
+    clip = AudioClip.from_pcm(samples, sample_rate=22050, channels=2)
+
+    rate, channels, _, decoded = _read_wav(clip.data)
+    assert (rate, channels) == (22050, 2)
     np.testing.assert_array_equal(decoded, samples)
 
 
 def test_float_pcm_is_clipped_and_scaled_to_int16():
     samples = np.array([0.0, 0.5, -0.5, 2.0, -2.0], dtype=np.float32)
 
-    _, data = _decode_part(audio_to_content_part(samples))
+    clip = AudioClip.from_input(samples)
 
-    _, _, width, decoded = _read_wav(data)
+    _, _, width, decoded = _read_wav(clip.data)
     assert width == 2
     np.testing.assert_array_equal(decoded, [0, 16383, -16383, 32767, -32767])
 
@@ -131,35 +134,38 @@ def test_float_pcm_is_clipped_and_scaled_to_int16():
 def test_frames_by_channels_pcm_keeps_its_channel_count():
     samples = np.zeros((8, 2), dtype=np.int16)
 
-    _, data = _decode_part(audio_to_content_part(samples))
+    clip = AudioClip.from_input(samples)
 
-    _, channels, _, decoded = _read_wav(data)
+    _, channels, _, decoded = _read_wav(clip.data)
     assert channels == 2
     assert decoded.size == 16
 
 
 def test_unsupported_pcm_type_points_to_record_wav():
     with pytest.raises(ValueError, match="record_wav"):
-        audio_to_content_part(np.zeros(10, dtype=np.int32))
+        AudioClip.from_input(np.zeros(10, dtype=np.int32))
 
 
 def test_raw_uint8_without_header_is_rejected():
     with pytest.raises(ValueError, match="record_wav"):
-        audio_to_content_part(np.zeros(10, dtype=np.uint8))
+        AudioClip.from_input(np.zeros(10, dtype=np.uint8))
 
 
 def test_unsupported_type_is_rejected():
     with pytest.raises(TypeError):
-        audio_to_content_part(12345)
+        AudioClip.from_input(12345)
 
 
-def test_single_clip_is_not_iterated():
-    """Passing ``audio=mic.record_pcm(5)`` directly must send one clip, not one clip per sample."""
+def test_single_clip_is_not_iterated(tmp_path):
+    """Passing ``mic.record_pcm(5)`` directly must give one clip, not one clip per sample."""
     samples = np.zeros(100, dtype=np.int16)
+    wav = _wav_bytes(samples)
+    path = tmp_path / "clip.wav"
+    path.write_bytes(wav)
 
-    assert len(as_audio_list(samples)) == 1
-    assert as_audio_list("clip.wav") == ["clip.wav"]
-    assert as_audio_list(b"RIFF") == [b"RIFF"]
-    assert len(as_audio_list([samples, "clip.wav"])) == 2
-    assert as_audio_list(None) == []
-    assert as_audio_list([]) == []
+    assert len(AudioClip.from_inputs(samples)) == 1
+    assert AudioClip.from_inputs(str(path)) == [AudioClip(wav, "wav")]
+    assert AudioClip.from_inputs(wav) == [AudioClip(wav, "wav")]
+    assert len(AudioClip.from_inputs([samples, str(path)])) == 2
+    assert AudioClip.from_inputs(None) == []
+    assert AudioClip.from_inputs([]) == []

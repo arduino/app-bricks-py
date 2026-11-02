@@ -8,11 +8,11 @@ from collections.abc import Iterator, Sequence
 from openai import APIError, BadRequestError
 
 from arduino.app_bricks.cloud_llm import ReasoningEffort
-from arduino.app_bricks.cloud_llm.audio import AudioInput
 from arduino.app_bricks.cloud_llm.cloud_llm import ToolLike
 from arduino.app_bricks.cloud_llm.memory import MessagePersistence
 from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import Logger, brick
+from arduino.app_utils.audio import AudioInput
 
 logger = Logger("MultimodalLanguageModel")
 

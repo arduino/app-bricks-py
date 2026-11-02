@@ -17,8 +17,8 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool, StructuredTool
 
 from arduino.app_utils import brick
+from arduino.app_utils.audio import AudioClip, AudioInput
 
-from .audio import AudioInput, as_audio_list, audio_to_content_part
 from .utils import logger
 from .models import (
     CloudModel,
@@ -283,7 +283,7 @@ class CloudLLM:
             images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
                 None (default) sends a text-only message.
             audio (AudioInput | Sequence[AudioInput] | None): Optional audio clip, or sequence of clips, to include
-                in the prompt as ``input_audio`` parts (see ``audio_to_content_part``). None (default) sends no audio.
+                in the prompt as ``input_audio`` parts (see ``AudioClip.from_input``). None (default) sends no audio.
 
         Returns:
             list[BaseMessage]: The list of messages in the conversation history,
@@ -294,8 +294,8 @@ class CloudLLM:
             logger.info(f"Initializing model {self._model_name}...")
             self._model_loaded = True
 
-        audio = as_audio_list(audio)
-        if images or audio:
+        clips = AudioClip.from_inputs(audio)
+        if images or clips:
             # Media parts are placed before the text: multimodal models are trained on
             # media-first ordering, and text-first degrades instruction following on
             # small local models.
@@ -303,8 +303,8 @@ class CloudLLM:
             for img in images or []:
                 image_b64 = self._image_to_base64(img)
                 content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
-            for clip in audio:
-                content.append(audio_to_content_part(clip))
+            for clip in clips:
+                content.append({"type": "input_audio", "input_audio": {"data": base64.b64encode(clip.data).decode(), "format": clip.format}})
             content.append({"type": "text", "text": user_input})
 
             message = HumanMessage(content=content)
