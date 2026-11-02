@@ -19,8 +19,8 @@ services:
       - LLAMA_ARG_CTX_SIZE=${LLAMA_ARG_CTX_SIZE:-8192}
       - LLAMA_ARG_REASONING=${LLAMA_ARG_REASONING:-off}
       - LLAMA_ARG_THINK_BUDGET=${LLAMA_ARG_THINK_BUDGET:-0}
-      # each 512 px vision tile costs ~20 s on this CPU: 280 tokens keep an image to about 4 tiles plus the overview
-      - LLAMA_ARG_IMAGE_MAX_TOKENS=${LLAMA_ARG_IMAGE_MAX_TOKENS:-280}
+      # vision encoding dominates on this CPU (~0.28 s per image token with Qwen3.5-0.8B): 96 keeps a camera frame near 25 s
+      - LLAMA_ARG_IMAGE_MAX_TOKENS=${LLAMA_ARG_IMAGE_MAX_TOKENS:-96}
       - LLAMA_ARG_THREADS=${LLAMA_ARG_THREADS:-4}
       - OMP_NUM_THREADS=${LLAMA_ARG_THREADS:-4}
       - OMP_WAIT_POLICY=passive

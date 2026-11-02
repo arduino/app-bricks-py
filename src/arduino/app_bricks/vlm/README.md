@@ -160,7 +160,7 @@ The `images` argument accepts a list containing:
 
 When an image path is used, the file must exist in the application runtime environment. When bytes are used, make sure they represent an encoded image format that the model can interpret. For camera applications, convert frames to JPEG bytes before passing them to the Brick.
 
-On UNO Q the model runs on the CPU and the model service scales each image to about four 512 px tiles plus an overview, whatever its original resolution. Each tile takes about 20 seconds: with SmolVLM2-500M a 640x480 camera frame answers in about 40 seconds, larger images in 60 to 105 seconds. Set `timeout` accordingly.
+On UNO Q the model service caps each image at 96 image tokens, downscaling larger images whatever their original resolution.
 
 ## Example Application
 
