@@ -82,22 +82,37 @@ class Response:
 class Stream:
     """An HTTP response whose body is read as it arrives."""
 
-    def __init__(self, status_code: int, response: http.client.HTTPResponse) -> None:
+    def __init__(self, status_code: int, response: http.client.HTTPResponse, request_line: str) -> None:
         self.status_code = status_code
         self._response = response
+        self._request_line = request_line
 
     def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        """Yield the body as it arrives, in pieces of at most chunk_size bytes, until it ends."""
-        while chunk := self._response.read1(chunk_size):
+        """Yield the body as it arrives, in pieces of at most chunk_size bytes, until it ends.
+
+        Raises:
+            ConnectionFailed: The body was cut short: connection reset or closed before the end, read timeout.
+        """
+        while True:
+            with _connection_failures(self._request_line):
+                chunk = self._response.read1(chunk_size)
+            if not chunk:
+                return
             yield chunk
 
     def json(self) -> Any:  # noqa: ANN401
-        """The rest of the body decoded as JSON."""
-        return _json.loads(self._response.read())
+        """The rest of the body decoded as JSON.
+
+        Raises:
+            ConnectionFailed: The body was cut short: connection reset or closed before the end, read timeout.
+        """
+        with _connection_failures(self._request_line):
+            body = self._response.read()
+        return _json.loads(body)
 
 
 class ConnectionFailed(OSError):
-    """No HTTP response arrived: refused or reset connection, unknown host, timeout, malformed or truncated response."""
+    """No complete HTTP response arrived: refused or reset connection, unknown host, timeout, malformed or truncated response."""
 
 
 class HTTPStatusError(Exception):
@@ -212,21 +227,18 @@ def stream(
 ) -> Generator[Stream]:
     """Send a request and yield the response with its body still to read, whatever its status.
 
-    The connection is closed when the block exits, whether the body was read to its end or not.
+    The connection is closed when the block exits, whether the body was read to its end or not. Reading a body that
+    is cut short raises ConnectionFailed too.
 
     Raises:
         ConnectionFailed: No response arrived.
         ValueError: The json body cannot be serialized.
     """
-    import http.client
-
     request = _build_request(method, url, json=json, headers=headers)
-    try:
+    with _connection_failures(f"{method} {url}"):
         response = _open(request, timeout)
-    except (OSError, http.client.HTTPException) as e:
-        raise ConnectionFailed(f"{method} {url}: {e}") from e
     with response:
-        yield Stream(response.status, response)
+        yield Stream(response.status, response, f"{method} {url}")
 
 
 def _request(
@@ -239,14 +251,20 @@ def _request(
     auth: Auth | None = None,
     timeout: float | None = None,
 ) -> Response:
+    request = _build_request(method, url, json=json, files=files, headers=headers, auth=auth)
+    with _connection_failures(f"{method} {url}"), _open(request, timeout) as response:
+        return Response(response.status, response.headers, response.read())
+
+
+@contextmanager
+def _connection_failures(request_line: str) -> Generator[None]:
+    """Raise ConnectionFailed, prefixed with request_line, for what the stdlib raises when no complete response arrives."""
     import http.client
 
-    request = _build_request(method, url, json=json, files=files, headers=headers, auth=auth)
     try:
-        with _open(request, timeout) as response:
-            return Response(response.status, response.headers, response.read())
+        yield
     except (OSError, http.client.HTTPException) as e:  # URLError is an OSError; IncompleteRead is not
-        raise ConnectionFailed(f"{method} {url}: {e}") from e
+        raise ConnectionFailed(f"{request_line}: {e}") from e
 
 
 def _build_request(
