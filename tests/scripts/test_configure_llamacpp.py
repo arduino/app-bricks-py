@@ -1309,12 +1309,12 @@ DEFAULT_CTX_SIZE = configure_llamacpp.DEFAULT_CTX_SIZE
 
 
 def decision_model(
-    path: Path, *, context_length: int = 8192, architecture: str = "modern-bert", decision_type: str = "laya", causal: bool | None = False
+    path: Path, *, context_length: int = 262144, architecture: str = "qwen35", decision_type: str = "vllm-d3", causal: bool | None = False
 ) -> Path:
-    """A decision model's header, as llama.cpp's convert script writes it for Laya: one
+    """A decision model's header, as llama.cpp's convert script writes it for d3: one
     layer, the decision type key that marks the model as one, and the non-causal attention
-    of a ModernBERT. *causal* None leaves the key out, as the convert script does for a
-    causal Qwen (Kev)."""
+    (attention.causal false). *causal* None leaves the key out, as the convert script does
+    for a causal Qwen (Kev)."""
     metadata = {
         "general.architecture": architecture,
         f"{architecture}.decision.type": decision_type,
@@ -1327,18 +1327,18 @@ def decision_model(
 
 
 def test_a_decision_model_gets_a_micro_batch_as_big_as_its_prompt_room(runner, tmp_path, monkeypatch, capsys):
-    """Laya holds 8192 tokens: at the service's 16k context its section gets that context
-    and a batch and micro-batch of DECISION_MODEL_BATCH, where the router's own micro-batch
-    (128 on the UNO Q) would fail any prompt longer than that."""
+    """d3-edge holds more than the service's 16k context: its section keeps that context
+    and gets a batch and micro-batch of DECISION_MODEL_BATCH, where the router's own
+    micro-batch (128 on the UNO Q) would fail any prompt longer than that."""
     monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
-    gguf = decision_model(tmp_path / "Laya-Q8_0.gguf")
+    gguf = decision_model(tmp_path / "vllm-d3-edge-Q8_0.gguf")
 
     assert runner.decision_model_options(gguf) == {
-        "LLAMA_ARG_CTX_SIZE": "8192",
+        "LLAMA_ARG_CTX_SIZE": "16384",
         "LLAMA_ARG_BATCH": "2048",
         "LLAMA_ARG_UBATCH": "2048",
     }
-    assert "Laya-Q8_0: decision model (laya), ctx 8192, batch 2048" in capsys.readouterr().err
+    assert "vllm-d3-edge-Q8_0: decision model (vllm-d3), ctx 16384, batch 2048" in capsys.readouterr().err
 
 
 def test_the_batch_never_exceeds_what_the_model_holds(runner, tmp_path, monkeypatch):
@@ -1402,7 +1402,7 @@ def test_a_vllm_d3_model_with_its_projector_gets_both_in_its_section(runner, tmp
     vision projector downloaded next to it on the VENTUNO Q stays attached to its section."""
     monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
     repo = tmp_path / "ggml-org" / "vllm-d3-lite-GGUF"
-    decision_model(repo / "vllm-d3-lite-Q8_0.gguf", architecture="qwen35", decision_type="vllm-d3", context_length=262144, causal=False)
+    decision_model(repo / "vllm-d3-lite-Q8_0.gguf")
     _gguf(repo / "mmproj-vllm-d3-lite-BF16.gguf")
 
     runner.generate_models_ini(tmp_path)
@@ -1441,33 +1441,33 @@ def test_models_ini_carries_the_decision_model_keys_in_their_own_case(runner, tm
     and configparser would lowercase them by default — and the chat model's section is
     untouched."""
     monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
-    decision_model(tmp_path / "ggml-org" / "Laya-GGUF" / "Laya-Q8_0.gguf")
+    decision_model(tmp_path / "ggml-org" / "vllm-d3-edge-GGUF" / "vllm-d3-edge-Q8_0.gguf")
     _gguf(tmp_path / "unsloth" / "Qwen3-0.6B-GGUF" / "Qwen3-0.6B-Q4_0.gguf")
 
     runner.generate_models_ini(tmp_path)
 
     raw = (tmp_path / "models.ini").read_text()
-    decision_section = raw[raw.index("[Laya-Q8_0]") :].split("\n[", 1)[0]
+    decision_section = raw[raw.index("[vllm-d3-edge-Q8_0]") :].split("\n[", 1)[0]
     assert "LLAMA_ARG_UBATCH = 2048" in decision_section
     assert "llama_arg_ubatch" not in raw
 
     config = configparser.ConfigParser()
     config.optionxform = str
     config.read(tmp_path / "models.ini")
-    assert sorted(config.sections()) == ["Laya-Q8_0", "Qwen3-0.6B-Q4_0"]
-    assert list(config["Laya-Q8_0"]) == ["model", "LLAMA_ARG_CTX_SIZE", "LLAMA_ARG_BATCH", "LLAMA_ARG_UBATCH"]
-    assert config["Laya-Q8_0"]["LLAMA_ARG_CTX_SIZE"] == "8192"
-    assert config["Laya-Q8_0"]["LLAMA_ARG_BATCH"] == "2048"
+    assert sorted(config.sections()) == ["vllm-d3-edge-Q8_0", "Qwen3-0.6B-Q4_0"]
+    assert list(config["vllm-d3-edge-Q8_0"]) == ["model", "LLAMA_ARG_CTX_SIZE", "LLAMA_ARG_BATCH", "LLAMA_ARG_UBATCH"]
+    assert config["vllm-d3-edge-Q8_0"]["LLAMA_ARG_CTX_SIZE"] == "16384"
+    assert config["vllm-d3-edge-Q8_0"]["LLAMA_ARG_BATCH"] == "2048"
     assert list(config["Qwen3-0.6B-Q4_0"]) == ["model"]
 
 
 def test_the_hexagon_sizing_survives_a_decision_model_header(tmp_path, monkeypatch):
-    """The NPU runner sizes its sessions from the same headers: a ModernBERT header, which
-    says nothing about heads or head sizes, must still come out as a session count rather
+    """The NPU runner sizes its sessions from the same headers: a decision model header,
+    which says nothing about heads or head sizes, must still come out as a session count rather
     than an exception, whether sized from the header or by file size."""
     monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
-    gguf = decision_model(tmp_path / "Laya-Q8_0.gguf")
+    gguf = decision_model(tmp_path / "vllm-d3-edge-Q8_0.gguf")
 
-    sessions = detect_hexagon_sessions({"Laya-Q8_0": {"model": str(gguf)}}, 16384)
+    sessions = detect_hexagon_sessions({"vllm-d3-edge-Q8_0": {"model": str(gguf)}}, 16384)
 
     assert isinstance(sessions, int) and sessions >= 1

@@ -146,7 +146,7 @@ def env_int(name: str, default: int) -> int:
 #
 # A decision model (llama.cpp's /v1/systemone: a ModernBERT, or a Qwen3.5-Base with a
 # decision head, marked by the <arch>.decision.type key of its header) does not generate
-# text: it answers with probabilities. The non-causal ones (ModernBERT: Laya, Julia-1, with
+# text: it answers with probabilities. The non-causal ones (a ModernBERT, or d3, a Qwen3.5 with
 # <arch>.attention.causal false in the header) evaluate their whole prompt in one micro-batch,
 # since every token attends to every other: a prompt longer than the server's micro-batch
 # fails outright, and the service configures a small one for the chat models
@@ -158,9 +158,9 @@ def env_int(name: str, default: int) -> int:
 # --------------------------------------------------------------------------- #
 
 # Tokens of prompt a non-causal decision model gets room for: its batch and its micro-batch,
-# since it evaluates the whole prompt in one. Capped by the model's own context (Laya holds
-# 8192). Measured on the UNO Q with Laya-Q8_0: 523 MiB of RSS at this size, and a 3453-token
-# state is refused by the server with a clear error rather than crashing.
+# since it evaluates the whole prompt in one. Capped by the model's own context (a ModernBERT
+# holds 8192). Measured on the UNO Q with a 0.42B ModernBERT: 523 MiB of RSS at this size,
+# and a 3453-token state is refused by the server with a clear error rather than crashing.
 DECISION_MODEL_BATCH = 2048
 
 
