@@ -145,9 +145,9 @@ def assess_readings():
 App.run(assess_readings)
 ```
 
-### Heating: Would a Person Feel Cold?
+### Thermostat: Acting on What a Person Says
 
-The readings of a temperature and humidity sensor go into a sentence with their units. `check()` tells whether a person in the room would feel cold, and the app turns the heating on or off.
+In this example the decision does not come from the readings alone. A person tells the app how they feel, in their own words and in any language ("It's too hot in here", "Can you make it a bit warmer?", "Ho freddo"), and `score()` reads that sentence together with the sensor readings to grade how the person feels. The app then moves the thermostat target by the number of degrees attached to that level. Each level says which requests it covers, so the model does not have to guess what "fine" means.
 
 ```python
 from arduino.app_bricks.decision_model import DecisionModel
@@ -155,79 +155,98 @@ from arduino.app_utils import App
 
 decision_model = DecisionModel()
 
-ROOM = "Living room: temperature 16.0 °C, relative humidity 55 %."
+# How the person feels, coldest first, and how many °C to move the thermostat target for it
+FEELINGS = {
+    "Much too cold": 2,
+    "A bit too cold, or wants it a bit warmer": 1,
+    "Fine, or only bothered by humid air": 0,
+    "A bit too warm, or wants it a bit cooler": -1,
+    "Much too hot": -2,
+}
 
 
-def control_heating():
-    cold = decision_model.check(
-        state=ROOM,
-        instructions="Would a person in this room feel cold?",
-        true_description="The room is colder than what people find comfortable",
-        false_description="The room is comfortable or warm",
+def new_thermostat_target(request: str, temperature: float, humidity: float, target: float) -> float:
+    state = (
+        f"Living room: temperature {temperature:.1f} °C, relative humidity {humidity:.0f} %, thermostat set to {target:.1f} °C."
+        f' A person in the room says: "{request}"'
     )
-    if cold.is_true:
-        print(f"A person would feel cold (probability {cold.probability:.2f}): heating on")
-    else:
-        print(f"The room is comfortable (probability of feeling cold {cold.probability:.2f}): heating off")
+    feeling = decision_model.score(
+        state=state,
+        instructions="How does the person feel about the temperature, or how do they want it to change?",
+        levels=list(FEELINGS),
+    )
+    print(f"The person feels: {feeling.level}")
+    return target + FEELINGS[feeling.level]
+
+
+def on_request():
+    # In a real app the request comes from a chat, a web page or speech-to-text, and the readings from the sensor
+    target = new_thermostat_target("It's too hot in here", temperature=27.0, humidity=45, target=24.0)
+    print(f"New thermostat target: {target:.1f} °C")
     raise StopIteration
 
 
-App.run(control_heating)
+App.run(on_request)
 ```
 
-### Cooling: Is the Room above a Threshold?
+### Air Conditioner: Choosing the Mode and the Target
 
-The model does not judge reliably by itself when a room is too hot, but it compares a reading with a threshold written in the question very reliably: put your comfort limit in the question.
+This example extends the thermostat one to an air conditioner that can cool, heat or dry the air. One `decide()` call asks two questions about the same sentence: what the person is asking for, which picks the mode (a person who complains about sticky air gets the dehumidifier, not a colder room), and how they feel, which moves the target temperature. As in the thermostat example, each option says which requests it answers. Choosing the mode asks more of the model than grading the feeling: run this example on the VENTUNO Q with its default model, d3-lite. On the UNO Q, d3-edge picks the mode less reliably, so use the thermostat example there.
 
 ```python
-from arduino.app_bricks.decision_model import DecisionModel
+from arduino.app_bricks.decision_model import Choice, DecisionModel, Score
 from arduino.app_utils import App
 
 decision_model = DecisionModel()
 
-ROOM = "Living room: temperature 32.0 °C, relative humidity 35 %."
+# The modes of the air conditioner, each with the requests it answers
+MODES = {
+    "cooling": "A cooler room: the person says it is too hot or too warm",
+    "heating": "A warmer room: the person says it is too cold or chilly",
+    "dehumidifying": "Drier air: the person says the air is humid, muggy, sticky or damp",
+    "unchanged": "Nothing: the person says the room is fine",
+}
+
+# How the person feels, coldest first, and how many °C to move the target temperature for it
+FEELINGS = {
+    "Much too cold": 2,
+    "A bit too cold, or wants it a bit warmer": 1,
+    "Fine, or only bothered by humid air": 0,
+    "A bit too warm, or wants it a bit cooler": -1,
+    "Much too hot": -2,
+}
 
 
-def control_cooling():
-    hot = decision_model.check(state=ROOM, instructions="Is the temperature in this room above 26 °C?")
-    if hot.is_true:
-        print(f"Above 26 °C (probability {hot.probability:.2f}): cooling on")
-    else:
-        print(f"Not above 26 °C (probability {hot.probability:.2f}): cooling off")
-    raise StopIteration
-
-
-App.run(control_cooling)
-```
-
-### Dehumidifying: Is the Air Too Humid?
-
-The same sentence answers a question about the humidity: `check()` tells whether the air is too humid, and the app turns the dehumidifier on or off.
-
-```python
-from arduino.app_bricks.decision_model import DecisionModel
-from arduino.app_utils import App
-
-decision_model = DecisionModel()
-
-ROOM = "Living room: temperature 23.0 °C, relative humidity 80 %."
-
-
-def control_dehumidifier():
-    humid = decision_model.check(
-        state=ROOM,
-        instructions="Is the air in this room too humid?",
-        true_description="The humidity is higher than what people find comfortable",
-        false_description="The humidity is comfortable or low",
+def control_air_conditioner(request: str, temperature: float, humidity: float, mode: str, target: float) -> tuple[str, float]:
+    state = (
+        f"Living room: temperature {temperature:.1f} °C, relative humidity {humidity:.0f} %."
+        f" Air conditioner: {mode}, target {target:.1f} °C."
+        f' A person in the room says: "{request}"'
     )
-    if humid.is_true:
-        print(f"The air is too humid (probability {humid.probability:.2f}): dehumidifier on")
-    else:
-        print(f"The humidity is comfortable (probability of too humid {humid.probability:.2f}): dehumidifier off")
+    answers = decision_model.decide(
+        state=state,
+        questions={
+            "mode": Choice(instructions="What is the person asking for?", options=MODES),
+            "feeling": Score(
+                instructions="How does the person feel about the temperature, or how do they want it to change?",
+                levels=list(FEELINGS),
+            ),
+        },
+    )
+    new_mode = answers.choice("mode").choice
+    if new_mode == "unchanged":
+        new_mode = mode
+    return new_mode, target + FEELINGS[answers.score("feeling").level]
+
+
+def on_request():
+    # In a real app the request comes from a chat, a web page or speech-to-text, and the readings from the sensor
+    mode, target = control_air_conditioner("It's so muggy, I'm all sticky", temperature=25.0, humidity=80, mode="off", target=24.0)
+    print(f"Air conditioner: {mode}, target {target:.1f} °C")
     raise StopIteration
 
 
-App.run(control_dehumidifier)
+App.run(on_request)
 ```
 
 ### Asking about a Camera Image
