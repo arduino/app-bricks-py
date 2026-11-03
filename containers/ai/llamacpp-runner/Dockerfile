@@ -4,29 +4,32 @@
 
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
+ARG LLAMA_CPP_URL=https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20261103/llamacpp-cpu-20261103.tar.gz
+ARG LLAMA_CPP_DIGEST=sha256:c33ccc7ed6c1f011f6dd1923cd5333463712ba8bc3f11ee8d9a86d8d338fc1b7
 
 FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
+
+FROM scratch AS llamacpp
+ARG LLAMA_CPP_URL
+ARG LLAMA_CPP_DIGEST
+ADD --checksum=${LLAMA_CPP_DIGEST} ${LLAMA_CPP_URL} /llamacpp.tar.gz
 
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG LLAMA_CPP_URL=https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20261020/llamacpp-cpu-20261020.tar.gz
-ARG LLAMA_CPP_DIGEST=sha256:4d62ed0f5d577d054f76419b20a1b6ecd4c45eae0271e3b1ae7e905e029712f4
-
-ADD --checksum=${LLAMA_CPP_DIGEST} ${LLAMA_CPP_URL} /tmp/llamacpp.tar.gz
 
 COPY ./scripts/* /
 COPY ./pyproject.toml ./uv.lock /tmp/deps/
 
-# uv is only mounted while installing, it is not part of the image
+# uv and the llama.cpp tarball are only mounted while installing, they are not part of the image
 RUN --mount=from=uv,source=/uv,target=/bin/uv \
+    --mount=from=llamacpp,source=/llamacpp.tar.gz,target=/mnt/llamacpp.tar.gz \
     set -ex; \
     apt-get update -y; \
     apt-get install -y --no-install-recommends --no-install-suggests libgomp1; \
     apt-get dist-clean; \
     uv export --frozen --project /tmp/deps | uv pip install --system --no-cache-dir --require-hashes -r -; \
-    tar -xzf /tmp/llamacpp.tar.gz -C /opt; \
-    rm /tmp/llamacpp.tar.gz; \
+    tar -xzf /mnt/llamacpp.tar.gz -C /opt; \
     chown -R arduino:arduino /opt/pkg-cpu; \
     chmod +x /opt/pkg-cpu/bin/*; \
     mkdir -p /models; \

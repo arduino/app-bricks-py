@@ -1572,6 +1572,78 @@ def test_each_quantization_keeps_its_own_metadata_record(tmp_path, monkeypatch, 
     ]
 
 
+# --------------------------------------------------------------------------- #
+# main(): downloads running at once into the same repository directory
+# --------------------------------------------------------------------------- #
+def _transfer_through_cache(during):
+    """Stub the transfer the way huggingface_hub runs one into a ``local_dir``.
+
+    The bytes land in ``.cache/huggingface/download/<file>.incomplete`` and are moved
+    into place once complete. *during* maps a pattern to what happens while its file is
+    still in flight: another download started from the same directory.
+    """
+
+    def _download(_repo_id, allow_pattern, output_dir, _tqdm_class, ignore_pattern=None, verbose=False):
+        name = allow_pattern.replace("*", "")
+        partial = Path(output_dir, ".cache", "huggingface", "download", f"{name}.incomplete")
+        partial.parent.mkdir(parents=True, exist_ok=True)
+        partial.write_bytes(b" ")
+        if allow_pattern in during:
+            during[allow_pattern]()
+        partial.replace(Path(output_dir, name))
+
+    return _download
+
+
+def test_a_download_started_next_to_one_in_flight_leaves_it_alone(tmp_path, monkeypatch, stub_download):
+    """The reported bug: two voices of one repository downloaded at once. The second
+    took the first's marker for a killed run, and on finishing removed the ".cache" tree
+    holding the first's partial file, which then failed with ENOENT."""
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    repo = models_dir / "unsloth" / "Qwen3-0.6B-GGUF"
+
+    def _second():
+        _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q8_0", "--output-dir", str(models_dir))
+        # Finished, but not the last one out: the marker still names the first.
+        assert interrupted_patterns(repo / MARKER_NAME) == ["*Q4_0*.gguf"]
+
+    monkeypatch.setattr(hf_downloader, "download_matched_files", _transfer_through_cache({"*Q4_0*.gguf": _second}))
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q4_0", "--output-dir", str(models_dir))
+
+    assert (repo / "Q4_0.gguf").is_file()
+    assert (repo / "Q8_0.gguf").is_file()
+    assert sorted(r["files"][0] for r in metadata_records(read_metadata(str(repo)))) == ["Q4_0.gguf", "Q8_0.gguf"]
+    # The last one out cleans up what the transfers shared.
+    assert not (repo / MARKER_NAME).exists()
+    assert not (repo / ".cache").exists()
+
+
+def test_a_failed_download_leaves_the_one_in_flight_next_to_it_alone(tmp_path, monkeypatch, stub_download):
+    """A failure discards its own files only, while another download still runs there."""
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    repo = models_dir / "unsloth" / "Qwen3-0.6B-GGUF"
+
+    def _second():
+        with pytest.raises(OSError):
+            _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q8_0", "--output-dir", str(models_dir))
+
+    def _fail():
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(
+        hf_downloader, "download_matched_files", _transfer_through_cache({"*Q4_0*.gguf": _second, "*Q8_0*.gguf": _fail})
+    )
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q4_0", "--output-dir", str(models_dir))
+
+    assert (repo / "Q4_0.gguf").is_file()
+    assert not (repo / "Q8_0.gguf").exists()
+    assert [r["files"] for r in metadata_records(read_metadata(str(repo)))] == [["Q4_0.gguf"]]
+    assert not (repo / MARKER_NAME).exists()
+    assert not (repo / ".cache").exists()
+
+
 def test_delete_drops_only_the_deleted_quantizations_record(tmp_path, monkeypatch, stub_download):
     models_dir = tmp_path / "models"
     models_dir.mkdir()
