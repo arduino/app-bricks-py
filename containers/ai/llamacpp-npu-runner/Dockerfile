@@ -25,6 +25,8 @@ RUN --mount=from=uv,source=/uv,target=/bin/uv \
     rm -rf /tmp/deps; \
     tar -xzf /tmp/llamacpp.tar.gz -C /opt; \
     rm /tmp/llamacpp.tar.gz; \
+    # keep the HTP skels of the supported NPUs (v73, v75), drop the other Hexagon versions
+    find /opt/pkg-snapdragon/lib -name 'libggml-htp-v*.so' ! -name 'libggml-htp-v73.so' ! -name 'libggml-htp-v75.so' -delete; \
     chown -R arduino:arduino /opt/pkg-snapdragon; \
     chmod +x /opt/pkg-snapdragon/bin/*; \
     mkdir -p /models; \
