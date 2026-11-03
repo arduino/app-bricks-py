@@ -1454,7 +1454,7 @@ def test_models_ini_carries_the_decision_model_keys_in_their_own_case(runner, tm
     config = configparser.ConfigParser()
     config.optionxform = str
     config.read(tmp_path / "models.ini")
-    assert sorted(config.sections()) == ["vllm-d3-edge-Q8_0", "Qwen3-0.6B-Q4_0"]
+    assert sorted(config.sections()) == ["Qwen3-0.6B-Q4_0", "vllm-d3-edge-Q8_0"]
     assert list(config["vllm-d3-edge-Q8_0"]) == ["model", "LLAMA_ARG_CTX_SIZE", "LLAMA_ARG_BATCH", "LLAMA_ARG_UBATCH"]
     assert config["vllm-d3-edge-Q8_0"]["LLAMA_ARG_CTX_SIZE"] == "16384"
     assert config["vllm-d3-edge-Q8_0"]["LLAMA_ARG_BATCH"] == "2048"
