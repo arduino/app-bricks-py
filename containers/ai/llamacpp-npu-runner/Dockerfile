@@ -4,27 +4,32 @@
 
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
+ARG LLAMA_CPP_URL=https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20261103/llamacpp-hexagon-20261103.tar.gz
+ARG LLAMA_CPP_DIGEST=sha256:b94451402491d4b285f81d01e6ea9717a2a5bc53010410b30cb6443208720444
 
 FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
+
+FROM scratch AS llamacpp
+ARG LLAMA_CPP_URL
+ARG LLAMA_CPP_DIGEST
+ADD --checksum=${LLAMA_CPP_DIGEST} ${LLAMA_CPP_URL} /llamacpp.tar.gz
 
 FROM ${REGISTRY}app-bricks/qairt-common-base:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG LLAMA_CPP_URL=https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20261028/llamacpp-hexagon-20261028.tar.gz
-ARG LLAMA_CPP_DIGEST=sha256:9ccf05899491098afbab59a44a99ddfd8c8478ca0068b3170d86c3cb095c3461
-
-ADD --checksum=${LLAMA_CPP_DIGEST} ${LLAMA_CPP_URL} /tmp/llamacpp.tar.gz
 
 COPY ./scripts/* /
 COPY ./pyproject.toml ./uv.lock /tmp/deps/
 
-# uv is only mounted while installing, it is not part of the image
+# uv and the llama.cpp tarball are only mounted while installing, they are not part of the image
 RUN --mount=from=uv,source=/uv,target=/bin/uv \
+    --mount=from=llamacpp,source=/llamacpp.tar.gz,target=/mnt/llamacpp.tar.gz \
     set -ex; \
     uv export --frozen --project /tmp/deps | uv pip install --system --no-cache-dir --require-hashes -r -; \
     rm -rf /tmp/deps; \
-    tar -xzf /tmp/llamacpp.tar.gz -C /opt; \
-    rm /tmp/llamacpp.tar.gz; \
+    tar -xzf /mnt/llamacpp.tar.gz -C /opt; \
+    # keep the HTP skels of the supported NPUs (v73, v75), drop the other Hexagon versions
+    find /opt/pkg-snapdragon/lib -name 'libggml-htp-v*.so' ! -name 'libggml-htp-v73.so' ! -name 'libggml-htp-v75.so' -delete; \
     chown -R arduino:arduino /opt/pkg-snapdragon; \
     chmod +x /opt/pkg-snapdragon/bin/*; \
     mkdir -p /models; \

@@ -1,6 +1,6 @@
 ---
 name: hf-xet
-version: 1.5.2
+version: 1.6.0
 type: pip
 summary: Fast transfer of large files with the Hugging Face Hub.
 homepage: https://github.com/huggingface/xet-core

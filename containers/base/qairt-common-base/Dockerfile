@@ -69,26 +69,22 @@ RUN set -eu && \
     echo "==> Verify SDK checksum"; \
     echo "${QNP_SDK_SHA256}  ${DOWNLOAD_DIR}/${QNP_SDK}" | sha256sum -c -; \
     \
-    echo "==> Unzip the aarch64 and Hexagon libs, the rest of the SDK is never used"; \
+    # The images use QNN only through the TFLite delegate on the HTP (v73: QCS9075,
+    # v75: QCS8275): these are the libraries it loads (dlopen) on the host and the
+    # skel it loads on the DSP for each version. SNPE, Genie, the Qairt* API and the
+    # CPU/GPU/DSP backends are never loaded.
+    HTP_VERSIONS="73 75"; \
+    HOST_LIBS="libQnnTFLiteDelegate.so libQnnHtp.so libQnnHtpPrepare.so $(for v in ${HTP_VERSIONS}; do echo "libQnnHtpV${v}Stub.so"; done)"; \
+    \
+    echo "==> Unzip the QNN HTP libs of the TFLite delegate, the rest of the SDK is never used"; \
     cd "${DOWNLOAD_DIR}" && unzip -q "${QNP_SDK}" \
-      "qairt/${QNP_VER}/lib/aarch64-oe-linux-gcc11.2/*" "qairt/${QNP_VER}/lib/hexagon-v7[35]/unsigned/*" && \
+      $(for lib in ${HOST_LIBS}; do echo "qairt/${QNP_VER}/lib/aarch64-oe-linux-gcc11.2/${lib}"; done) \
+      $(for v in ${HTP_VERSIONS}; do echo "qairt/${QNP_VER}/lib/hexagon-v${v}/unsigned/libQnnHtpV${v}Skel.so"; done) && \
     rm -f "${QNP_SDK}"; \
     \
-    echo '==> Validate expected directory layout'; \
-    test -d "${QNN_ROOT}" || { echo "ERROR: ${QNN_ROOT} missing"; ls -la "${DOWNLOAD_DIR}/qairt" || true; exit 1; }; \
-    test -d "${QNN_LIB_PATH}" || { echo "ERROR: ${QNN_LIB_PATH} missing"; ls -la "${QNN_ROOT}" || true; exit 1; }; \
-    \
-    echo '==> Copy aarch64 QNN libs to deploy'; \
-    cp -v "${QNN_LIB_PATH}/aarch64-oe-linux-gcc11.2/"* "${DEPLOY_DIR}/usr/lib/"; \
-    \
-    echo '==> Copy ADSP (Hexagon) unsigned binaries'; \
-    for hv in hexagon-v73 hexagon-v75; do \
-      if [ -d "${QNN_LIB_PATH}/${hv}/unsigned" ]; then \
-        cp -v "${QNN_LIB_PATH}/${hv}/unsigned/"* "${ADSP_DIR}/"; \
-      else \
-        echo "WARN: ${hv}/unsigned not found for ${QNP_VER}"; \
-      fi; \
-    done; \
+    echo '==> Copy the host libs and the DSP skels to deploy'; \
+    for lib in ${HOST_LIBS}; do cp -v "${QNN_LIB_PATH}/aarch64-oe-linux-gcc11.2/${lib}" "${DEPLOY_DIR}/usr/lib/"; done; \
+    for v in ${HTP_VERSIONS}; do cp -v "${QNN_LIB_PATH}/hexagon-v${v}/unsigned/libQnnHtpV${v}Skel.so" "${ADSP_DIR}/"; done; \
     \
     echo '==> Validate ADSP dir non-empty and contains .so'; \
     test -d "${ADSP_DIR}" && test "$(find "${ADSP_DIR}" -type f -name '*.so' | wc -l)" -ge 1 || { \
@@ -172,6 +168,7 @@ RUN mkdir -p /usr/share/qcom/conf.d && chown -R arduino:arduino /usr/share/qcom
 # 00-arduino-dsp-binaries.yaml: the fastrpc parser keeps the last alphabetical
 # match, so this file sorts first and acts as a fallback that any yaml
 # provided by the host overrides.
+# REUSE-IgnoreStart
 RUN mkdir -p /etc/fastrpc && \
     { \
       echo '# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies'; \
@@ -185,6 +182,7 @@ RUN mkdir -p /etc/fastrpc && \
       echo '  Qualcomm Technologies, Inc. IQ8 8275 Pro SKU EVK:'; \
       echo '    DSP_LIBRARY_PATH: qcs8300/Qualcomm/QCS8300-RIDE/dsp'; \
     } > /etc/fastrpc/hexagon-dsp-binaries.yaml
+# REUSE-IgnoreEnd
 
 # Use container libraries
 ENV ADSP_LIBRARY_PATH=/usr/lib/rfsa/adsp

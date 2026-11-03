@@ -18,3 +18,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 # onnxruntime-qnn, numpy and OpenCV all come from the base image, which pins and
 # hash-locks them once for every ONNX runner.
 COPY . .
+
+# Texts of the third-party licenses the code and models above declare in their SPDX tags
+COPY --from=licenses MIT.txt Apache-2.0.txt LICENSES/

@@ -1,5 +1,9 @@
+# SPDX-FileCopyrightText: 2019-present NAVER Corp.
 # SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+# SPDX-FileCopyrightText: JaidedAI
 #
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MPL-2.0
 
 """CRAFT score-map -> text box decoding.

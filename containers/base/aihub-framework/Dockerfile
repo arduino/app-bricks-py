@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: MPL-2.0
 
 # The `aihub` runner framework and the app skeleton, as a layer: an image holding only those
-# files, at the paths where they land in the images using them. It is never run. An image
-# imports it through a stage of its own and adds its layers:
+# files, at the paths where they land in the images using them. It is never run nor published,
+# bake builds it in-graph, cache only. An image imports it through a stage of its own and adds
+# its layers:
 #
 #   ARG REGISTRY
 #   ARG BASE_IMAGE_VERSION=latest
