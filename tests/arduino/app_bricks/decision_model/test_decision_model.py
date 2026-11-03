@@ -31,8 +31,8 @@ from arduino.app_bricks.decision_model import (
 from arduino.app_utils import App
 
 MODULE = "arduino.app_bricks.decision_model.decision_model"
-MODEL_ID = "llamacpp:Laya-Q8_0"
-MODEL_NAME = "Laya-Q8_0"
+MODEL_ID = "llamacpp:vllm-d3-edge-Q8_0"
+MODEL_NAME = "vllm-d3-edge-Q8_0"
 BASE_URL = "http://127.0.0.1:9999"
 REPO_ROOT = Path(__file__).resolve().parents[4]
 BRICK_DIR = REPO_ROOT / "src" / "arduino" / "app_bricks" / "decision_model"
@@ -69,7 +69,7 @@ class AliasedTeam(Enum):
 CHOICE_RAW = {"choice": "billing", "probabilities": {"billing": 0.85, "shipping": 0.15}, "confidence": 0.7}
 SCORE_RAW = {"score": 1.8, "legend": ["low", "mid", "high"], "probabilities": [0.1, 0.0, 0.9], "confidence": 0.58}
 NOUL_RAW = {"noul": 0.92}
-# What llama.cpp build 11441 really returns for a score question (recorded on an UNO Q, Laya-Q8_0): the
+# What llama.cpp build 11441 really returns for a score question (recorded on an UNO Q): the
 # `legend` and `probabilities` arrays of the README come back as objects keyed by the index, and every
 # answer carries its `type`.
 SCORE_RAW_INDEXED = {
@@ -477,7 +477,7 @@ def test_empty_error_body_reports_the_http_status(brick, runner):
         brick.decide("s", {"q": Noul("?")})
 
 
-@pytest.mark.parametrize("message", ["model is not loaded", "failed to load model 'Laya-Q8_0'", "model Laya-Q8_0 not found"])
+@pytest.mark.parametrize("message", ["model is not loaded", "failed to load model 'vllm-d3-edge-Q8_0'", "model vllm-d3-edge-Q8_0 not found"])
 def test_not_loaded_errors_hint_to_download_the_model(brick, runner, message):
     runner.responses = [FakeResponse(status_code=400, json_data={"error": {"code": 400, "message": message, "type": "x"}})]
 
@@ -566,7 +566,7 @@ def test_model_comes_from_the_brick_configuration_when_not_given(runner, monkeyp
     def fake_configured_model(brick_id, brick_config=None):
         seen["brick_id"] = brick_id
         seen["brick_config"] = brick_config
-        return "llamacpp:Julia-1-Q8_0"
+        return "llamacpp:Kev-0.8B-Q8_0"
 
     monkeypatch.setattr(f"{MODULE}.get_brick_configured_model", fake_configured_model)
 
@@ -575,7 +575,7 @@ def test_model_comes_from_the_brick_configuration_when_not_given(runner, monkeyp
 
     assert seen["brick_id"] == "arduino:decision_model"
     assert seen["brick_config"]["id"] == "arduino:decision_model"
-    assert brick._model_name == "Julia-1-Q8_0"
+    assert brick._model_name == "Kev-0.8B-Q8_0"
 
 
 @pytest.mark.parametrize(("board", "expected"), [("unoq", "llamacpp:vllm-d3-edge-Q8_0"), ("ventunoq", "llamacpp:vllm-d3-lite-Q8_0")])
@@ -613,7 +613,7 @@ def test_genie_model_is_rejected(runner):
     assert "genie" in info.value.hint
 
 
-@pytest.mark.parametrize("model", ["Laya-Q8_0", "llamacpp:", "llamacpp"])
+@pytest.mark.parametrize("model", ["vllm-d3-edge-Q8_0", "llamacpp:", "llamacpp"])
 def test_models_without_the_llamacpp_prefix_are_rejected(runner, model):
     with pytest.raises(DecisionModelError, match="Unsupported model"):
         DecisionModel(model=model)
@@ -667,11 +667,11 @@ def test_list_models_queries_v1_models(brick, runner, monkeypatch):
 
     def get(url, **kwargs):
         urls.append(url)
-        return FakeResponse(json_data={"data": [{"id": "Laya-Q8_0"}, {"id": "Kev-0.8B-Q8_0"}]})
+        return FakeResponse(json_data={"data": [{"id": "vllm-d3-edge-Q8_0"}, {"id": "Kev-0.8B-Q8_0"}]})
 
     monkeypatch.setattr(f"{MODULE}.requests.get", get)
 
-    assert brick.list_models() == ["Laya-Q8_0", "Kev-0.8B-Q8_0"]
+    assert brick.list_models() == ["vllm-d3-edge-Q8_0", "Kev-0.8B-Q8_0"]
     assert urls == [f"{BASE_URL}/v1/models"]
 
 
@@ -873,7 +873,7 @@ def test_a_bad_image_is_rejected_before_posting(brick, runner, image, error):
 
 
 def test_an_image_sent_to_a_model_without_vision_hints_at_the_d3_models(brick, runner):
-    """What llama.cpp answers when the model has no vision projector (Laya, or d3 on the UNO Q)."""
+    """What llama.cpp answers when the model has no vision projector (Kev, or d3 on the UNO Q)."""
     message = "This server does not support image input for decisions. For a model that supports it, start it with `--mmproj`"
     runner.responses = [FakeResponse(501, {"error": {"code": 501, "message": message, "type": "not_supported_error"}})]
 
