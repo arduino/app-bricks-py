@@ -12,9 +12,9 @@ Three question types are supported:
 - **`Score`**: place the state on a scale of 2 to 10 described levels (urgency, severity, quality). The answer is the expected level plus the probability of every level.
 - **`Noul`**: a yes/no question (checks, filters, flags). The answer is the probability that the answer is yes.
 
-Available models (download them in Arduino App Lab): `llamacpp:vllm-d3-edge-Q8_0` (default on the UNO Q, 0.6B parameters, up to 255 options), `llamacpp:vllm-d3-lite-Q8_0` (default on the boards with the Qualcomm NPU, 0.8B, up to 255 options, the most accurate) and `llamacpp:Kev-0.8B-Q8_0` (0.8B, up to 255 options, best on long states). The model can be changed in `app.yaml` under `arduino:decision_model`.
+Available models (download them in Arduino App Lab): `llamacpp:vllm-d3-edge-Q8_0` (default on the UNO Q, 0.6B parameters, up to 255 options), `llamacpp:vllm-d3-lite-Q8_0` (default on the boards with the Qualcomm NPU, 0.8B, up to 255 options), `llamacpp:vllm-d3-nano-Q8_0` (VENTUNO Q only, 2.4B, up to 255 options, the most accurate, text only) and `llamacpp:Kev-0.8B-Q8_0` (0.8B, up to 255 options, best on long states). The model can be changed in `app.yaml` under `arduino:decision_model`.
 
-The answer time grows with the input tokens: the state is read once per question, so a long state with many questions costs more. Keep the state short and to the point, and use `decide()` to ask everything about a state in one request. d3-edge and d3-lite read the whole state in one pass and refuse one longer than about 2000 tokens with a `DecisionModelError`; Kev-0.8B reads it in chunks and accepts longer states.
+The answer time grows with the input tokens: the state is read once per question, so a long state with many questions costs more. Keep the state short and to the point, and use `decide()` to ask everything about a state in one request. The d3 models read the whole state in one pass and refuse one longer than about 2000 tokens with a `DecisionModelError`; Kev-0.8B reads it in chunks and accepts longer states.
 
 ## Features
 
@@ -251,7 +251,7 @@ App.run(on_request)
 
 ### Asking about a Camera Image
 
-On the VENTUNO Q, d3-edge and d3-lite are installed with their vision projector, so every method also takes an `image`: a frame from `Camera.capture()` (a numpy array in BGR order), the bytes of a JPEG or PNG file, or the path to one. The questions see the image together with the state, which says what the image is. One image per request; an image above one megapixel is downscaled to one megapixel (keeping its aspect ratio) before it is sent, so that the state, the question and its options still fit the batch the model reads in one pass. On the UNO Q images are not supported yet: a request with an `image` raises a `DecisionModelError`.
+On the VENTUNO Q, d3-edge and d3-lite are installed with their vision projector (d3-nano is not), so every method also takes an `image`: a frame from `Camera.capture()` (a numpy array in BGR order), the bytes of a JPEG or PNG file, or the path to one. The questions see the image together with the state, which says what the image is. One image per request; an image above one megapixel is downscaled to one megapixel (keeping its aspect ratio) before it is sent, so that the state, the question and its options still fit the batch the model reads in one pass. On the UNO Q images are not supported yet: a request with an `image` raises a `DecisionModelError`.
 
 ```python
 import time
