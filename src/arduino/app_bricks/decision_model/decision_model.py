@@ -292,7 +292,7 @@ class Choice:
         instructions (str | Mapping[str, Json] | Sequence[Json]): What to decide, e.g. "Which team should handle this ticket?".
         options (Mapping[str, str | None] | Sequence[str] | type[Enum]): The options to choose from: a dict mapping each option to a
             description (or None), a list of option names, or an Enum class whose member values are the option names.
-            Every decision model has a maximum number of options (255 for d3-edge, d3-lite and Kev).
+            Every decision model has a maximum number of options (255 for the d3 models and Kev).
     """
 
     instructions: str | Mapping[str, Json] | Sequence[Json]
@@ -991,7 +991,7 @@ class DecisionModel:
                 " model prompt in one batch, and this one does not fit it."
             )
         if "too many options" in lowered:
-            return "Reduce the number of options of the choice question: every decision model has a limit (255 for d3-edge, d3-lite and Kev)."
+            return "Reduce the number of options of the choice question: every decision model has a limit (255 for the d3 models and Kev)."
         if "decision model" in lowered:
             return f"'{self._model_id}' is not a decision model: pick one of the decision models of the catalog (e.g. llamacpp:vllm-d3-lite-Q8_0)."
         return "Check the request and the logs of the llama.cpp models runner."
