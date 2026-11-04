@@ -2055,7 +2055,7 @@ models:
       source-model-id: "gemma-4-E4B-it-qat-q4_0-gguf"
       source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"
  - "llamacpp:gemma-4-E2B_q4_0-it-multimodal":
-    name : "Gemma 4 E2B - Multimodal"
+    name : "Gemma 4 E2B Multimodal"
     description: >-
       Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective two billion parameters, it is engineered specifically for mobile and edge devices.
@@ -2080,7 +2080,7 @@ models:
       source-model-id: "gemma-4-E2B-it-qat-q4_0-gguf"
       source-model-url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf"
  - "llamacpp:gemma-4-E4B_q4_0-it-multimodal":
-    name : "Gemma 4 E4B - Multimodal"
+    name : "Gemma 4 E4B Multimodal"
     description: >-
       Gemma 4 E4B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
@@ -2209,7 +2209,7 @@ models:
       source-model-id: "Qwen3.5-4B-GGUF"
       source-model-url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF"
  - "llamacpp:Qwen3.5-4B-Q4_K_S-multimodal":
-    name : "Qwen 3.5 4B Multimodal"
+    name : "Qwen 3.5 4B VLM"
     description: >-
       Qwen 3.5 4B is a language model developed by Alibaba, designed to deliver efficient performance on edge devices.
       With four billion parameters, it is a hybrid model in which only one layer in four keeps an attention cache,
