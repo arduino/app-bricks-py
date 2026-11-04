@@ -2055,7 +2055,7 @@ models:
       source-model-id: "gemma-4-E4B-it-qat-q4_0-gguf"
       source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"
  - "llamacpp:gemma-4-E2B_q4_0-it-multimodal":
-    name : "Gemma 4 E2B Multimodal"
+    name : "Gemma 4 E2B - Multimodal"
     description: >-
       Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective two billion parameters, it is engineered specifically for mobile and edge devices.
@@ -2063,9 +2063,6 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:multimodal_llm"
-        model_configuration:
-          GGML_HEXAGON_DEVICES: 1
-      - id: "arduino:vlm"
         model_configuration:
           GGML_HEXAGON_DEVICES: 1
     deployment:
@@ -2083,7 +2080,7 @@ models:
       source-model-id: "gemma-4-E2B-it-qat-q4_0-gguf"
       source-model-url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf"
  - "llamacpp:gemma-4-E4B_q4_0-it-multimodal":
-    name : "Gemma 4 E4B Multimodal"
+    name : "Gemma 4 E4B - Multimodal"
     description: >-
       Gemma 4 E4B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
@@ -2091,9 +2088,6 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:multimodal_llm"
-        model_configuration:
-          GGML_HEXAGON_DEVICES: 2
-      - id: "arduino:vlm"
         model_configuration:
           GGML_HEXAGON_DEVICES: 2
     deployment:
