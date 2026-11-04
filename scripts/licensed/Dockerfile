@@ -11,7 +11,7 @@ ARG LICENSEE_VERSION=9.20.0
 FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
 
 # Same base as the scanned containers, pinned so the venvs resolve like the images do
-FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder
+FROM python:3.13-slim-trixie@sha256:ae14d4ce8771606477a81446e7ef429edd6762305fc50c84507c1041fa8285d1 AS builder
 
 ARG LICENSED_VERSION
 ARG LICENSEE_VERSION
@@ -27,7 +27,7 @@ RUN set -ex; \
     grep -q 'gsub(/\[-_.\]+/, "_")' /var/lib/gems/*/gems/licensed-${LICENSED_VERSION}/lib/licensed/sources/pip.rb; \
     rm -rf /var/lib/gems/*/cache /var/lib/gems/*/gems/rugged-*/vendor /var/lib/gems/*/gems/rugged-*/ext
 
-FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285
+FROM python:3.13-slim-trixie@sha256:ae14d4ce8771606477a81446e7ef429edd6762305fc50c84507c1041fa8285d1
 
 # The uv cache sits in the volume so it survives between runs, the venvs use the image's Python
 ENV LANG=C.UTF-8 PIP_ROOT_USER_ACTION=ignore UV_CACHE_DIR=/venvs/.uv-cache UV_PYTHON_DOWNLOADS=never
