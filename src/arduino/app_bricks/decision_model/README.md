@@ -12,9 +12,9 @@ Three question types are supported:
 - **`Score`**: place the state on a scale of 2 to 10 described levels (urgency, severity, quality). The answer is the expected level plus the probability of every level.
 - **`Noul`**: a yes/no question (checks, filters, flags). The answer is the probability that the answer is yes.
 
-Available models (download them in Arduino App Lab): `llamacpp:vllm-d3-edge-Q8_0` (default on the UNO Q, 0.6B parameters, up to 255 options), `llamacpp:vllm-d3-lite-Q8_0` (default on the boards with the Qualcomm NPU, 0.8B, up to 255 options), `llamacpp:vllm-d3-nano-Q8_0` (VENTUNO Q only, 2.4B, up to 255 options, the most accurate, text only) and `llamacpp:Kev-0.8B-Q8_0` (0.8B, up to 255 options, best on long states). The model can be changed in `app.yaml` under `arduino:decision_model`.
+The decision models are downloaded in Arduino App Lab, and every board has a default one that suits it. The model can be changed in `app.yaml` under `arduino:decision_model`: a larger model is more accurate and takes longer to answer. A multimodal model also reads an image together with the state (see [Asking about a Camera Image](#asking-about-a-camera-image)); any other model reads the state alone. Every model answers up to 255 options per question.
 
-The answer time grows with the input tokens: the state is read once per question, so a long state with many questions costs more. Keep the state short and to the point, and use `decide()` to ask everything about a state in one request. The d3 models read the whole state in one pass and refuse one longer than about 2000 tokens with a `DecisionModelError`; Kev-0.8B reads it in chunks and accepts longer states.
+The answer time grows with the input tokens: the state is read once per question, so a long state with many questions costs more. Keep the state short and to the point, and use `decide()` to ask everything about a state in one request. The models read the whole state in one pass and refuse one longer than about 2000 tokens with a `DecisionModelError`.
 
 ## Features
 
@@ -191,7 +191,7 @@ App.run(on_request)
 
 ### Air Conditioner: Choosing the Mode and the Target
 
-This example extends the thermostat one to an air conditioner that can cool, heat or dry the air. One `decide()` call asks two questions about the same sentence: what the person is asking for, which picks the mode (a person who complains about sticky air gets the dehumidifier, not a colder room), and how they feel, which moves the target temperature. As in the thermostat example, each option says which requests it answers. Choosing the mode asks more of the model than grading the feeling: run this example on the VENTUNO Q with its default model, d3-lite. On the UNO Q, d3-edge picks the mode less reliably, so use the thermostat example there.
+This example extends the thermostat one to an air conditioner that can cool, heat or dry the air. One `decide()` call asks two questions about the same sentence: what the person is asking for, which picks the mode (a person who complains about sticky air gets the dehumidifier, not a colder room), and how they feel, which moves the target temperature. As in the thermostat example, each option says which requests it answers. Choosing the mode asks more of the model than grading the feeling: run this example on the VENTUNO Q with its default model. On the UNO Q the default model picks the mode less reliably, so use the thermostat example there.
 
 ```python
 from arduino.app_bricks.decision_model import Choice, DecisionModel, Score
@@ -251,7 +251,7 @@ App.run(on_request)
 
 ### Asking about a Camera Image
 
-On the VENTUNO Q, d3-edge and d3-lite are installed with their vision projector (d3-nano is not), so every method also takes an `image`: a frame from `Camera.capture()` (a numpy array in BGR order), the bytes of a JPEG or PNG file, or the path to one. The questions see the image together with the state, which says what the image is. One image per request; an image above one megapixel is downscaled to one megapixel (keeping its aspect ratio) before it is sent, so that the state, the question and its options still fit the batch the model reads in one pass. On the UNO Q images are not supported yet: a request with an `image` raises a `DecisionModelError`.
+With a multimodal model every method also takes an `image`: a frame from `Camera.capture()` (a numpy array in BGR order), the bytes of a JPEG or PNG file, or the path to one. The questions see the image together with the state, which says what the image is. One image per request; an image above one megapixel is downscaled to one megapixel (keeping its aspect ratio) before it is sent, so that the state, the question and its options still fit the batch the model reads in one pass. A model that is not multimodal answers a request with an `image` with a `DecisionModelError`: send the request without it, or pick a multimodal model. On the UNO Q no model reads images yet.
 
 ```python
 import time
