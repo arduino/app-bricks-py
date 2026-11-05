@@ -396,3 +396,13 @@ def test_exits_on_sigterm_during_the_preload():
         assert launcher.process.wait(5) == 128 + signal.SIGTERM
     finally:
         launcher.remove()
+
+
+def test_app_bricks_modules_follow_the_app_descriptor(tmp_path):
+    (tmp_path / "app.yaml").write_text(
+        "name: demo\nbricks:\n  - arduino:llm:\n      model: llamacpp:Qwen3.5-0.8B-Q4_0\n  - arduino:web_ui\n  - acme:custom: {}\n  - arduino:llm\n"
+    )
+    from arduino.app_tools.app_launcher.launcher import app_bricks_modules
+
+    assert app_bricks_modules(str(tmp_path)) == ["arduino.app_bricks.llm", "arduino.app_bricks.web_ui"]
+    assert app_bricks_modules(str(tmp_path / "missing")) == []
