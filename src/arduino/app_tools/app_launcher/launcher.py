@@ -28,6 +28,8 @@ from datetime import UTC, datetime
 from types import FrameType
 from typing import Any, NoReturn
 
+import yaml
+
 from arduino.version import __version__
 
 from . import child, dependencies, protocol
@@ -88,6 +90,23 @@ class Config:
         )
 
 
+def app_bricks_modules(app_dir: str) -> list[str]:
+    """The modules of the Arduino bricks an app declares in its app.yaml, in declaration order; nothing for a missing or unreadable file."""
+    try:
+        with open(os.path.join(app_dir, "app.yaml"), encoding="utf-8") as f:
+            descriptor = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        return []
+    modules: list[str] = []
+    for entry in descriptor.get("bricks") or [] if isinstance(descriptor, dict) else []:
+        for brick_id in [entry] if isinstance(entry, str) else list(entry) if isinstance(entry, dict) else []:
+            vendor, _, name = str(brick_id).partition(":")
+            module = f"arduino.app_bricks.{name}"
+            if vendor == "arduino" and name and module not in modules:
+                modules.append(module)
+    return modules
+
+
 @dataclass(eq=False)
 class Child:
     """The running app process."""
@@ -141,6 +160,8 @@ class Launcher:
         self._prepared: dict[str, str | None] = {}
         if config.app_dir is not None:
             self._prepared[config.app_dir] = dependencies.fingerprint(config.app_dir)
+            # The bricks of the served app are imported once here: a fork starts with them loaded
+            self._pending_preload.extend(name for name in app_bricks_modules(config.app_dir) if name not in self._pending_preload)
 
     def serve(self) -> Launch | None:
         """Runs until SIGTERM or SIGINT.
