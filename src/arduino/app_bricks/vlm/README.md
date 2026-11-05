@@ -145,8 +145,6 @@ supported_boards: ["unoq", "ventunoq"]
 
 For a `llamacpp:` model, the `LLAMA_ARG_CTX_SIZE` variable sets the context size of the llama.cpp runner (default `16384`).
 
-On UNO Q the default is the `-multimodal` entry of Qwen3.5-0.8B: the GGUF loaded with its vision projector, which is the model the llama.cpp runner serves under that name. The catalog entry without the suffix is the same GGUF alone, meant for `arduino:llm`, and cannot read images.
-
 ## Methods
 
 - **`init()`**: Optional warm-up call to pre-load the model before the first `chat()`. It sends a tiny black image generated in memory together with a YES/NO question, so the vision encoder is exercised as well. Raises `RuntimeError` if the model is misconfigured or the runner is not responsive.
@@ -165,8 +163,6 @@ The `images` argument accepts a list containing:
 - Raw image bytes, such as a JPEG frame captured from a camera.
 
 When an image path is used, the file must exist in the application runtime environment. When bytes are used, make sure they represent an encoded image format that the model can interpret. For camera applications, convert frames to JPEG bytes before passing them to the Brick.
-
-On UNO Q the model service caps each image at 96 image tokens, downscaling larger images whatever their original resolution.
 
 ## Example Application
 
