@@ -34,14 +34,32 @@ def test_unoq_runner_caps_image_tokens_at_96():
     assert environment["LLAMA_ARG_IMAGE_MAX_TOKENS"] == "${LLAMA_ARG_IMAGE_MAX_TOKENS:-96}"
 
 
-def test_unoq_default_vlm_model_is_a_catalog_vision_model_for_unoq():
-    """The default is Qwen3.5-0.8B, and the catalog serves it to arduino:vlm on unoq with its mmproj."""
-    model = _unoq_default_model()
-    assert model == "llamacpp:Qwen3.5-0.8B-Q4_0"
+def _catalog() -> dict[str, dict]:
+    return {key: value for entry in yaml.safe_load(MODELS_LIST.read_text())["models"] for key, value in entry.items()}
 
-    catalog = {key: value for entry in yaml.safe_load(MODELS_LIST.read_text())["models"] for key, value in entry.items()}
+
+def _unoq_variables(entry: dict) -> dict:
+    platforms = {name: platform["variables"] for item in entry["deployment"]["platforms"] for name, platform in item.items()}
+    return platforms["unoq"]
+
+
+def test_unoq_default_vlm_model_is_the_multimodal_catalog_entry_for_unoq():
+    """The default is the "-multimodal" entry of Qwen3.5-0.8B: the GGUF loaded with its vision
+    projector, the name the llama.cpp runner serves that combination under. The entry without
+    the suffix is the same GGUF alone, served to arduino:llm, and cannot read images."""
+    model = _unoq_default_model()
+    assert model == "llamacpp:Qwen3.5-0.8B-Q4_0-multimodal"
+
+    catalog = _catalog()
     entry = catalog[model]
     assert "unoq" in entry["supported_boards"]
     assert "arduino:vlm" in [brick["id"] for brick in entry["bricks"]]
-    platforms = {name: platform["variables"] for item in entry["deployment"]["platforms"] for name, platform in item.items()}
-    assert platforms["unoq"]["model_mmproj_url"], "a VLM default without an mmproj cannot read images"
+    assert _unoq_variables(entry)["model_mmproj_url"], "a VLM default without an mmproj cannot read images"
+
+    text_entry = catalog[model.removesuffix("-multimodal")]
+    text_bricks = [brick["id"] for brick in text_entry["bricks"]]
+    assert "unoq" in text_entry["supported_boards"]
+    assert "arduino:llm" in text_bricks
+    assert "arduino:vlm" not in text_bricks, "the GGUF alone cannot read images"
+    assert _unoq_variables(text_entry)["model_url"] == _unoq_variables(entry)["model_url"], "both entries load the same GGUF"
+    assert "model_mmproj_url" not in _unoq_variables(text_entry)

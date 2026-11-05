@@ -25,7 +25,7 @@ The Brick uses the model configured for `arduino:vlm` in Arduino App Lab. The mo
 
 ## Prerequisites
 
-- A supported board with a local VLM model runner available. The current Brick configuration supports `ventunoq`.
+- A supported board with a local VLM model runner available. The current Brick configuration supports `unoq` and `ventunoq`.
 - A compatible VLM model downloaded and configured in Arduino App Lab.
 - The `arduino:vlm` Brick added to the application from App Lab.
 - Image input as a valid file path or bytes. Camera frames should be encoded as JPEG bytes before calling the Brick.
@@ -123,7 +123,7 @@ The Brick is initialized with the following parameters:
 | `model` | `str` \| `None` | App Lab configured model | Local model identifier configured for `arduino:vlm` in App Lab, e.g. `genie:qwen3_vl_4b_instruct` or `llamacpp:gemma-4-E2B_q4_0-it-multimodal`. |
 | `**kwargs` | `dict` | `{}` | Additional keyword arguments passed to the underlying model constructor. |
 
-The Brick configuration declares which local model service each kind of model requires, and the default model:
+The Brick configuration declares which local model service each kind of model requires, and the default model of each board:
 
 ```yaml
 id: arduino:vlm
@@ -135,11 +135,17 @@ requires_services:
   - id: arduino:llamacpp
     when:
       model: "llamacpp:*"
-model: genie:qwen3_vl_4b_instruct
-supported_boards: ["ventunoq"]
+model_by_boards:
+  - platform: ventunoq
+    model: genie:qwen3_vl_4b_instruct
+  - platform: unoq
+    model: llamacpp:Qwen3.5-0.8B-Q4_0-multimodal
+supported_boards: ["unoq", "ventunoq"]
 ```
 
 For a `llamacpp:` model, the `LLAMA_ARG_CTX_SIZE` variable sets the context size of the llama.cpp runner (default `16384`).
+
+On UNO Q the default is the `-multimodal` entry of Qwen3.5-0.8B: the GGUF loaded with its vision projector, which is the model the llama.cpp runner serves under that name. The catalog entry without the suffix is the same GGUF alone, meant for `arduino:llm`, and cannot read images.
 
 ## Methods
 
