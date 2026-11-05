@@ -1396,10 +1396,12 @@ def test_a_causal_decision_model_keeps_the_routers_arguments(runner, tmp_path, m
     assert "Kev-0.8B-Q8_0: causal decision model (kev)" in capsys.readouterr().err
 
 
-def test_a_vllm_d3_model_with_its_projector_gets_both_in_its_section(runner, tmp_path, monkeypatch, capsys):
+def test_a_vllm_d3_model_with_its_projector_gets_the_preset_in_both_its_sections(runner, tmp_path, monkeypatch, capsys):
     """d3 is a Qwen3.5 like Kev, but its header says attention.causal false (llama.cpp
-    evaluates its whole prompt in one batch), so it takes the micro-batch preset; the
-    vision projector downloaded next to it on the VENTUNO Q stays attached to its section."""
+    evaluates its whole prompt in one batch), so it takes the micro-batch preset. The vision
+    projector downloaded next to it on the VENTUNO Q makes it two models like any other GGUF:
+    the text section loads the GGUF alone, the -multimodal one adds the projector, and both
+    carry the preset, read from the header once."""
     monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
     repo = tmp_path / "ggml-org" / "vllm-d3-lite-GGUF"
     decision_model(repo / "vllm-d3-lite-Q8_0.gguf")
@@ -1410,11 +1412,13 @@ def test_a_vllm_d3_model_with_its_projector_gets_both_in_its_section(runner, tmp
     config = configparser.ConfigParser()
     config.optionxform = str
     config.read(tmp_path / "models.ini")
-    assert config.sections() == ["vllm-d3-lite-Q8_0"]
-    section = config["vllm-d3-lite-Q8_0"]
-    assert section["mmproj"].endswith("mmproj-vllm-d3-lite-BF16.gguf")
-    assert (section["LLAMA_ARG_CTX_SIZE"], section["LLAMA_ARG_BATCH"], section["LLAMA_ARG_UBATCH"]) == ("16384", "2048", "2048")
-    assert "vllm-d3-lite-Q8_0: decision model (vllm-d3), ctx 16384, batch 2048" in capsys.readouterr().err
+    assert config.sections() == ["vllm-d3-lite-Q8_0", "vllm-d3-lite-Q8_0-multimodal"]
+    text, multimodal = config["vllm-d3-lite-Q8_0"], config["vllm-d3-lite-Q8_0-multimodal"]
+    assert "mmproj" not in text
+    assert multimodal["mmproj"].endswith("mmproj-vllm-d3-lite-BF16.gguf")
+    for section in (text, multimodal):
+        assert (section["LLAMA_ARG_CTX_SIZE"], section["LLAMA_ARG_BATCH"], section["LLAMA_ARG_UBATCH"]) == ("16384", "2048", "2048")
+    assert capsys.readouterr().err.count("vllm-d3-lite-Q8_0: decision model (vllm-d3), ctx 16384, batch 2048") == 1
 
 
 def test_a_chat_model_gets_no_preset_keys(runner, tmp_path, monkeypatch, capsys):
