@@ -566,7 +566,7 @@ def test_model_comes_from_the_brick_configuration_when_not_given(runner, monkeyp
     def fake_configured_model(brick_id, brick_config=None):
         seen["brick_id"] = brick_id
         seen["brick_config"] = brick_config
-        return "llamacpp:Kev-0.8B-Q8_0"
+        return "llamacpp:vllm-d3-nano-Q8_0"
 
     monkeypatch.setattr(f"{MODULE}.get_brick_configured_model", fake_configured_model)
 
@@ -575,7 +575,7 @@ def test_model_comes_from_the_brick_configuration_when_not_given(runner, monkeyp
 
     assert seen["brick_id"] == "arduino:decision_model"
     assert seen["brick_config"]["id"] == "arduino:decision_model"
-    assert brick._model_name == "Kev-0.8B-Q8_0"
+    assert brick._model_name == "vllm-d3-nano-Q8_0"
 
 
 @pytest.mark.parametrize(("board", "expected"), [("unoq", "llamacpp:vllm-d3-edge-Q8_0"), ("ventunoq", "llamacpp:vllm-d3-lite-Q8_0")])
@@ -667,11 +667,11 @@ def test_list_models_queries_v1_models(brick, runner, monkeypatch):
 
     def get(url, **kwargs):
         urls.append(url)
-        return FakeResponse(json_data={"data": [{"id": "vllm-d3-edge-Q8_0"}, {"id": "Kev-0.8B-Q8_0"}]})
+        return FakeResponse(json_data={"data": [{"id": "vllm-d3-edge-Q8_0"}, {"id": "vllm-d3-lite-Q8_0"}]})
 
     monkeypatch.setattr(f"{MODULE}.requests.get", get)
 
-    assert brick.list_models() == ["vllm-d3-edge-Q8_0", "Kev-0.8B-Q8_0"]
+    assert brick.list_models() == ["vllm-d3-edge-Q8_0", "vllm-d3-lite-Q8_0"]
     assert urls == [f"{BASE_URL}/v1/models"]
 
 
@@ -872,8 +872,8 @@ def test_a_bad_image_is_rejected_before_posting(brick, runner, image, error):
     assert runner.posts == []
 
 
-def test_an_image_sent_to_a_model_without_vision_hints_at_the_d3_models(brick, runner):
-    """What llama.cpp answers when the model has no vision projector (Kev, or d3 on the UNO Q)."""
+def test_an_image_sent_to_a_model_without_vision_hints_at_a_multimodal_model(brick, runner):
+    """What llama.cpp answers when the model has no vision projector (a model that is not multimodal)."""
     message = "This server does not support image input for decisions. For a model that supports it, start it with `--mmproj`"
     runner.responses = [FakeResponse(501, {"error": {"code": 501, "message": message, "type": "not_supported_error"}})]
 
@@ -881,7 +881,7 @@ def test_an_image_sent_to_a_model_without_vision_hints_at_the_d3_models(brick, r
         brick.decide("s", {"q": Noul("?")}, image=_frame(64, 64))
 
     assert MODEL_ID in info.value.hint
-    assert "llamacpp:vllm-d3-lite-Q8_0" in info.value.hint
+    assert "multimodal" in info.value.hint
     assert "is not a decision model" not in info.value.hint
 
 

@@ -36,9 +36,9 @@ RUNNER_PORT = 9999
 MIN_SCORE_LEVELS = 2
 MAX_SCORE_LEVELS = 10
 
-# A decision model that reads images (d3, with its vision projector) evaluates the image and the text of
+# A multimodal decision model (installed with its vision projector) evaluates the image and the text of
 # the prompt in one micro-batch of the runner (2048 tokens), and llama.cpp gives the image at most half of
-# it. d3 turns every 32x32 pixels into one token (16-pixel patches merged 2x2), so 1024 tokens are about
+# it. The vision projectors of the catalog models turn every 32x32 pixels into one token (16-pixel patches merged 2x2), so 1024 tokens are about
 # one megapixel: a larger image is downscaled to that before it is sent, keeping the aspect ratio, and
 # the other half of the micro-batch stays free for the state, the question and its options.
 MAX_IMAGE_PIXELS = 1024 * 32 * 32
@@ -292,7 +292,7 @@ class Choice:
         instructions (str | Mapping[str, Json] | Sequence[Json]): What to decide, e.g. "Which team should handle this ticket?".
         options (Mapping[str, str | None] | Sequence[str] | type[Enum]): The options to choose from: a dict mapping each option to a
             description (or None), a list of option names, or an Enum class whose member values are the option names.
-            Every decision model has a maximum number of options (255 for the d3 models and Kev).
+            Every decision model has a maximum number of options (255 for the models of the catalog).
     """
 
     instructions: str | Mapping[str, Json] | Sequence[Json]
@@ -629,8 +629,8 @@ class DecisionModel:
     A decision model (TypeSafe "System One" API, served by llama.cpp) does not generate text: in a single
     forward pass it answers multiple-choice (`Choice`), graded (`Score`) and yes/no (`Noul`) questions about a
     state with calibrated probabilities. It is faster and more predictable than a chat LLM for routing,
-    classification, grading and checks. A model installed with its vision projector (d3-edge and d3-lite on
-    the VENTUNO Q) also reads an image that comes with the state.
+    classification, grading and checks. A multimodal model (installed with its vision projector) also reads
+    an image that comes with the state.
     """
 
     LLAMACPP_MODEL = "llamacpp"
@@ -721,8 +721,8 @@ class DecisionModel:
             image (np.ndarray | bytes | str | Path | None): An image every question also sees: a numpy array in
                 BGR channel order (as returned by `Camera.capture()`), the bytes of an encoded image file (e.g.
                 JPEG or PNG) or the path to one. An image above one megapixel is downscaled to one megapixel,
-                keeping its aspect ratio. Only a model installed with its vision projector reads images (d3-edge
-                and d3-lite on the VENTUNO Q). None (default) asks about the state alone.
+                keeping its aspect ratio. Only a multimodal model (installed with its vision projector) reads
+                images. None (default) asks about the state alone.
 
         Returns:
             Answers: One answer per question id: a `ChoiceAnswer` for a `Choice`, a `ScoreAnswer` for a `Score`
@@ -983,7 +983,7 @@ class DecisionModel:
         if "does not support image input" in lowered:
             return (
                 f"'{self._model_id}' does not read images on this board: send the request without `image`, or use a decision"
-                " model installed with its vision projector (llamacpp:vllm-d3-edge-Q8_0 or llamacpp:vllm-d3-lite-Q8_0 on the VENTUNO Q)."
+                " model that is multimodal (installed with its vision projector)."
             )
         if "too large to process" in lowered:
             return (
@@ -991,7 +991,7 @@ class DecisionModel:
                 " model prompt in one batch, and this one does not fit it."
             )
         if "too many options" in lowered:
-            return "Reduce the number of options of the choice question: every decision model has a limit (255 for the d3 models and Kev)."
+            return "Reduce the number of options of the choice question: every decision model has a limit (255 for the models of the catalog)."
         if "decision model" in lowered:
             return f"'{self._model_id}' is not a decision model: pick one of the decision models of the catalog (e.g. llamacpp:vllm-d3-lite-Q8_0)."
         return "Check the request and the logs of the llama.cpp models runner."
