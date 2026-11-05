@@ -2251,12 +2251,36 @@ models:
         - ventunoq:
             variables:
               model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/753af7a406f0025e46bb3af5b982b3e3590e522c/vllm-d3-edge-Q8_0.gguf"
-              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/753af7a406f0025e46bb3af5b982b3e3590e522c/mmproj-vllm-d3-edge-BF16.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-edge-GGUF"
         - unoq:
             variables:
               model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/753af7a406f0025e46bb3af5b982b3e3590e522c/vllm-d3-edge-Q8_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/vllm-d3-edge-GGUF"
+    metadata:
+      model_size_mb: 769
+      source: "huggingface"
+      source-model-id: "vllm-d3-edge-GGUF"
+      source-model-url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF"
+ - "llamacpp:vllm-d3-edge-Q8_0-multimodal":
+    name : "vLLM-SR d3-edge Multimodal"
+    description: >-
+      d3-edge is a 0.6 billion parameter decision model (Decision 3.0 by vLLM Semantic Router, built on Qwen3.5) for the Decision Model brick.
+      Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
+      with a probability for every answer. It supports up to 255 options per question.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:decision_model"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/753af7a406f0025e46bb3af5b982b3e3590e522c/vllm-d3-edge-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/753af7a406f0025e46bb3af5b982b3e3590e522c/mmproj-vllm-d3-edge-BF16.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-edge-GGUF"
     metadata:
