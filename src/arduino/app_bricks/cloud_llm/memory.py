@@ -47,6 +47,59 @@ def strip_anthropic_thinking(message: BaseMessage) -> BaseMessage:
     return message.model_copy(update={"content": content or ""})
 
 
+# The text an image or audio part of an earlier turn is replaced with, by content part type.
+MEDIA_PLACEHOLDERS = {"image_url": "[image]", "input_audio": "[audio]"}
+
+
+def has_media(message: BaseMessage) -> bool:
+    """Tells whether ``message`` is a user message carrying images or audio.
+
+    Args:
+        message (BaseMessage): The message to check.
+
+    Returns:
+        bool: True when one of its content parts is an image or an audio clip.
+    """
+    if not isinstance(message, HumanMessage) or not isinstance(message.content, list):
+        return False
+    return any(isinstance(part, dict) and part.get("type") in MEDIA_PLACEHOLDERS for part in message.content)
+
+
+def without_media(message: BaseMessage) -> BaseMessage:
+    """Returns ``message`` with every image and audio part replaced by its text placeholder.
+
+    Args:
+        message (BaseMessage): The message to clean.
+
+    Returns:
+        BaseMessage: The original message when it carries no media, otherwise a copy where each
+            media part is a ``MEDIA_PLACEHOLDERS`` text part, in the same position.
+    """
+    if not has_media(message):
+        return message
+    content = [
+        {"type": "text", "text": MEDIA_PLACEHOLDERS[part["type"]]} if isinstance(part, dict) and part.get("type") in MEDIA_PLACEHOLDERS else part
+        for part in message.content
+    ]
+    return message.model_copy(update={"content": content})
+
+
+def keep_latest_media(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """Returns ``messages`` where only the last user message carrying images or audio keeps them.
+
+    The media of every earlier turn become text placeholders (``without_media``), so a
+    conversation resends at most one turn of media, while the text of every turn stays.
+
+    Args:
+        messages (list[BaseMessage]): The conversation, oldest first.
+
+    Returns:
+        list[BaseMessage]: A new list with the same messages, earlier media replaced.
+    """
+    latest = next((i for i in range(len(messages) - 1, -1, -1) if has_media(messages[i])), None)
+    return [message if i == latest else without_media(message) for i, message in enumerate(messages)]
+
+
 @runtime_checkable
 class MessagePersistence(Protocol):
     """Backend interface for persisting chat messages"""
@@ -153,15 +206,22 @@ class WindowedChatMessageHistory:
 
     Anthropic thinking blocks are stripped from stored messages (see
     ``strip_anthropic_thinking``): moving the window would invalidate them on replay.
+
+    With ``latest_media_only`` set, only the latest user message carrying images or audio
+    keeps them in the window; the media of earlier turns become text placeholders
+    (``keep_latest_media``) and the store persists the placeholders only. Rewriting earlier turns this way suits runners that
+    receive the whole conversation with every request, such as llama.cpp, not those that
+    diff it against a session they keep (the genie runner).
     """
 
     k: int
 
-    def __init__(self, k: int, system_message: str = "", store: MessagePersistence | None = None) -> None:
+    def __init__(self, k: int, system_message: str = "", store: MessagePersistence | None = None, latest_media_only: bool = False) -> None:
         self.k = k
         self._messages: list[BaseMessage] = []
         self._system_message = SystemMessage(content=system_message) if system_message else None
         self._store = store
+        self._latest_media_only = latest_media_only
 
         if store is not None and k > 0:
             # Fetch a margin above k so the windowing logic can back up over
@@ -193,13 +253,16 @@ class WindowedChatMessageHistory:
 
             self._messages = self._messages[start:]
 
+        if self._latest_media_only:
+            self._messages = keep_latest_media(self._messages)
+
     def add_messages(self, messages: list[BaseMessage]) -> None:
         if self.k == 0:
             return
 
         messages = [strip_anthropic_thinking(m) for m in messages]
         if self._store is not None:
-            self._store.append(messages)
+            self._store.append([without_media(m) for m in messages] if self._latest_media_only else messages)
 
         self._apply_window(messages)
 

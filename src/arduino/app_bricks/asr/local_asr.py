@@ -22,7 +22,7 @@ from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 from arduino.app_utils import http
 from arduino.app_internal.core import resolve_address
 from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model
-from arduino.app_peripherals.microphone import BaseMicrophone, Microphone, PauseDetector, chunk_level
+from arduino.app_peripherals.microphone import BaseMicrophone, Microphone, SpeechSegmenter, chunk_level
 from arduino.app_utils import AppError, Logger, brick
 
 logger = Logger("ASR")
@@ -102,49 +102,6 @@ def _dtype_to_pcm_format(dtype: np.dtype, is_packed: bool = False) -> str:
     raise ValueError(f"Unsupported numpy dtype for PCM format: {dtype}")
 
 
-class _PauseFlushPolicy:
-    """
-    Decides when to ask the server for an early transcript of the speech buffered so far.
-
-    Whisper only transcribes a segment once the server-side VAD closes it, which can
-    take many seconds of continuous speech. Flushing earlier gives near-streaming output,
-    but the server transcribes exactly what it has, so a flush in the middle of a word
-    garbles that word. The policy therefore waits for a short pause, found by a
-    :class:`PauseDetector`, and only forces a cut when the speaker does not pause at all.
-    """
-
-    def __init__(self, min_s: float, max_s: float, pause_s: float, min_voiced_s: float) -> None:
-        self.min_s = min_s
-        self.max_s = max_s
-        self.min_voiced_s = min_voiced_s
-        self._detector = PauseDetector(pause_s=pause_s)
-        self.reset()
-
-    def reset(self) -> None:
-        """Start a new segment: called after a flush and when the server closes a segment itself."""
-        self._in_segment = False
-        self._segment_s = 0.0
-        self._voiced_s = 0.0
-
-    def update(self, level: float, duration_s: float) -> bool:
-        """Account one chunk of ``duration_s`` seconds; returns True when a flush is due."""
-        quiet = self._detector.update_level(level, duration_s)
-        if not self._in_segment:
-            if quiet:
-                return False
-            self._in_segment = True
-        self._segment_s += duration_s
-        if not quiet:
-            self._voiced_s += duration_s
-        if self._voiced_s < self.min_voiced_s:
-            return False
-        at_pause = self._segment_s >= self.min_s and self._detector.paused
-        if at_pause or self._segment_s >= self.max_s:
-            self.reset()
-            return True
-        return False
-
-
 @dataclass(frozen=True)
 class ASREvent:
     type: Literal["partial_text", "full_text"]
@@ -202,9 +159,12 @@ class BaseASR:
     """
 
     _APP_SERVICE_NAME = "audio-analytics-runner"
-    # Early transcripts (see _PauseFlushPolicy): cut at the first pause of at least
-    # _FLUSH_PAUSE_SECONDS once a segment is _FLUSH_MIN_SECONDS long, or anyway at
-    # _FLUSH_MAX_SECONDS, well inside Whisper's 30 s window.
+    # Early transcripts. Whisper only transcribes a segment once the server-side VAD closes
+    # it, which can take many seconds of continuous speech; the server transcribes exactly
+    # what it has, so a flush in the middle of a word garbles that word. The reader thread
+    # therefore cuts at the first pause (SpeechSegmenter) of at least _FLUSH_PAUSE_SECONDS
+    # once a segment is _FLUSH_MIN_SECONDS long, or anyway at _FLUSH_MAX_SECONDS, well
+    # inside Whisper's 30 s window.
     _FLUSH_MIN_SECONDS = 3.0
     _FLUSH_MAX_SECONDS = 10.0
     _FLUSH_PAUSE_SECONDS = 0.25
@@ -666,11 +626,11 @@ class BaseASR:
         session_id = session_info.session_id
         start_time = session_info.start_time
         duration = session_info.duration
-        policy = _PauseFlushPolicy(
+        segmenter = SpeechSegmenter(
+            pause_s=self._FLUSH_PAUSE_SECONDS,
             min_s=self._FLUSH_MIN_SECONDS,
             max_s=self._FLUSH_MAX_SECONDS,
-            pause_s=self._FLUSH_PAUSE_SECONDS,
-            min_voiced_s=self._FLUSH_MIN_VOICED_SECONDS,
+            min_speech_s=self._FLUSH_MIN_VOICED_SECONDS,
         )
         frames_per_second = self._source.sample_rate * self._source.channels
         try:
@@ -690,8 +650,10 @@ class BaseASR:
                     continue  # transient (paused/underrun) — keep going
                 if session_info.segment_closed.is_set():
                     session_info.segment_closed.clear()
-                    policy.reset()
-                flush_due = policy.update(chunk_level(chunk, self._source.format_is_packed), chunk.size / frames_per_second)
+                    segmenter.reset()
+                flush_due = segmenter.update_level(chunk_level(chunk, self._source.format_is_packed), chunk.size / frames_per_second)
+                if flush_due:
+                    segmenter.reset()
                 self._enqueue(session_info, chunk.tobytes())
                 if flush_due:
                     # Queued behind the audio, so the server cuts exactly at this pause
@@ -874,7 +836,7 @@ class BaseASR:
             logger.debug(f"WebSocket {label} closed while draining for session {session_id}: {e}")
 
     async def _periodic_flush(self, session_info: SessionInfo) -> None:
-        """Send the flushes the reader thread requests (see _PauseFlushPolicy)."""
+        """Send the flushes the reader thread requests at the pauses it finds."""
         session_id = session_info.session_id
         try:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():

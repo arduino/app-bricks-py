@@ -29,6 +29,14 @@ def _clear_scandir_cache():
 
 
 @pytest.fixture(autouse=True)
+def _no_release_version(monkeypatch):
+    """Run outside the image, as the tests do: no release unless a test sets one."""
+    import list_models
+
+    monkeypatch.delenv(list_models.RELEASE_VERSION_ENV, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def exit_refreshes(monkeypatch, tmp_path):
     """Keep the materialized listing of the tests off the real /models.
 

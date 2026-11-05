@@ -41,6 +41,23 @@ with Camera(source, **options) as camera:
     # Camera automatically stopped when exiting
 ```
 
+## Taking a photo on request
+
+`capture()` is meant to be called in a loop: each call returns the next frame. A camera read only now and then, for instance to take a photo when the user asks, would get the frame its device buffered at the previous read, seconds or minutes old. Pass `latest=True` to get the scene as it is now: the buffered frames are discarded first, which takes about two frame intervals (200 ms at 10 fps).
+
+```python
+from arduino.app_peripherals.camera import Camera
+
+camera = Camera()
+camera.start()
+
+
+def take_photo():
+    return camera.capture(latest=True)
+```
+
+`record()` and `record_avi()` always start from the scene of now.
+
 ## Frame Adjustments
 
 The `adjustments` parameter allows you to apply custom transformations to captured frames. This parameter accepts a callable that takes a numpy array (the frame) and returns a modified numpy array. It's also possible to build adjustment pipelines by concatenating these functions with the pipe (|) operator

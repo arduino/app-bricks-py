@@ -62,7 +62,8 @@ Contracts callers must honour:
   reports for the same files (``common/gguf_naming.py``). That id is a snapshot: if
   the model is later added to the curated catalog its listing name changes to the
   entry's stem-form id and the recorded one goes stale. The listing, derived from
-  the filesystem and the catalog, is the authority.
+  the filesystem, the catalog and (for the two models of one GGUF) these records, is
+  the authority.
 - Nothing else is copied out of models-list.yaml. ``model_id`` points back at the
   entry, and every other field of it (name, description, source, model_size_mb, ...)
   is read from models-list.yaml itself rather than duplicated — and left to go stale —
@@ -77,6 +78,13 @@ Contracts callers must honour:
   ``prune_metadata_records``. Only this file is shared — whether a model is installed,
   and what an interrupted download discards, are decided per quantization, and the
   ``.download`` marker says which files it stands for.
+- A GGUF with a projector next to it is **two models** with two records: the text
+  model's names the GGUF alone, the multimodal model's names the GGUF and the
+  projector under the ``-multimodal`` id. The records are what says which of the two
+  the user downloaded (``recorded_kinds``), and a delete goes by them: deleting one
+  model removes only the files the other does not need, and drops that model's record
+  (``forget_model_record``). A record from before the split, naming the projector under
+  the text model's id, counts for both.
 """
 
 import json
@@ -86,7 +94,7 @@ from datetime import datetime, UTC
 import yaml
 
 from common.model_size import METADATA_NAME, is_bookkeeping_name  # noqa: F401 - re-exported
-from common.models_list import MODELS_LIST_PATH, find_matching_model, load_models_list
+from common.models_list import MODELS_LIST_PATH, SAFE_LOADER, find_matching_model, load_models_list
 
 _HEADER = (
     "# Written by the Arduino models-downloader after a successful download.\n"
@@ -121,6 +129,16 @@ SECRET_VARIABLES = frozenset({"hf_token", "HF_TOKEN", "HF_HUB_TOKEN", "EI_API_KE
 # (list_models.py imports these, so the two can never drift apart).
 ORIGIN_BUILTIN = "built_in"
 ORIGIN_USER = "user"
+
+# What turns the name of a text model into the name of the same GGUF loaded with its
+# multimodal projector (gguf_naming re-exports it). A record's id tells which of the
+# two models it stands for when its files alone cannot (see ``_record_kinds``).
+MULTIMODAL_SUFFIX = "-multimodal"
+
+# The two models a GGUF with a projector next to it is, as ``recorded_kinds`` reports
+# them: the file loaded alone, and the file loaded with the projector.
+KIND_TEXT = "text"
+KIND_MULTIMODAL = "multimodal"
 
 
 def utc_now_iso():
@@ -227,43 +245,130 @@ def _main_files(files):
     return [f for f in files if "mmproj" not in f.split("/")[-1]]
 
 
-def record_for_file(data, rel_path):
+def _names_file(record, rel_path):
+    """Whether *record* lists the file at *rel_path*, by full relative path or by
+    basename — the two ways download patterns match a file."""
+    name = rel_path.split("/")[-1]
+    return any(f == rel_path or f.split("/")[-1] == name for f in _record_files(record))
+
+
+def _record_kinds(record):
+    """The models *record* stands for: ``{KIND_TEXT}``, ``{KIND_MULTIMODAL}`` or both.
+
+    A record naming a projector installed the multimodal model, one naming the GGUF
+    alone the text model. A record written before the catalog split a GGUF into its
+    two models names the projector under the text model's id — one without the
+    ``MULTIMODAL_SUFFIX``: that download installed both, and the record counts for both.
+    """
+    files = _record_files(record)
+    if len(_main_files(files)) == len(files):
+        return {KIND_TEXT}
+    if (record.get("model_id") or "").endswith(MULTIMODAL_SUFFIX):
+        return {KIND_MULTIMODAL}
+    return {KIND_TEXT, KIND_MULTIMODAL}
+
+
+def recorded_kinds(data, rel_path):
+    """Which models of the GGUF at *rel_path* were downloaded, by its records.
+
+    Returns:
+        A set of ``KIND_TEXT`` and/or ``KIND_MULTIMODAL``; empty when no record names
+        the file, so nothing is known about what its owner downloaded.
+    """
+    kinds = set()
+    for record in metadata_records(data):
+        if _names_file(record, rel_path):
+            kinds |= _record_kinds(record)
+    return kinds
+
+
+def _without_kind(record, kind):
+    """*record* with the *kind* model forgotten.
+
+    The record itself when it stands for the other model only, None when nothing of it
+    remains, or — for a record counting for both models — the half that stays: the
+    GGUF alone under its own id when the multimodal model goes, both files under the
+    multimodal id when the text model goes.
+    """
+    kinds = _record_kinds(record)
+    if kind not in kinds:
+        return record
+    if kinds == {kind}:
+        return None
+    kept = dict(record)
+    if kind == KIND_MULTIMODAL:
+        kept["files"] = _main_files(_record_files(record))
+    else:
+        kept["model_id"] = f"{record.get('model_id') or ''}{MULTIMODAL_SUFFIX}"
+    return kept
+
+
+def record_for_file(data, rel_path, multimodal=None):
     """The record describing the model file at *rel_path* (model-dir-relative, posix).
 
     Matched against the record's ``files`` by full relative path or by basename —
     the two ways download patterns match a file. None when no record names the file:
     it was installed by something that recorded nothing about it, and no other
     record's inputs may stand in for its own.
+
+    A GGUF can carry two records, its text model's and its multimodal model's (the one
+    that also names a projector). *multimodal* picks one of the two; None takes the
+    first record naming the file, whichever it is.
     """
     rel_path = rel_path or ""
-    name = rel_path.split("/")[-1]
     for record in metadata_records(data):
-        if any(f == rel_path or f.split("/")[-1] == name for f in _record_files(record)):
+        files = _record_files(record)
+        names_projector = len(_main_files(files)) < len(files)
+        if multimodal is not None and names_projector != multimodal:
+            continue
+        if _names_file(record, rel_path):
             return record
     return None
 
 
-def file_record(model_file, base_dir):
+def file_record(model_file, base_dir, multimodal=None):
     """The download record describing *model_file*, or None when no record names it.
 
     The record lives in the directory the download landed in — for Hugging Face the
     repository directory, which can sit above a nested per-quantization folder — so
     every directory from the file's own up to *base_dir* is tried, matching the
-    file's path relative to each (see ``record_for_file``). Only the path is looked
-    at, never the file itself. The llamacpp runners' configure-llamacpp.py scripts
-    replicate this lookup; keep them in sync.
+    file's path relative to each (see ``record_for_file``, which also says what
+    *multimodal* selects). Only the path is looked at, never the file itself. The
+    llamacpp runners' configure-llamacpp.py scripts replicate this lookup; keep them
+    in sync.
     """
     path = os.path.abspath(model_file)
     base = os.path.abspath(base_dir)
     directory = os.path.dirname(path)
     while True:
         rel = os.path.relpath(path, directory).replace(os.sep, "/")
-        record = record_for_file(read_metadata(directory), rel)
+        record = record_for_file(read_metadata(directory), rel, multimodal)
         if record is not None:
             return record
         parent = os.path.dirname(directory)
         if directory == base or parent == directory:
             return None
+        directory = parent
+
+
+def file_kinds(model_file, base_dir):
+    """Which models of the GGUF *model_file* were downloaded, by its records.
+
+    The ``recorded_kinds`` of the file, looked up in the directory its record lives in
+    the way ``file_record`` finds it: from the file's own directory up to *base_dir*.
+    Empty when no record names the file.
+    """
+    path = os.path.abspath(model_file)
+    base = os.path.abspath(base_dir)
+    directory = os.path.dirname(path)
+    while True:
+        rel = os.path.relpath(path, directory).replace(os.sep, "/")
+        kinds = recorded_kinds(read_metadata(directory), rel)
+        if kinds:
+            return kinds
+        parent = os.path.dirname(directory)
+        if directory == base or parent == directory:
+            return set()
         directory = parent
 
 
@@ -318,12 +423,12 @@ def _write_document(model_dir, document):
 
 def _superseded(record, payload):
     """Whether *record* describes the install *payload* re-records: the same model id,
-    or the same main model file(s). The shared mmproj companion is not identity —
-    two quantizations fetched with the same mmproj each keep their own record."""
+    or the same files. Neither file alone is identity: two quantizations fetched with
+    the same mmproj each keep their own record, and so do a text model and the
+    multimodal model that adds a projector to the same GGUF."""
     if payload.get("model_id") and record.get("model_id") == payload["model_id"]:
         return True
-    new_main = set(_main_files(payload.get("files") or []))
-    return bool(new_main & set(_record_files(record)))
+    return bool(payload.get("files")) and set(payload["files"]) == set(_record_files(record))
 
 
 def write_metadata(
@@ -348,7 +453,7 @@ def write_metadata(
     it makes the record *merge* into the existing document instead of replacing it —
     one record per installed download, so the quantizations sharing a Hugging Face
     repository directory each keep their own; only the record(s) of the same model
-    (same id, or same main files) are replaced. Without it the whole file becomes this
+    (same id, or same files) are replaced. Without it the whole file becomes this
     one record, which is right exactly when the directory holds a single model (AI
     Hub, Edge Impulse). The written document has the same ``models`` shape either way.
     """
@@ -360,7 +465,15 @@ def write_metadata(
             files=files,
         )
         if files is not None:
-            kept = [record for record in metadata_records(read_metadata(model_dir)) if not _superseded(record, payload)]
+            # A superseded record counting for both models of the GGUF is replaced
+            # only for the model this download re-records: its other half stays.
+            kept = []
+            for record in metadata_records(read_metadata(model_dir)):
+                if _superseded(record, payload):
+                    for kind in _record_kinds(payload):
+                        record = _without_kind(record, kind) if record is not None else None
+                if record is not None:
+                    kept.append(record)
             document = _document(kept + [payload])
         else:
             document = _document([payload])
@@ -401,6 +514,33 @@ def prune_metadata_records(model_dir):
         print(json.dumps({"event": "info", "description": f"Could not prune {METADATA_NAME}: {exc}"}), flush=True)
 
 
+def forget_model_record(model_dir, rel_path, kind):
+    """Drop the record of the *kind* model of the GGUF at *rel_path*; never raises.
+
+    Run by a delete of one of the two models of a GGUF: whether or not a file goes, the
+    records must stop saying that model was downloaded, while the other model's record
+    stays. A record counting for both models keeps its other half (``_without_kind``).
+    The whole file goes when no record remains.
+    """
+    try:
+        records = metadata_records(read_metadata(model_dir))
+        if not records:
+            return
+        kept = []
+        for record in records:
+            remaining = _without_kind(record, kind) if _names_file(record, rel_path) else record
+            if remaining is not None:
+                kept.append(remaining)
+        if kept == records:
+            return
+        if kept:
+            _write_document(model_dir, _document(kept))
+        else:
+            os.unlink(os.path.join(model_dir, METADATA_NAME))
+    except Exception as exc:  # noqa: BLE001 - cleanup bookkeeping must never fail a delete
+        print(json.dumps({"event": "info", "description": f"Could not update {METADATA_NAME}: {exc}"}), flush=True)
+
+
 def read_metadata(path):
     """Parse a metadata file into a dict, or None if it is missing / unusable.
 
@@ -413,7 +553,9 @@ def read_metadata(path):
         path = os.path.join(path, METADATA_NAME)
     try:
         with open(path) as f:
-            data = yaml.safe_load(f)
+            # The listing reads every record file several times per run: the C loader
+            # parses one in a tenth of the time of the pure-Python one.
+            data = yaml.load(f, Loader=SAFE_LOADER)
     except (OSError, yaml.YAMLError):
         return None
     return data if isinstance(data, dict) else None

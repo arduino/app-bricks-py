@@ -98,7 +98,9 @@ release, and the compile options. Each is fixed in git:
   neither pick a newer `onnxruntime` nor a different `onnxruntime-qnn` wheel nor an extra
   package. The QNN plugin wheel is self-contained: `onnxruntime-qnn 2.5.0` ships
   **QAIRT 2.49.40** (`libQnnHtp.so`, `libQnnHtpPrepare.so`, `libQnnHtpV68..V81Skel.so`,
-  ~190 MB), and it is the *only* QAIRT in the image - the base image builds on `python-slim`
+  ~190 MB; the base image deletes what the EP never loads and keeps `libQnnHtp.so`,
+  `libQnnSystem.so`, `libQnnHtpPrepare.so` and the v73/v75 stubs and skels, ~115 MB),
+  and it is the *only* QAIRT in the image - the base image builds on `python-slim`
   and installs no QAIRT SDK, precisely because this runner would not use one.
   `utils/onnx_ep.py` points `ADSP_LIBRARY_PATH` at the wheel's own skels: host library and
   DSP skel must come from the same release or the backend fails with

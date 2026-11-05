@@ -56,6 +56,13 @@ def server() -> Iterator[Server]:
                     self.wfile.flush()
                 self.wfile.write(b"0\r\n\r\n")
                 return
+            if path == "/truncated":  # One chunk, then the connection closes before the last chunk
+                self.send_response(200)
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                self.wfile.write(b"5\r\nfirst\r\n")
+                self.close_connection = True
+                return
             if path == "/slow":
                 time.sleep(0.5)  # The client gives up meanwhile: the answer below lands on a closed socket
             if path.startswith("/status/"):
@@ -245,6 +252,17 @@ def test_stream_returns_error_statuses_with_their_body(server: Server):
     with http.stream("POST", f"{server.url}/status/500", json={}) as response:
         assert response.status_code == 500
         assert response.json()["status"] == 500
+
+
+def test_stream_raises_connection_failed_when_the_body_is_cut_short(server: Server):
+    with http.stream("POST", f"{server.url}/truncated", json={}) as response:
+        chunks = response.iter_content(1024)
+        assert next(chunks) == b"first"
+        with pytest.raises(http.ConnectionFailed, match="POST .*/truncated"):
+            next(chunks)
+    with http.stream("POST", f"{server.url}/truncated", json={}) as response:
+        with pytest.raises(http.ConnectionFailed, match="POST .*/truncated"):
+            response.json()
 
 
 def test_stream_raises_connection_failed_without_a_response(closed_port: str):

@@ -36,6 +36,9 @@ class TestAppUtilsLazyImports(unittest.TestCase):
             block = SineGenerator(16000).generate_block(freq=440.0, amp_target=1.0, block_dur=0.01, master_volume=0.5)
             assert block.shape == (160,) and block.dtype == "float32"
 
+            clip = AudioClip.from_pcm(block)
+            assert clip.format == "wav" and AudioClip.detect_format(clip.data) == "wav"
+
             buffer = SlidingWindowBuffer(window_size=160, slide_amount=160)
             assert len(buffer.pull(timeout=0)) == 0
             assert buffer.push(block)

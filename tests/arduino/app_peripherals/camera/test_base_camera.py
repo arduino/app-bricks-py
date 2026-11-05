@@ -598,3 +598,47 @@ class TestShutdownRelease:
         assert elapsed < 0.5, f"stop() waited {elapsed:.2f}s for a throttled capture()"
         assert camera.close_call_count == 1
         assert captured == [None], "the interrupted capture must yield no frame"
+
+
+class BufferingCamera(MockedCamera):
+    """Records each request to discard the buffered frames, with the seconds the camera sat idle."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.drops: list[float] = []
+
+    def _drop_buffered_frames(self, idle_s):
+        self.drops.append(idle_s)
+
+
+def test_latest_capture_asks_the_device_to_discard_buffered_frames():
+    camera = BufferingCamera(fps=10)
+    camera.start()
+    camera.capture()
+    time.sleep(0.3)
+
+    assert camera.capture(latest=True) is not None
+
+    assert len(camera.drops) == 1
+    assert camera.drops[0] >= 0.3
+    camera.stop()
+
+
+def test_regular_capture_keeps_the_buffered_frames():
+    camera = BufferingCamera(fps=10)
+    camera.start()
+    camera.capture()
+    camera.capture()
+
+    assert camera.drops == []
+    camera.stop()
+
+
+def test_recording_starts_from_the_scene_of_now():
+    camera = BufferingCamera(fps=10, frame=np.ones((48, 64, 3), dtype=np.uint8))
+    camera.start()
+
+    camera.record(0.2)
+
+    assert len(camera.drops) == 1
+    camera.stop()

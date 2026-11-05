@@ -42,8 +42,10 @@ class VisionLanguageModel(LargeLanguageModel):
         """Initializes the VisionLanguageModel brick with the specified provider and configuration.
 
         Args:
-            model (str | None): The specific model name or identifier to use (e.g., "genie:qwen3-4b").
-                If not provided, model will be determined from app configuration or default brick configuration.
+            model (str | None): The specific model name or identifier to use, served by the genie runner
+                (e.g., "genie:qwen3_vl_4b_instruct") or by the llama.cpp runner (e.g.,
+                "llamacpp:gemma-4-E2B_q4_0-it-multimodal"). If not provided, model will be determined
+                from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.

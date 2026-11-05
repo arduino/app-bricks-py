@@ -11,6 +11,11 @@ from pathlib import Path
 # names need no catalog baked into this image.
 METADATA_NAME = ".arduino_metadata.yaml"
 
+# The name of a GGUF loaded with the multimodal projector next to it: the text model's
+# name plus this suffix (the models-downloader's common/gguf_naming.py). This code is
+# duplicated in the llamacpp-runner and llamacpp-npu-runner images.
+MULTIMODAL_SUFFIX = "-multimodal"
+
 
 def downloaded_records(directory: Path):
     """The download records of *directory*'s ".arduino_metadata.yaml", newest last.
@@ -77,18 +82,22 @@ def gguf_model_name(gguf_file: Path, models_dir: Path) -> str:
 
 
 def generate_models_ini(models_dir: Path):
+    """Write the models.ini preset indexing every model in models_dir.
+
+    A GGUF with a projector in its directory gets two sections: ``<name>``, the text
+    model alone, and ``<name>-multimodal``, the same GGUF with the projector.
+    """
     config = configparser.ConfigParser()
 
     gguf_files = [p for p in sorted(models_dir.rglob("*.gguf")) if "mmproj" not in p.name]
     for gguf_file in gguf_files:
         section = gguf_model_name(gguf_file, models_dir)
-        config[section] = {}
-        config[section]["model"] = str(gguf_file.as_posix())
+        config[section] = {"model": str(gguf_file.as_posix())}
 
-        # Look for mmproj file in the same directory
+        # A projector in the same directory makes the multimodal model of this GGUF
         mmproj_files = sorted(gguf_file.parent.glob("*mmproj*.gguf"))
         if mmproj_files:
-            config[section]["mmproj"] = str(mmproj_files[0].as_posix())
+            config[section + MULTIMODAL_SUFFIX] = {"model": str(gguf_file.as_posix()), "mmproj": str(mmproj_files[0].as_posix())}
 
     output_path = models_dir / "models.ini"
     with open(output_path, "w") as f:

@@ -590,3 +590,51 @@ class TestV4LCameraListing:
             {"name": "CamA", "location": "/dev/v4l/by-id/usb-CamA-video-index0"},
             {"name": "CamB", "location": "/dev/v4l/by-id/usb-CamB-video-index0"},
         ]
+
+
+@pytest.mark.usefixtures("v4l_device_argument")
+class TestV4LCameraLatestFrame:
+    """A camera read now and then must hand back the scene of now, not the frames the driver queued."""
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_latest_capture_after_a_pause_discards_the_queued_frames(self, mock_videocapture, mock_successful_connect):
+        mock_videocapture.return_value = mock_successful_connect
+        camera = V4LCamera(resolution=(640, 480), fps=10)
+        camera.start()
+        camera.capture()
+        camera._last_capture_time = time.monotonic() - 5  # nobody read for 5 s: both driver buffers are stale
+        mock_successful_connect.grab.reset_mock()
+
+        assert camera.capture(latest=True) is not None
+
+        assert mock_successful_connect.grab.call_count == 2
+        camera.stop()
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_latest_capture_in_a_loop_discards_nothing(self, mock_videocapture, mock_successful_connect):
+        """Read every frame interval, the queue never fills: the frame rate is kept."""
+        mock_videocapture.return_value = mock_successful_connect
+        camera = V4LCamera(resolution=(640, 480), fps=10)
+        camera.start()
+        camera.capture()
+        mock_successful_connect.grab.reset_mock()
+
+        camera.capture(latest=True)
+        camera.capture(latest=True)
+
+        mock_successful_connect.grab.assert_not_called()
+        camera.stop()
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_regular_capture_after_a_pause_keeps_the_queue(self, mock_videocapture, mock_successful_connect):
+        mock_videocapture.return_value = mock_successful_connect
+        camera = V4LCamera(resolution=(640, 480), fps=10)
+        camera.start()
+        camera.capture()
+        camera._last_capture_time = time.monotonic() - 5
+        mock_successful_connect.grab.reset_mock()
+
+        camera.capture()
+
+        mock_successful_connect.grab.assert_not_called()
+        camera.stop()

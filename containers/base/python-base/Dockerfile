@@ -7,7 +7,7 @@ ARG BASE_IMAGE_VERSION=latest
 
 FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
 
-FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder
+FROM python:3.13-slim-trixie@sha256:ae14d4ce8771606477a81446e7ef429edd6762305fc50c84507c1041fa8285d1 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG OPENCV_WHL_URL=https://github.com/arduino/app-bricks-py/releases/download/media-stack%2F1.2.0/opencv_python_headless-4.14.0+031876b-cp313-cp313-linux_aarch64.whl

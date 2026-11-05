@@ -209,9 +209,16 @@ class BaseCamera(ABC):
             except Exception as e:
                 self.logger.warning(f"Failed to stop camera: {e}")
 
-    def capture(self) -> np.ndarray | None:
+    def capture(self, latest: bool = False) -> np.ndarray | None:
         """
         Capture a frame from the camera, respecting the configured FPS.
+
+        Args:
+            latest (bool): Return the scene as it is now. A camera read in a loop always gets the
+                next frame, but one read now and then, such as to take a photo on request, gets
+                the frame its device buffered at the previous read, seconds or minutes old. With
+                True, the frames buffered since then are discarded first, which takes about two
+                frame intervals (200 ms at 10 fps). Default: False.
 
         Returns:
             Numpy array or None if no frame is available. When the device is shared with other
@@ -223,16 +230,17 @@ class BaseCamera(ABC):
         """
         hub = self._get_hub()
         if hub is not None:
-            return hub.capture(self)
+            return hub.capture(self, latest=latest)
 
-        return self._capture_device(adjust=True)
+        return self._capture_device(adjust=True, latest=latest)
 
-    def _capture_device(self, adjust: bool) -> np.ndarray | None:
+    def _capture_device(self, adjust: bool, latest: bool = False) -> np.ndarray | None:
         """
         Read a frame from the device, respecting the configured FPS.
 
         Args:
             adjust (bool): Whether to apply this camera's adjustments to the frame.
+            latest (bool): Whether to discard the frames the device buffered since the last read.
 
         Returns:
             Numpy array or None if no frame is available.
@@ -257,6 +265,9 @@ class BaseCamera(ABC):
                 if elapsed < self._desired_interval and self._stop_requested.wait(self._desired_interval - elapsed):
                     return None
 
+            idle_s = time.monotonic() - self._last_capture_time
+            if latest:
+                self._drop_buffered_frames(idle_s)
             self._last_capture_time = time.monotonic()
 
             frame = self._read_frame()
@@ -322,8 +333,8 @@ class BaseCamera(ABC):
 
         total_frames = int(self.fps * duration)
 
-        # Get shape and dtype from first frame
-        first_frame = self.capture()
+        # Get shape and dtype from first frame, the scene of now: the recording starts here
+        first_frame = self.capture(latest=True)
         if first_frame is None:
             raise CameraOpenError("Failed to inspect the video stream for metadata.")
         frame_shape = first_frame.shape
@@ -371,8 +382,8 @@ class BaseCamera(ABC):
 
         total_frames = int(self.fps * duration)
 
-        # Get width and height from first frame
-        first_frame = self.capture()
+        # Get width and height from first frame, the scene of now: the recording starts here
+        first_frame = self.capture(latest=True)
         if first_frame is None:
             raise CameraOpenError("Failed to inspect the video stream for metadata.")
         height, width = first_frame.shape[:2]
@@ -477,6 +488,17 @@ class BaseCamera(ABC):
         Must be implemented by subclasses.
         """
         pass
+
+    def _drop_buffered_frames(self, idle_s: float) -> None:
+        """
+        Discard the frames the device buffered while nobody read, so that the next read is recent.
+
+        Nothing to do for a device that keeps only its latest frame, which is the default.
+        Called with the camera lock held, right before a read.
+
+        Args:
+            idle_s (float): Seconds since the previous read.
+        """
 
     def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict[str, Any] | None = None) -> None:
         """

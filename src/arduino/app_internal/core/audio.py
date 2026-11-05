@@ -139,11 +139,12 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         try:
             for chunk in self._mic.stream():
                 self._buffer.push(chunk)
-        except StopIteration:
-            raise
         except Exception:
             logger.error("Error reading microphone")
             raise
+        # The stream ends when the microphone is stopped, by stop() or by the App shutting
+        # the brick down: there is nothing left to read.
+        raise StopIteration
 
     @brick.loop
     def _inference_loop(self) -> None:
@@ -176,6 +177,10 @@ class AudioDetector(EdgeImpulseRunnerFacade):
                         self._last_detected[keyword] = now
                         logger.debug(f"Invoking callback for keyword '{keyword}'.")
                         callback()
+                        # What the microphone heard while the callback ran is not classified: a callback
+                        # that takes long (a voice assistant answering) pauses the detection, and the
+                        # windows still holding the keyword must not trigger it again once it returns.
+                        self._buffer.flush()
                     else:
                         self._debounce_until = now + self._debounce_sec
         except Exception as e:

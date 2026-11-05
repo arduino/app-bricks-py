@@ -60,3 +60,6 @@ The KeywordSpotting uses three key configuration parameters:
 - The `mic` parameter allows you to specify a custom Microphone instance. Otherwise, it defaults to a standard microphone.
 - The `confidence` parameter sets the minimum confidence level required for a detection, with higher values reducing false positives but potentially missing valid detections.
 - The `debounce_sec` parameter prevents repeated detection callbacks for the same keyword within the specified time window.
+## Handling the request after the keyword
+
+The callback runs in the detection thread: detection pauses until it returns, and the audio heard meanwhile is discarded. A callback can therefore handle the whole request that follows the keyword, such as recording what the user says and answering it, without being triggered again by that request.

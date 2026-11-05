@@ -25,6 +25,12 @@ logger = Logger("LargeLanguageModel")
 LIST_MODELS_MAX_ATTEMPTS = 10
 LIST_MODELS_RETRY_DELAY_S = 1.0
 
+# llama.cpp server errors on multimodal requests: the model has no encoder for the input
+# ("image input is not supported", "audio input is not supported"), or the encoder failed
+# while processing it.
+MEDIA_NOT_SUPPORTED = "input is not supported"
+MEDIA_ENCODE_FAILURE = "failed to process mtmd chunk"
+
 # Local runners don't check the API key, but the OpenAI clients require one.
 _RUNNER_API_KEY = "api_key"
 
@@ -251,6 +257,14 @@ class LargeLanguageModel(CloudLLM):
                     f" This could be due to a potential memory exhaustion on NPU sessions or unsupported model type."
                     f" Please check the logs of the models runner '{getattr(self, '_runner_host', 'unknown')}' for details."
                 )
+            elif MEDIA_NOT_SUPPORTED in (server_msg or "").lower():
+                error_msg = f"Model '{self._model_name}' does not accept this kind of input: {server_msg}"
+            elif MEDIA_ENCODE_FAILURE in (server_msg or "").lower():
+                error_msg = (
+                    f"Model '{self._model_name}' could not encode the image or audio input."
+                    f" This could be due to a memory exhaustion on NPU sessions while running the multimodal encoder."
+                    f" Please check the logs of the models runner '{getattr(self, '_runner_host', 'unknown')}' for details."
+                )
             else:
                 error_msg = f"Error: status_code={e.code}, message={server_msg}"
             ilogger.error(error_msg)
@@ -300,15 +314,7 @@ class LargeLanguageModel(CloudLLM):
             TypeError: If `reasoning_effort` is not a ReasoningEffort, str, int, or None.
         """
         try:
-            message = super()._chat_invoke(message=message, images=images, reasoning_effort=reasoning_effort)
-            if "<think>" in message and "</think>" in message:
-                splitted_message = message.split("<think>")[1].split("</think>")
-                if len(splitted_message) > 1:
-                    return splitted_message[1]  # Extract actual content
-                else:
-                    return message  # Fallback to full message if tags are not properly closed
-            return message
-
+            return self._strip_think(super()._chat_invoke(message=message, images=images, reasoning_effort=reasoning_effort))
         except (BadRequestError, APIError) as e:
             self._handle_api_error(logger, e)
 
@@ -330,8 +336,36 @@ class LargeLanguageModel(CloudLLM):
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             AlreadyGenerating: If a streaming session is already active.
         """
+        yield from self._filter_think(super().chat_stream(message=message, images=images))
+
+    @staticmethod
+    def _strip_think(message: str) -> str:
+        """Removes a leading ``<think>...</think>`` block from a complete response.
+
+        Args:
+            message (str): The full response text.
+
+        Returns:
+            str: The answer after the thinking block, or the message unchanged when the tags are not closed.
+        """
+        if "<think>" in message and "</think>" in message:
+            splitted_message = message.split("<think>")[1].split("</think>")
+            if len(splitted_message) > 1:
+                return splitted_message[1]  # Extract actual content
+        return message
+
+    @staticmethod
+    def _filter_think(chunks: Iterator[str]) -> Iterator[str]:
+        """Drops the ``<think>...</think>`` block from a streamed response.
+
+        Args:
+            chunks (Iterator[str]): The streamed text chunks.
+
+        Yields:
+            str: The chunks of the answer, without the thinking block.
+        """
         in_thinking = False
-        for chunk in super().chat_stream(message=message, images=images):
+        for chunk in chunks:
             if in_thinking:
                 if "</think>" in chunk:
                     in_thinking = False
