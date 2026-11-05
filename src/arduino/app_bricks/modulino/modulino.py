@@ -6,20 +6,69 @@ logger = Logger("Modulino")
 class ModulinoError(Exception):
     """Raised when a Modulino fails."""
 
+HUB_PORT_COUNT = 8
+
+class ModulinoHubPort:
+    """A port of a Modulino Hub. Get it with `ModulinoHub.port()` and pass it to a Modulino constructor."""
+    def __init__(self, hub_address, port):
+        self.hub_address = hub_address
+        self.port = port
+
+class ModulinoHub:
+    """Modulino Hub (I2C multiplexer with 8 ports).
+
+    It holds no resources: the hub is created on the MCU together with the first
+    Modulino that uses one of its ports, and released with the last one.
+    """
+    def __init__(self, address = 0x70) -> None:
+        """Initialize a ModulinoHub with the given I2C address.
+
+        Args:
+            address (int): The I2C address of the hub, set by the A0-A2 jumpers (0x70-0x77). Defaults to 0x70.
+        """
+        if not 0x70 <= address <= 0x77:
+            raise ModulinoError(f"invalid hub address 0x{address:x}, must be 0x70-0x77")
+        self.address = address
+
+    def port(self, n) -> ModulinoHubPort:
+        """Get a port of the hub.
+
+        Args:
+            n (int): The port number, 0-7.
+
+        Returns:
+            ModulinoHubPort: The port, to pass as `hub_port` to a Modulino constructor.
+        """
+        if not 0 <= n < HUB_PORT_COUNT:
+            raise ModulinoError(f"invalid hub port {n}, must be 0-{HUB_PORT_COUNT - 1}")
+        return ModulinoHubPort(self.address, n)
+
 @brick
 class Modulino:
     """Base class for all Modulino modules."""
-    def __init__(self, type, i2c_address):
+    def __init__(self, type, i2c_address, hub_port = None):
         """Initialize a Modulino with the given type and I2C address.
 
         Args:
             type (str): The type of the Modulino.
             i2c_address (int): The I2C address of the Modulino.
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         self.type = type
         self.i2caddress = i2c_address
-        self.name = f"{type}_{i2c_address:x}"
-        Bridge.call("create_modulino", type, i2c_address)
+        self.hub_address = hub_port.hub_address if hub_port is not None else 0
+        self.port = hub_port.port if hub_port is not None else 0
+        # The MCU builds the RPC name and returns "" if the modulino can't be created
+        # (e.g. the same address is already used on the same bus or hub port)
+        try:
+            self.name = Bridge.call("create_modulino", type, i2c_address, self.hub_address, self.port)
+        except Exception:
+            self.name = ""
+        if not self.name:
+            raise ModulinoError(f"cannot create modulino {type} at 0x{i2c_address:x}{self._location()}")
+
+    def _location(self) -> str:
+        return f" on hub 0x{self.hub_address:x} port {self.port}" if self.hub_address else ""
 
     def start(self):
         logger.info("Starting Modulino")
@@ -30,13 +79,14 @@ class Modulino:
 
 class Modulino_Thermo(Modulino):
     """Class to handle a Modulino 'thermo' for temperature and humidity sensing."""
-    def __init__(self, i2c_address = 0x44) -> None:
+    def __init__(self, i2c_address = 0x44, hub_port = None) -> None:
         """Initialize a Modulino_Thermo with the given I2C address.
 
         Args:
             i2c_address (int): The I2C address of the Modulino_Thermo. Defaults to 0x44.
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
-        super().__init__("thermo", i2c_address )
+        super().__init__("thermo", i2c_address, hub_port)
 
     @override
     def start(self) -> None:
@@ -51,7 +101,7 @@ class Modulino_Thermo(Modulino):
     def stop(self) -> None:
         """Stop the Modulino_Thermo."""
         try:
-            Bridge.call("delete_modulino", self.i2caddress)
+            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
@@ -96,13 +146,14 @@ class MovementSample:
 
 class Modulino_Movement(Modulino):
     """Class to handle a Modulino 'movement' sensor."""
-    def __init__(self, i2c_address = 0x6A) -> None:
+    def __init__(self, i2c_address = 0x6A, hub_port = None) -> None:
         """Initialize the Modulino_Movement with the specified I2C address.
 
         Args:
             i2c_address (int): The I2C address of the Modulino_Movement. Defaults to 0x6A.
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
-        super().__init__("movement", i2c_address )
+        super().__init__("movement", i2c_address, hub_port)
 
     @override
     def start(self) -> None:
@@ -117,7 +168,7 @@ class Modulino_Movement(Modulino):
     def stop(self) -> None:
         """Stop the Modulino_Movement."""
         try:
-            Bridge.call("delete_modulino", self.i2caddress)
+            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
@@ -156,21 +207,22 @@ class Modulino_Movement(Modulino):
         if ms < 100:
             raise ModulinoError("sample rate too small")
         Bridge.provide(f"{self.name}_callback", callback)
-        Bridge.notify("poll_subscribe", self.i2caddress, ms)
+        Bridge.notify("poll_subscribe", self.hub_address, self.port, self.i2caddress, ms)
 
     def stopSample(self) -> None:
         """Stop sampling movement data."""
-        Bridge.notify("poll_unsubscribe", self.i2caddress)
+        Bridge.notify("poll_unsubscribe", self.hub_address, self.port, self.i2caddress)
 
 class Modulino_Buttons(Modulino):
     """Class to handle a Modulino Buttons."""
-    def __init__(self, i2c_address = 0xFF) -> None:
+    def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
         """Initialize the Modulino_Buttons with the specified I2C address.
 
         Args:
             i2c_address (int): The I2C address of the Modulino_Buttons. Defaults it will autoscan for the address.
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
-        super().__init__("buttons", i2c_address )
+        super().__init__("buttons", i2c_address, hub_port)
 
     @override
     def start(self) -> None:
@@ -184,7 +236,7 @@ class Modulino_Buttons(Modulino):
     def stop(self) -> None:
         """Stop the Modulino_Buttons."""
         try:
-            Bridge.call("delete_modulino", self.i2caddress)
+            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
@@ -212,14 +264,14 @@ class Modulino_Buttons(Modulino):
         """
         try:
             Bridge.provide(f"{self.name}_callback", callback)
-            Bridge.notify("poll_subscribe", self.i2caddress, 10)
+            Bridge.notify("poll_subscribe", self.hub_address, self.port, self.i2caddress, 10)
         except:
             raise ModulinoError(f"cannot set callback for modulino {self.name}")
 
     def removeOnChangeCallback(self) -> None:
         """Remove the callback function for button state changes."""
         try:
-            Bridge.notify("poll_unsubscribe", self.i2caddress)
+            Bridge.notify("poll_unsubscribe", self.hub_address, self.port, self.i2caddress)
         except:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
 
@@ -236,13 +288,14 @@ class Modulino_Buttons(Modulino):
 
 class Modulino_Joystick(Modulino):
     """Class to handle a Modulino Joystick."""
-    def __init__(self, i2c_address = 0xFF) -> None:
+    def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
         """Initialize the Modulino_Joystick with the given I2C address.
 
         Args:
             i2c_address (int, optional): The I2C address of the joystick modulino. Defaults it will autoscan for the address.
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
-        super().__init__("joystick", i2c_address )
+        super().__init__("joystick", i2c_address, hub_port)
     @override
     def start(self) -> None:
         """Start the joystick modulino."""
@@ -255,7 +308,7 @@ class Modulino_Joystick(Modulino):
     def stop(self) -> None:
         """Stop the joystick modulino."""
         try:
-            Bridge.call("delete_modulino", self.i2caddress)
+            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
@@ -271,14 +324,14 @@ class Modulino_Joystick(Modulino):
         """
         try:
             Bridge.provide(f"{self.name}_callback", callback)
-            Bridge.notify("poll_subscribe", self.i2caddress, 10)
+            Bridge.notify("poll_subscribe", self.hub_address, self.port, self.i2caddress, 10)
         except:
             raise ModulinoError(f"cannot set callback for modulino {self.name}")
 
     def removeOnChangeCallback(self) -> None:
         """Remove the callback function for joystick state changes."""
         try:
-            Bridge.notify("poll_unsubscribe", self.i2caddress)
+            Bridge.notify("poll_unsubscribe", self.hub_address, self.port, self.i2caddress)
         except:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
 
@@ -295,13 +348,14 @@ class Modulino_Joystick(Modulino):
 
 class Modulino_Knob(Modulino):
     """Class to handle a Modulino Knob."""
-    def __init__(self, i2c_address = 0xFF) -> None:
+    def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
         """Initialize the Modulino_Knob with the given I2C address.
 
         Args:
             i2c_address (int, optional): The I2C address of the knob modulino. Defaults it will autoscan for the address.
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
-        super().__init__("knob", i2c_address )
+        super().__init__("knob", i2c_address, hub_port)
 
     @override
     def start(self) -> None:
@@ -315,7 +369,7 @@ class Modulino_Knob(Modulino):
     def stop(self) -> None:
         """Stop the knob modulino."""
         try:
-            Bridge.call("delete_modulino", self.i2caddress)
+            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
@@ -332,14 +386,14 @@ class Modulino_Knob(Modulino):
         """
         try:
             Bridge.provide(f"{self.name}_callback", callback)
-            Bridge.notify("poll_subscribe", self.i2caddress, 10)
+            Bridge.notify("poll_subscribe", self.hub_address, self.port, self.i2caddress, 10)
         except:
             raise ModulinoError(f"cannot set callback for modulino {self.name}")
 
     def removeOnChangeCallback(self) -> None:
         """Remove the callback function for knob state changes."""
         try:
-            Bridge.notify("poll_unsubscribe", self.i2caddress)
+            Bridge.notify("poll_unsubscribe", self.hub_address, self.port, self.i2caddress)
         except:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
 
