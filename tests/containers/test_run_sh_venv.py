@@ -36,7 +36,7 @@ WEB_APP_YAML = "name: t\nbricks:\n- arduino:web_ui: {}\n"
 STREAMLIT_APP_YAML = "name: t\nbricks:\n- arduino:streamlit_ui: {}\n"
 
 
-def _run(app: Path, tmp_path: Path) -> list[str]:
+def _run(app: Path, tmp_path: Path, *args: str) -> list[str]:
     """Run run.sh against an app folder with the tools replaced by loggers; return the commands they saw."""
     # The script serves /app, where the container mounts the app: a copy pointed at the test folder stands in
     script = RUN_SH.read_text().replace("\r\n", "\n")
@@ -61,7 +61,7 @@ def _run(app: Path, tmp_path: Path) -> list[str]:
         "HOME": str(home),
         "FAKE_LOG": str(log),
     }
-    result = subprocess.run(["sh", str(run_sh)], env=env, capture_output=True, text=True, timeout=120)
+    result = subprocess.run(["sh", str(run_sh), *args], env=env, capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stdout + result.stderr
     return log.read_text().splitlines()
 
@@ -134,3 +134,29 @@ def test_streamlit_apps_get_a_venv(tmp_path: Path):
     assert _venv_created(app, calls), calls
     assert any("uv pip install" in c and "streamlit" in c for c in calls), calls
     assert calls[-1].startswith("streamlit run")
+
+
+LAUNCHER = "python -m arduino.app_tools.app_launcher"
+
+
+def test_serve_runs_the_launcher_on_the_system_interpreter_when_the_app_adds_nothing(tmp_path: Path):
+    app = _app(tmp_path)
+    calls = _run(app, tmp_path, "serve")
+    assert not any(c.startswith("uv") for c in calls), calls
+    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV=none"
+
+
+def test_serve_installs_the_requirements_and_runs_the_launcher_in_the_app_venv(tmp_path: Path):
+    app = _app(tmp_path, {"python/requirements.txt": "requests\n"})
+    calls = _run(app, tmp_path, "serve")
+    assert _venv_created(app, calls), calls
+    assert any(c.startswith("uv pip install") and c.endswith("python/requirements.txt") for c in calls), calls
+    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV={app}/.cache/.venv", "the launcher forks the app from the interpreter of its venv"
+
+
+def test_serve_installs_streamlit_and_leaves_running_it_to_the_launcher(tmp_path: Path):
+    app = _app(tmp_path, app_yaml=STREAMLIT_APP_YAML)
+    calls = _run(app, tmp_path, "serve")
+    assert any("uv pip install" in c and "streamlit" in c for c in calls), calls
+    assert not any(c.startswith("streamlit run") for c in calls), calls
+    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV={app}/.cache/.venv"

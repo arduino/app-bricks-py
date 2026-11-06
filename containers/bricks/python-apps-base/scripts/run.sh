@@ -6,6 +6,11 @@
 
 OPENCV_DEBUG=0
 
+# A shell ignores signals without a handler when it is PID 1, as in a container
+# without init: a stop would wait for the kill timeout. The trap exits once the
+# command running at that moment ends.
+trap 'exit 143' TERM INT
+
 # Disable core dumps: inherited by python and any native library it loads.
 # Set ENABLE_CORE_DUMPS=1 to keep them (e.g. to debug a native crash).
 if [ "${ENABLE_CORE_DUMPS:-0}" != "1" ]; then
@@ -211,6 +216,14 @@ case "$1" in
     else
       PYTHONPYCACHEPREFIX="$PYCHECK_DIR" python -m compileall -q "$BASE_DIR/python"
     fi
+    ;;
+  serve)
+    install_streamlit
+    echo "======== App launcher is starting ==================="
+    cd "$BASE_DIR"
+    # On the interpreter the app runs on, the venv one once activated: a console script
+    # would run the system interpreter whatever PATH says
+    APP_DIR="$BASE_DIR" exec python -m arduino.app_tools.app_launcher
     ;;
   *)
     install_streamlit
