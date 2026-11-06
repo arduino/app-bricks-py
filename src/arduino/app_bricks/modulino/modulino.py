@@ -418,3 +418,53 @@ class Modulino_Knob(Modulino):
             Bridge.call(f"{self.name}:setStartPosition", position)
         except:
             raise ModulinoError(f"cannot set start position for modulino {self.name}")
+
+class Modulino_Buzzer(Modulino):
+    """Class to handle a Modulino Buzzer."""
+    def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
+        """Initialize the Modulino_Buzzer with the given I2C address.
+
+        Args:
+            i2c_address (int, optional): The I2C address of the buzzer modulino. Defaults it will autoscan for the address.
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
+        """
+        super().__init__("buzzer", i2c_address, hub_port)
+
+    @override
+    def start(self) -> None:
+        """Start the buzzer modulino."""
+        try:
+            Bridge.call(f"{self.name}:begin")
+        except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+
+    @override
+    def stop(self) -> None:
+        """Stop the buzzer modulino."""
+        try:
+            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
+        except:
+            raise ModulinoError(f"cannot delete modulino {self.name}")
+
+    def tone(self, frequency, duration_ms) -> None:
+        """Play a tone on the buzzer.
+
+        Args:
+            frequency (int): The tone frequency in Hz.
+            duration_ms (int): The tone duration in milliseconds.
+        """
+        if not isinstance(frequency, int) or not isinstance(duration_ms, int) or frequency < 0 or duration_ms < 0:
+            raise ModulinoError("frequency and duration_ms must be non-negative integers")
+        try:
+            ok = Bridge.call(f"{self.name}:tone", frequency, duration_ms)
+        except:
+            raise ModulinoError(f"cannot play tone on modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot play tone on modulino {self.name}")
+
+    def noTone(self) -> None:
+        """Stop the tone currently playing on the buzzer."""
+        try:
+            Bridge.call(f"{self.name}:noTone")
+        except:
+            raise ModulinoError(f"cannot stop tone on modulino {self.name}")
