@@ -6,6 +6,7 @@ from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable
 
+import importlib
 import time
 from typing import Any, NoReturn, Self
 
@@ -17,6 +18,11 @@ from arduino.app_internal.core import resolve_address, get_brick_config, get_bri
 
 from openai import OpenAI, APIConnectionError, APIError, BadRequestError
 from collections.abc import Iterator, Sequence
+
+# The local runners speak the OpenAI API. Its LangChain client and the resources of the OpenAI client, which both load
+# on the first construction otherwise, are imported with the brick, so that a launcher preloading it holds them for every fork
+for _module in ("arduino.app_bricks.cloud_llm.reasoning", "openai.resources"):
+    importlib.import_module(_module)
 
 logger = Logger("LargeLanguageModel")
 
