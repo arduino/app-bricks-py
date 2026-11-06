@@ -27,11 +27,11 @@ def _unoq_default_model() -> str:
     return model
 
 
-def test_unoq_runner_caps_image_tokens_at_96():
+def test_unoq_runner_caps_image_tokens_at_128():
     compose = yaml.safe_load(UNOQ_COMPOSE.read_text())
     (service,) = compose["services"].values()
     environment = dict(entry.split("=", 1) for entry in service["environment"])
-    assert environment["LLAMA_ARG_IMAGE_MAX_TOKENS"] == "${LLAMA_ARG_IMAGE_MAX_TOKENS:-96}"
+    assert environment["LLAMA_ARG_IMAGE_MAX_TOKENS"] == "${LLAMA_ARG_IMAGE_MAX_TOKENS:-128}"
 
 
 def _catalog() -> dict[str, dict]:
