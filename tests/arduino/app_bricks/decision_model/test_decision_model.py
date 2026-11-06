@@ -578,10 +578,10 @@ def test_model_comes_from_the_brick_configuration_when_not_given(runner, monkeyp
     assert brick._model_name == "vllm-d3-nano-Q8_0"
 
 
-@pytest.mark.parametrize(("board", "expected"), [("unoq", "llamacpp:vllm-d3-edge-Q8_0"), ("ventunoq", "llamacpp:vllm-d3-lite-Q8_0")])
-def test_default_brick_configuration_is_d3_edge_on_unoq_and_d3_lite_on_ventunoq(runner, monkeypatch, board, expected):
+@pytest.mark.parametrize(("board", "expected"), [("unoq", "llamacpp:vllm-d3-edge-Q8_0"), ("ventunoq", "llamacpp:vllm-d3-nano-Q8_0")])
+def test_default_brick_configuration_is_d3_edge_on_unoq_and_d3_nano_on_ventunoq(runner, monkeypatch, board, expected):
     """The CPU board defaults to the smaller d3-edge (half the layers of d3-lite), the NPU board
-    to the more accurate d3-lite."""
+    to the more accurate d3-nano, served on one NPU session."""
     # No app.yaml in the test environment: the brick default (model_by_boards) applies.
     monkeypatch.setattr("arduino.app_internal.core.module.get_board_name", lambda: board)
     brick = DecisionModel()
