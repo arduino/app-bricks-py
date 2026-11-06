@@ -15,6 +15,7 @@ import importlib
 import importlib.util
 import logging
 import os
+import pathlib
 import signal
 import socket
 import stat
@@ -90,19 +91,34 @@ class Config:
         )
 
 
+def library_bricks() -> dict[str, str]:
+    """The bricks of the library by id, each with the module it lives in, read from the brick_config.yaml of every package."""
+    spec = importlib.util.find_spec("arduino.app_bricks")
+    bricks: dict[str, str] = {}
+    for location in (spec.submodule_search_locations or []) if spec else []:
+        for config in sorted(pathlib.Path(location).glob("*/brick_config.yaml")):
+            try:
+                brick_id = (yaml.safe_load(config.read_text(encoding="utf-8")) or {}).get("id")
+            except (OSError, yaml.YAMLError, AttributeError):
+                continue
+            if isinstance(brick_id, str):
+                bricks.setdefault(brick_id, f"arduino.app_bricks.{config.parent.name}")
+    return bricks
+
+
 def app_bricks_modules(app_dir: str) -> list[str]:
-    """The modules of the Arduino bricks an app declares in its app.yaml, in declaration order; nothing for a missing or unreadable file."""
+    """The modules of the library bricks an app declares in its app.yaml, in declaration order; nothing for a missing or unreadable file."""
     try:
         with open(os.path.join(app_dir, "app.yaml"), encoding="utf-8") as f:
             descriptor = yaml.safe_load(f) or {}
     except (OSError, yaml.YAMLError):
         return []
+    library = library_bricks()
     modules: list[str] = []
     for entry in descriptor.get("bricks") or [] if isinstance(descriptor, dict) else []:
         for brick_id in [entry] if isinstance(entry, str) else list(entry) if isinstance(entry, dict) else []:
-            vendor, _, name = str(brick_id).partition(":")
-            module = f"arduino.app_bricks.{name}"
-            if vendor == "arduino" and name and module not in modules:
+            module = library.get(str(brick_id))
+            if module and module not in modules:
                 modules.append(module)
     return modules
 

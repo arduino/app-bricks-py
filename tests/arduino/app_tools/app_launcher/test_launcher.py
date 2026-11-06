@@ -400,9 +400,15 @@ def test_exits_on_sigterm_during_the_preload():
 
 def test_app_bricks_modules_follow_the_app_descriptor(tmp_path):
     (tmp_path / "app.yaml").write_text(
-        "name: demo\nbricks:\n  - arduino:llm:\n      model: llamacpp:Qwen3.5-0.8B-Q4_0\n  - arduino:web_ui\n  - acme:custom: {}\n  - arduino:llm\n"
+        "name: demo\nbricks:\n  - arduino:llm:\n      model: llamacpp:Qwen3.5-0.8B-Q4_0\n  - arduino:video_object_detection\n"
+        "  - arduino:web_ui\n  - acme:custom: {}\n  - arduino:llm\n"
     )
     from arduino.app_tools.app_launcher.launcher import app_bricks_modules
 
-    assert app_bricks_modules(str(tmp_path)) == ["arduino.app_bricks.llm", "arduino.app_bricks.web_ui"]
+    # The package of a brick is read from its brick_config.yaml: video_object_detection lives in video_objectdetection
+    assert app_bricks_modules(str(tmp_path)) == [
+        "arduino.app_bricks.llm",
+        "arduino.app_bricks.video_objectdetection",
+        "arduino.app_bricks.web_ui",
+    ]
     assert app_bricks_modules(str(tmp_path / "missing")) == []
