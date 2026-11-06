@@ -24,3 +24,19 @@ thermo = Modulino_Thermo()   # main bus, no hub
 - **Reserved addresses**: the addresses of the hubs you use are reserved, both on the main bus and behind the hub ports. Don't use them for other devices: a Modulino moved to the 0x70-0x77 range with the AddressChanger, or a third-party I2C device at one of those addresses, collides with the hub. The brick doesn't check for this.
 - **Same port**: Modulini chained on the same port share that bus, so they need different addresses. Creating a second Modulino with the same address on the same port (or on the main bus) raises `ModulinoError`, and the first one keeps working.
 - **No cascading**: a hub connected to the port of another hub is not supported. Connect every hub to the main bus.
+
+## Modulino Buzzer
+
+`Modulino_Buzzer` plays a tone with `tone(frequency, duration_ms)` and stops it with `noTone()`:
+
+```python
+from arduino.app_bricks.modulino import Modulino_Buzzer
+
+buzzer = Modulino_Buzzer()   # autoscan for the address
+buzzer.start()
+
+buzzer.tone(440, 500)   # 440 Hz for 500 ms
+buzzer.noTone()         # stop the current tone
+```
+
+`frequency` (Hz) and `duration_ms` must be non-negative integers, otherwise `ModulinoError` is raised.
