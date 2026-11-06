@@ -4,11 +4,14 @@
 
 """Configure llama.cpp for the models installed in a directory.
 
-Writes the models.ini preset the server is started with, and answers the two questions
-run-model-router.sh asks before starting it: which context size the installed models can
-hold (``--print-ctx``), and how many Hexagon sessions they need at that context
-(``--print-ndev``). Those two modes print a single number on stdout and send every
-diagnostic to stderr, so the caller can read the answer with a command substitution.
+Writes the models.ini preset the server is started with (--models-preset, router mode:
+one section per GGUF with the file as ``model``, an mmproj companion as ``mmproj`` and, for
+a decision model, the LLAMA_ARG_* keys that give its prompt a whole micro-batch of its own,
+see decision_model_options()), and answers the two questions run-model-router.sh asks
+before starting it: which context size the installed models can hold (``--print-ctx``),
+and how many Hexagon sessions they need at that context (``--print-ndev``). Those two
+modes print a single number on stdout and send every diagnostic to stderr, so the caller
+can read the answer with a command substitution.
 ``--probe-ggml-types`` is internal: the script runs itself in that mode to read the ggml
 type table out of libggml in a child process (see probe_ggml_types()).
 
@@ -264,6 +267,34 @@ class GgufReader:
                 self.value(item_type)
 
 
+def read_gguf_header(reader: GgufReader) -> tuple[int, dict]:
+    """Read the fixed part of a GGUF header: magic, version, counts and metadata.
+
+    Leaves *reader* at the tensor index and returns (tensor count, metadata).
+    """
+    if reader.raw(4) != GGUF_MAGIC:
+        raise ValueError("not a GGUF file")
+    reader.u32()  # header version
+    tensor_count, metadata_count = reader.u64(), reader.u64()
+
+    metadata = {}
+    for _ in range(metadata_count):
+        key = reader.string()
+        metadata[key] = reader.value(reader.u32())
+    return tensor_count, metadata
+
+
+def read_gguf_metadata(path: Path) -> dict:
+    """The metadata key/values of a GGUF file's header, without its tensor index or weights.
+
+    Enough to tell what kind of model the file holds (see decision_model_options()). The
+    llamacpp-npu-runner's session sizing reads the tensor index too, with its read_gguf().
+    This code is duplicated in the llamacpp-runner and llamacpp-npu-runner images.
+    """
+    with open(path, "rb") as f:
+        return read_gguf_header(GgufReader(f))[1]
+
+
 class Tensor(NamedTuple):
     """One entry of the GGUF tensor index."""
 
@@ -276,15 +307,7 @@ def read_gguf(path: Path):
     """Return (metadata, tensors) from a GGUF file's header, without reading weights."""
     with open(path, "rb") as f:
         reader = GgufReader(f)
-        if reader.raw(4) != GGUF_MAGIC:
-            raise ValueError("not a GGUF file")
-        reader.u32()  # header version
-        tensor_count, metadata_count = reader.u64(), reader.u64()
-
-        metadata = {}
-        for _ in range(metadata_count):
-            key = reader.string()
-            metadata[key] = reader.value(reader.u32())
+        tensor_count, metadata = read_gguf_header(reader)
 
         tensors = []
         for _ in range(tensor_count):
@@ -799,6 +822,63 @@ def detect_ctx_size(models, ctx_size: int) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# Decision models
+#
+# A decision model (llama.cpp's /v1/systemone, marked by the <arch>.decision.type key of
+# its header) does not generate text: it answers with probabilities. Its header, not its
+# architecture, says whether it is causal: d3-edge, d3-lite and d3-nano are Qwen3.5 models with
+# <arch>.attention.causal false, as a ModernBERT has, while Kev is a Qwen3.5 without the
+# key. A non-causal one evaluates its whole prompt in one micro-batch, since every token
+# attends to every other: a prompt longer than the server's micro-batch fails outright,
+# and the service configures a small one for the chat models (LLAMA_ARG_UBATCH=128 on the
+# UNO Q). So a non-causal decision model gets a preset of its own in models.ini, a batch
+# as big as its prompt room: d3-edge, d3-lite and d3-nano are the models this preset serves today.
+# A causal one (Kev) reads its prompt in chunks like a chat model and keeps the router's
+# arguments: measured on the UNO Q, a 2048-token micro-batch only pushed it past the 2500m
+# limit of the service (OOM-killed on a 4000-token state) where the chat models' 128
+# serves it fine.
+# --------------------------------------------------------------------------- #
+
+# Tokens of prompt a non-causal decision model gets room for: its batch and its micro-batch,
+# since it evaluates the whole prompt in one. Capped by the model's own context (a ModernBERT
+# holds 8192). Measured on the UNO Q with a 0.42B ModernBERT: 523 MiB of RSS at this size,
+# and a 3453-token state is refused by the server with a clear error rather than crashing.
+DECISION_MODEL_BATCH = 2048
+
+
+def decision_model_options(gguf_file: Path) -> dict[str, str]:
+    """Per-model preset keys for a non-causal decision model, {} for anything else or an unreadable header.
+
+    The keys are LLAMA_ARG_* environment variable names, which is how a llama-server
+    --models-preset spells the arguments of one model (LLAMA_ARG_UBATCH renders to
+    --ubatch-size for that child): they override the router's own for that model only.
+    The context is the configured one — LLAMA_ARG_CTX_SIZE, or DEFAULT_CTX_SIZE when it
+    is unset — never more than the model holds; the batch and the micro-batch are one
+    and the same number, the prompt room, capped at DECISION_MODEL_BATCH. A causal
+    decision model is told apart by its header (no <arch>.attention.causal false) and
+    keeps the router's arguments.
+    """
+    try:
+        metadata = read_gguf_metadata(gguf_file)
+    except Exception:
+        return {}
+    arch = metadata.get("general.architecture")
+    if not arch or f"{arch}.decision.type" not in metadata:
+        return {}
+    if metadata.get(f"{arch}.attention.causal") is not False:
+        print(f"  {gguf_file.stem}: causal decision model ({metadata[f'{arch}.decision.type']}), served like a chat model", file=sys.stderr)
+        return {}
+
+    ctx = env_int("LLAMA_ARG_CTX_SIZE", DEFAULT_CTX_SIZE)
+    model_ctx = metadata.get(f"{arch}.context_length")
+    if isinstance(model_ctx, (int, float)) and model_ctx > 0:
+        ctx = min(ctx, int(model_ctx))
+    batch = min(ctx, DECISION_MODEL_BATCH)
+    print(f"  {gguf_file.stem}: decision model ({metadata[f'{arch}.decision.type']}), ctx {ctx}, batch {batch}", file=sys.stderr)
+    return {"LLAMA_ARG_CTX_SIZE": str(ctx), "LLAMA_ARG_BATCH": str(batch), "LLAMA_ARG_UBATCH": str(batch)}
+
+
+# --------------------------------------------------------------------------- #
 # models.ini generation
 # --------------------------------------------------------------------------- #
 
@@ -879,22 +959,24 @@ def gguf_model_name(gguf_file: Path, models_dir: Path) -> str:
 
 
 def find_models(models_dir: Path):
-    """Return {model name: {"model": path[, "mmproj": path]}} for every model in models_dir.
+    """Return {model name: {"model": path[, "mmproj": path][, "LLAMA_ARG_*": value]}} for every model in models_dir.
 
     A GGUF with a projector in its directory is two models: ``<name>``, the text model
-    alone, and ``<name>-multimodal``, the same GGUF with the projector.
+    alone, and ``<name>-multimodal``, the same GGUF with the projector. The LLAMA_ARG_*
+    keys are only there for a decision model, see decision_model_options().
     """
     models = {}
 
     gguf_files = [p for p in sorted(models_dir.rglob("*.gguf")) if "mmproj" not in p.name]
     for gguf_file in gguf_files:
         name = gguf_model_name(gguf_file, models_dir)
-        models[name] = {"model": gguf_file.as_posix()}
+        options = decision_model_options(gguf_file)
+        models[name] = {"model": gguf_file.as_posix(), **options}
 
         # A projector in the same directory makes the multimodal model of this GGUF
         mmproj_files = sorted(gguf_file.parent.glob("*mmproj*.gguf"))
         if mmproj_files:
-            models[name + MULTIMODAL_SUFFIX] = {"model": gguf_file.as_posix(), "mmproj": mmproj_files[0].as_posix()}
+            models[name + MULTIMODAL_SUFFIX] = {"model": gguf_file.as_posix(), "mmproj": mmproj_files[0].as_posix(), **options}
 
     return models
 
@@ -902,6 +984,9 @@ def find_models(models_dir: Path):
 def generate_models_ini(models_dir: Path):
     """Write the models.ini preset indexing every model in models_dir."""
     config = configparser.ConfigParser()
+    # The LLAMA_ARG_* keys of a decision model's section are environment variable names,
+    # which llama-server matches case-sensitively; configparser lowercases keys otherwise.
+    config.optionxform = str
     config.read_dict(find_models(models_dir))
 
     output_path = models_dir / "models.ini"
