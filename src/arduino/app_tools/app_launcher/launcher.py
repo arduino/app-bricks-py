@@ -91,19 +91,30 @@ class Config:
         )
 
 
-def library_bricks() -> dict[str, str]:
-    """The bricks of the library by id, each with the module it lives in, read from the brick_config.yaml of every package."""
-    spec = importlib.util.find_spec("arduino.app_bricks")
-    bricks: dict[str, str] = {}
-    for location in (spec.submodule_search_locations or []) if spec else []:
-        for config in sorted(pathlib.Path(location).glob("*/brick_config.yaml")):
-            try:
-                brick_id = (yaml.safe_load(config.read_text(encoding="utf-8")) or {}).get("id")
-            except (OSError, yaml.YAMLError, AttributeError):
-                continue
-            if isinstance(brick_id, str):
-                bricks.setdefault(brick_id, f"arduino.app_bricks.{config.parent.name}")
-    return bricks
+def _brick_id(config: pathlib.Path) -> str | None:
+    """The id a brick_config.yaml declares, None when it declares none or cannot be read."""
+    try:
+        brick_id = (yaml.safe_load(config.read_text(encoding="utf-8")) or {}).get("id")
+    except (OSError, yaml.YAMLError, AttributeError):
+        return None
+    return brick_id if isinstance(brick_id, str) else None
+
+
+def library_brick_module(brick_id: str) -> str | None:
+    """The module of the library brick with the given id, found next to its brick_config.yaml; None for a brick the library does not ship.
+
+    The package is usually named after the id, so that folder is read first; only a brick whose package is named otherwise costs a
+    read of every brick_config.yaml.
+    """
+    vendor, _, name = brick_id.partition(":")
+    spec = importlib.util.find_spec("arduino.app_bricks") if vendor == "arduino" and name else None
+    locations = [pathlib.Path(location) for location in (spec.submodule_search_locations or [])] if spec else []
+    candidates = [location / name / "brick_config.yaml" for location in locations]
+    candidates += [config for location in locations for config in sorted(location.glob("*/brick_config.yaml"))]
+    for config in candidates:
+        if config.is_file() and _brick_id(config) == brick_id:
+            return f"arduino.app_bricks.{config.parent.name}"
+    return None
 
 
 def app_bricks_modules(app_dir: str) -> list[str]:
@@ -113,11 +124,10 @@ def app_bricks_modules(app_dir: str) -> list[str]:
             descriptor = yaml.safe_load(f) or {}
     except (OSError, yaml.YAMLError):
         return []
-    library = library_bricks()
     modules: list[str] = []
     for entry in descriptor.get("bricks") or [] if isinstance(descriptor, dict) else []:
         for brick_id in [entry] if isinstance(entry, str) else list(entry) if isinstance(entry, dict) else []:
-            module = library.get(str(brick_id))
+            module = library_brick_module(str(brick_id))
             if module and module not in modules:
                 modules.append(module)
     return modules
@@ -176,8 +186,8 @@ class Launcher:
         self._prepared: dict[str, str | None] = {}
         if config.app_dir is not None:
             self._prepared[config.app_dir] = dependencies.fingerprint(config.app_dir)
-            # The bricks of the served app are imported once here: a fork starts with them loaded
-            self._pending_preload.extend(name for name in app_bricks_modules(config.app_dir) if name not in self._pending_preload)
+        # The bricks of the served app join the preload at its first step, off the path of a start
+        self._app_bricks_pending = config.app_dir is not None
 
     def serve(self) -> Launch | None:
         """Runs until SIGTERM or SIGINT.
@@ -252,6 +262,9 @@ class Launcher:
 
     def _preload_step(self) -> None:
         """Imports the next module of the preload, keeping any signal handler it installs for the app, not for the loop."""
+        if self._app_bricks_pending and self._config.app_dir is not None:
+            self._app_bricks_pending = False
+            self._pending_preload.extend(name for name in app_bricks_modules(self._config.app_dir) if name not in self._pending_preload)
         if self._exiting or not self._pending_preload:
             if not self._pending_preload and (threads := [thread.name for thread in threading.enumerate()])[1:]:
                 logger.warning(f"Threads alive after the preload, starting apps will be refused: {threads}")
