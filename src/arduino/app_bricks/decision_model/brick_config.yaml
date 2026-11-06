@@ -5,7 +5,7 @@ category: ai
 requires_services: ["arduino:llamacpp"]
 model_by_boards:
   - platform: ventunoq
-    model: llamacpp:vllm-d3-lite-Q8_0
+    model: llamacpp:vllm-d3-nano-Q8_0
   - platform: unoq
     model: llamacpp:vllm-d3-edge-Q8_0
 supported_boards: ["unoq", "ventunoq"]

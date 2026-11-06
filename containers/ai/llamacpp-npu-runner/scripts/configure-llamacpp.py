@@ -826,13 +826,13 @@ def detect_ctx_size(models, ctx_size: int) -> int:
 #
 # A decision model (llama.cpp's /v1/systemone, marked by the <arch>.decision.type key of
 # its header) does not generate text: it answers with probabilities. Its header, not its
-# architecture, says whether it is causal: d3-edge and d3-lite are Qwen3.5 models with
+# architecture, says whether it is causal: d3-edge, d3-lite and d3-nano are Qwen3.5 models with
 # <arch>.attention.causal false, as a ModernBERT has, while Kev is a Qwen3.5 without the
 # key. A non-causal one evaluates its whole prompt in one micro-batch, since every token
 # attends to every other: a prompt longer than the server's micro-batch fails outright,
 # and the service configures a small one for the chat models (LLAMA_ARG_UBATCH=128 on the
 # UNO Q). So a non-causal decision model gets a preset of its own in models.ini, a batch
-# as big as its prompt room: d3-edge and d3-lite are the models this preset serves today.
+# as big as its prompt room: d3-edge, d3-lite and d3-nano are the models this preset serves today.
 # A causal one (Kev) reads its prompt in chunks like a chat model and keeps the router's
 # arguments: measured on the UNO Q, a 2048-token micro-batch only pushed it past the 2500m
 # limit of the service (OOM-killed on a 4000-token state) where the chat models' 128
