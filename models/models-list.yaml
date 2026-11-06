@@ -2141,7 +2141,7 @@ models:
      bricks:
        - id: "arduino:llm"
          model_configuration:
-           GGML_HEXAGON_DEVICES: 1
+           GGML_HEXAGON_DEVICES: 1                 
      deployment:
        handler: "hf-handler"
        platforms:
@@ -2156,7 +2156,38 @@ models:
                models_repository: "llamacpp"
                model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
      metadata:
-       model_size_mb: 507
+       model_size_mb: 484
+       source: "huggingface"
+       source-model-id: "Qwen3.5-0.8B-Q4_0"
+       source-model-url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF"
+ - "llamacpp:Qwen3.5-0.8B-Q4_0-multimodal":
+     name : "Qwen 3.5 0.8B VLM"
+     description: >-
+       Qwen 3.5 0.8B is a compact yet powerful language model developed by Alibaba, designed to deliver efficient performance on edge devices.
+       With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal
+       for applications that require natural language understanding and generation in constrained environments.
+     supported_boards: ["ventunoq", "unoq"]
+     bricks:
+       - id: "arduino:vlm"
+         model_configuration:
+           GGML_HEXAGON_DEVICES: 1                  
+     deployment:
+       handler: "hf-handler"
+       platforms:
+         - ventunoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
+               model_mmproj_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/ed94380a8b2c929e11722fda3fd64d974b5e353f/mmproj-F16.gguf"
+               models_repository: "llamacpp"
+               model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
+         - unoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
+               model_mmproj_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/ed94380a8b2c929e11722fda3fd64d974b5e353f/mmproj-F16.gguf"
+               models_repository: "llamacpp"
+               model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
+     metadata:
+       model_size_mb: 680
        source: "huggingface"
        source-model-id: "Qwen3.5-0.8B-Q4_0"
        source-model-url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF"
@@ -2364,3 +2395,35 @@ models:
     deployment:
       handler: "ai-hub-handler"
       pre-loaded: true
+ - "llamacpp:SmolVLM2-500M-Video-Instruct-Q8_0-multimodal":
+    name : "SmolVLM2-500M-Video-Instruct"
+    description: >-
+      SmolVLM2 500M Video Instruct is a compact vision-language model developed by Hugging Face.
+      With 500 million parameters, it understands images and short video clips alongside text,
+      making it suitable for visual question answering, image captioning and scene description
+      directly on edge devices.
+    supported_boards: ["unoq", "ventunoq"]
+    bricks:
+      - id: "arduino:vlm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1      
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/ccd7aae53bcb1997355c2f094959e72b3642ce17/mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"
+        - unoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/ccd7aae53bcb1997355c2f094959e72b3642ce17/mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"              
+    metadata:
+      model_size_mb: 521
+      source: "huggingface"
+      source-model-id: "ggml-org/SmolVLM2-500M-Video-Instruct-Q8_0"
+      source-model-url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"

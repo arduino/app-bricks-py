@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable
 
 from arduino.app_bricks.cloud_llm import ReasoningEffort
@@ -13,11 +13,33 @@ from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import get_brick_config, get_brick_configured_model
 
+import base64
+import io
 import openai
+from functools import lru_cache
 from typing import Any, Self
 from collections.abc import Iterator, Sequence
 
+from PIL import Image
+
 logger = Logger("VisionLanguageModel")
+
+# Size of the synthetic image sent by ``init()``. Small enough to keep the warm-up call
+# cheap, large enough to stay above the minimum resolution vision encoders accept.
+_CANARY_IMAGE_SIZE = (224, 224)
+_CANARY_PROMPT = "Is this image completely black? Answer YES or NO."
+
+
+@lru_cache(maxsize=1)
+def _canary_image_jpeg() -> bytes:
+    """Returns a solid black JPEG built in memory (never written to disk).
+
+    A VLM invoked without an image can misbehave or fail outright, so the warm-up call
+    performed by ``init()`` always ships a real, if trivial, picture.
+    """
+    buffer = io.BytesIO()
+    Image.new("RGB", _CANARY_IMAGE_SIZE, color="black").save(buffer, format="JPEG")
+    return buffer.getvalue()
 
 
 @brick
@@ -32,7 +54,7 @@ class VisionLanguageModel(LargeLanguageModel):
     def __init__(
         self,
         system_prompt: str = "",
-        temperature: float | None = 0.7,
+        temperature: float | None = 0.0,
         max_tokens: int = 512,
         timeout: int | None = None,
         tools: Sequence[ToolLike] | None = None,
@@ -50,7 +72,11 @@ class VisionLanguageModel(LargeLanguageModel):
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
                 Higher values make output more random/creative; lower values make it more
-                deterministic. Defaults to 0.7.
+                deterministic. Defaults to 0.0 (greedy decoding): typical VLM tasks are
+                perception tasks (object detection, counting, OCR, constrained YES/NO
+                answers) where reproducibility matters and sampling noise flips answers
+                between runs, especially on small models. Pass a higher value (e.g. 0.7)
+                for creative image descriptions.
             max_tokens (int): The maximum number of tokens to generate in the response.
                 Defaults to 256.
             timeout (Optional[int]): The maximum duration in seconds to wait for a response before
@@ -88,6 +114,31 @@ class VisionLanguageModel(LargeLanguageModel):
                 used internally, or the `Runnable` binding it to the registered tools.
         """
         return self._model
+
+    def init(self) -> None:
+        """Initializes the internal chain for the VLM.
+
+        This method can be called before any chat or streaming operations.
+        Pre load the model to ensure it's ready for use. Unlike a text-only LLM, a VLM is
+        warmed up with a multimodal request: a solid black image generated in memory plus a
+        constrained YES/NO question, so the vision encoder is exercised as well. The call is
+        made on the base model and does not touch the conversation memory.
+        If the model is not responsive or misconfigured, this method will raise a RuntimeError.
+
+        Raises:
+            RuntimeError: If initialization fails due to misconfiguration or API errors.
+        """
+        try:
+            # Canary call to force the model load and ensure the runner is responsive.
+            image_b64 = base64.b64encode(_canary_image_jpeg()).decode()
+            # Image first, then text: same ordering used by chat() for multimodal messages.
+            content: list[str | dict[str, Any]] = [
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                {"type": "text", "text": _CANARY_PROMPT},
+            ]
+            self._base_model.invoke([HumanMessage(content=content)], max_tokens=1)
+        except (openai.BadRequestError, openai.APIError) as e:
+            self._handle_api_error(logger, e)
 
     def chat(
         self,
