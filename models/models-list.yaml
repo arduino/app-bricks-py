@@ -2347,7 +2347,7 @@ models:
     bricks:
       - id: "arduino:decision_model"
         model_configuration:
-          GGML_HEXAGON_DEVICES: 2
+          GGML_HEXAGON_DEVICES: 1
     deployment:
       handler: "hf-handler"
       platforms:
