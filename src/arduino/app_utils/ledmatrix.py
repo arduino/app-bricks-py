@@ -306,6 +306,88 @@ class Frame:
         self._arr = np_arr
         return self
 
+    # -- transformations (in-place, fluent) ------------------------------
+    def invert(self) -> Frame:
+        """Invert brightness values in-place.
+
+        Returns:
+            Frame: the same Frame instance after modification.
+        """
+        maxv = self.brightness_levels - 1
+        return self.set_array(maxv - self._arr.astype(int))
+
+    def invert_not_null(self) -> Frame:
+        """Invert non-zero brightness values in-place, LEDs that are off stay off.
+
+        Returns:
+            Frame: the same Frame instance after modification.
+        """
+        maxv = self.brightness_levels - 1
+        arr = self._arr.astype(int)
+        mask = arr > 0
+        arr[mask] = maxv - arr[mask]
+        return self.set_array(arr)
+
+    def rotate180(self) -> Frame:
+        """Rotate the frame by 180 degrees in-place.
+
+        Returns:
+            Frame: the same Frame instance after modification.
+        """
+        import numpy as np
+
+        return self.set_array(np.rot90(self._arr, k=2))
+
+    def flip_horizontally(self) -> Frame:
+        """Flip the frame horizontally (left to right) in-place.
+
+        Returns:
+            Frame: the same Frame instance after modification.
+        """
+        import numpy as np
+
+        return self.set_array(np.fliplr(self._arr))
+
+    def flip_vertically(self) -> Frame:
+        """Flip the frame vertically (top to bottom) in-place.
+
+        Returns:
+            Frame: the same Frame instance after modification.
+        """
+        import numpy as np
+
+        return self.set_array(np.flipud(self._arr))
+
+    def quantize(self, levels: int) -> Frame:
+        """Return a new frame with the values rescaled to another number of brightness levels.
+
+        Values are mapped from [0, brightness_levels-1] to [0, levels-1] and
+        rounded to the nearest integer; this frame is not modified.
+
+        Args:
+            levels (int): number of brightness levels of the new frame (2..256).
+
+        Returns:
+            Frame: a new frame (see the class docstring for its class).
+
+        Raises:
+            ValueError: if levels is not in 2..256.
+        """
+        levels = int(levels)
+        if not 2 <= levels <= 256:
+            raise ValueError("brightness_levels must be an integer in 2..256")
+        return self._from_array(self._scaled(levels - 1), levels)
+
+    def _scaled(self, scale_max: int) -> np.ndarray:
+        """Return a new uint8 array with the values mapped from [0, brightness_levels-1] to [0, scale_max]."""
+        import numpy as np
+
+        src_max = max(1, self.brightness_levels - 1)
+        if src_max == scale_max:
+            return self._arr.astype(np.uint8)
+        scale = float(scale_max) / float(src_max)
+        return (self._arr.astype(float) * scale).round().astype(np.uint8)
+
     # -- export methods -------------------------------------------------
     def to_board_bytes(self) -> bytes:
         """Return the byte buffer (row-major) representing this frame.
@@ -359,8 +441,6 @@ class Frame:
         uint8 suitable for sending to the board or for further formatting.
         With scale_max None no scaling is applied and the array itself is returned.
         """
-        import numpy as np
-
         # If no scaling requested, return integer copy
         if scale_max is None:
             return self.arr
@@ -369,98 +449,115 @@ class Frame:
         if scale_max < 1 or scale_max > 255:
             raise ValueError("scale_max cannot be greater than 255 (board max) or less than 1")
 
-        # Use brightness_levels to determine the input maximum value.
-        # brightness_levels is the number of discrete levels (e.g. 256 -> 0..255)
-        src_max = max(1, int(self.brightness_levels) - 1)
-
-        # Fast path: if input already uses the target range, just cast
-        if src_max == scale_max:
-            out = self.arr
-            return out.astype(np.uint8)
-
-        # Compute scaling factor from [0..src_max] -> [0..scale_max]
-        scale = float(scale_max) / float(src_max) if src_max > 0 else 0.0
-        out = (self.arr.astype(float) * scale).round().astype(np.int32)
-        return out.astype(np.uint8)
+        return self._scaled(scale_max)
 
 
 class FrameDesigner:
-    """Utilities to create LED matrix frames for the target board.
+    """Template to create and transform frames for an LED matrix of a given size.
 
-    FrameDesigner centralizes the LED matrix target specification and
-    provides helpers to make transformations of a `Frame` instance.
+    A designer is bound to a geometry and a number of brightness levels: its
+    `empty` and `from_rows` create frames with them, so that every frame of an
+    application matches its matrix. The default is the UNO Q matrix
+    (`UNO_Q_MATRIX`); e.g. `FrameDesigner(*MODULINO_MATRIX)` designs frames for
+    the Modulino Matrix.
     """
 
-    def __init__(self) -> None:
-        """Initialize the FrameDesigner instance with board defaults.
+    def __init__(self, width: int = 13, height: int = 8, brightness_levels: int = 256) -> None:
+        """Bind the designer to a matrix geometry and a number of brightness levels.
 
-        These attributes define brightness levels used by application helpers.
+        Args:
+            width (int): number of columns of the matrix (default 13).
+            height (int): number of rows of the matrix (default 8).
+            brightness_levels (int): number of brightness levels of the frames (2..256, default 256).
+
+        Raises:
+            ValueError: on a non positive size or brightness levels outside 2..256.
         """
-        self.width = 13  # led matrix width
-        self.height = 8  # led matrix height
+        width, height, brightness_levels = int(width), int(height), int(brightness_levels)
+        if width < 1 or height < 1:
+            raise ValueError("width and height must be positive")
+        if not 2 <= brightness_levels <= 256:
+            raise ValueError("brightness_levels must be an integer in 2..256")
+        self.width = width  # led matrix width
+        self.height = height  # led matrix height
+        self.brightness_levels = brightness_levels
+
+    # -- frame creation --------------------------------------------------
+    def empty(self) -> Frame:
+        """Create a frame of the designer geometry with every LED off.
+
+        Returns:
+            Frame: a blank frame.
+        """
+        return Frame.empty(self.width, self.height, self.brightness_levels)
+
+    def from_rows(self, rows: Sequence[list[int]] | Sequence[str]) -> Frame:
+        """Create a frame from rows, which must match the designer geometry.
+
+        Args:
+            rows (Sequence[list[int]] | Sequence[str]): rows as accepted by `Frame.from_rows`.
+
+        Returns:
+            Frame: a validated frame.
+
+        Raises:
+            ValueError: on rows not matching the geometry, malformed rows or out-of-range values.
+        """
+        return Frame.from_rows(rows, self.brightness_levels, width=self.width, height=self.height)
 
     # -- transformations (in-place) ------------------------------------
+    # They delegate to the Frame methods of the same name, which can also be called directly.
     def invert(self, frame: Frame) -> Frame:
-        """Invert brightness values in-place on a Frame.
+        """Invert brightness values in-place on a Frame, see `Frame.invert`.
+
         Args:
             frame (Frame): Frame instance to mutate.
+
         Returns:
             Frame: the same Frame instance after modification.
         """
-        maxv = int(frame.brightness_levels) - 1
-        new_arr = (maxv - frame.arr).astype(int)
-        frame.set_array(new_arr)
-        return frame
+        return frame.invert()
 
     def invert_not_null(self, frame: Frame) -> Frame:
-        """Invert non-zero brightness values in-place on a Frame.
+        """Invert non-zero brightness values in-place on a Frame, see `Frame.invert_not_null`.
+
         Args:
             frame (Frame): Frame instance to mutate.
+
         Returns:
             Frame: the same Frame instance after modification.
         """
-        maxv = int(frame.brightness_levels) - 1
-        arr = frame.arr.copy()
-        mask = arr > 0
-        arr[mask] = (maxv - arr[mask]).astype(int)
-        frame.set_array(arr)
-        return frame
+        return frame.invert_not_null()
 
     def rotate180(self, frame: Frame) -> Frame:
-        """Rotate a Frame by 180 degrees in-place.
+        """Rotate a Frame by 180 degrees in-place, see `Frame.rotate180`.
+
         Args:
             frame (Frame): Frame instance to mutate.
+
         Returns:
             Frame: the same Frame instance after modification.
         """
-        import numpy as np
-
-        new_arr = np.rot90(frame.arr, k=2)
-        frame.set_array(new_arr)
-        return frame
+        return frame.rotate180()
 
     def flip_horizontally(self, frame: Frame) -> Frame:
-        """Flip a Frame horizontally in-place.
+        """Flip a Frame horizontally in-place, see `Frame.flip_horizontally`.
+
         Args:
             frame (Frame): Frame instance to mutate.
+
         Returns:
             Frame: the same Frame instance after modification.
         """
-        import numpy as np
-
-        new_arr = np.fliplr(frame.arr)
-        frame.set_array(new_arr)
-        return frame
+        return frame.flip_horizontally()
 
     def flip_vertically(self, frame: Frame) -> Frame:
-        """Flip a Frame vertically in-place.
+        """Flip a Frame vertically in-place, see `Frame.flip_vertically`.
+
         Args:
             frame (Frame): Frame instance to mutate.
+
         Returns:
             Frame: the same Frame instance after modification.
         """
-        import numpy as np
-
-        new_arr = np.flipud(frame.arr)
-        frame.set_array(new_arr)
-        return frame
+        return frame.flip_vertically()
