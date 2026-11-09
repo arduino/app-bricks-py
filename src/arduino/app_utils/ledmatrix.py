@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from __future__ import annotations
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -389,17 +390,70 @@ class Frame:
         return (self._arr.astype(float) * scale).round().astype(np.uint8)
 
     # -- export methods -------------------------------------------------
-    def to_board_bytes(self) -> bytes:
-        """Return the byte buffer (row-major) representing this frame.
+    # The encoders are named after the formats of the Arduino_LED_Matrix library.
+    def to_bytes(self, levels: int | None = None) -> bytes:
+        """Return one byte per pixel, row-major: the format of ``Arduino_LED_Matrix::draw()``.
 
-        Values are scaled to 0..255 for board consumption.
+        Args:
+            levels (int | None): None to send the values as stored (0..brightness_levels-1),
+                or a number of brightness levels (2..256) to quantize the values to first,
+                e.g. 256 for a sketch expecting 0..255, 8 for one expecting 0..7.
+
+        Returns:
+            bytes: width*height bytes, row after row.
+
+        Raises:
+            ValueError: if levels is not None nor in 2..256.
+        """
+        if levels is None:
+            values = self._arr
+        else:
+            levels = int(levels)
+            if not 2 <= levels <= 256:
+                raise ValueError("brightness_levels must be an integer in 2..256")
+            values = self._scaled(levels - 1)
+        return bytes(int(v) for v in values.flatten().tolist())
+
+    def to_words(self) -> list[int]:
+        """Return the frame as a binary bitmap packed in 32-bit words.
+
+        A pixel is on when its value is greater than 0. Pixels are packed
+        row-major, most significant bit first, in ceil(width*height/32) words,
+        the last one zero padded. This is the format of
+        ``Arduino_LED_Matrix::loadFrame()`` and ``loadSequence()``, of the
+        Arduino LED Matrix online editor and of the Modulino Matrix in
+        MonochromaticHorizontal mode: 4 words for the 13x8 UNO Q matrix,
+        3 for a 12x8 matrix.
+
+        Returns:
+            list[int]: the words, each in 0..2**32-1.
+        """
+        bits = (self._arr > 0).flatten().tolist()
+        words: list[int] = []
+        for start in range(0, len(bits), 32):
+            chunk = bits[start : start + 32]
+            word = 0
+            for bit in chunk:
+                word = (word << 1) | int(bit)
+            words.append(word << (32 - len(chunk)))
+        return words
+
+    def to_board_bytes(self) -> bytes:
+        """Return the byte buffer (row-major) representing this frame, values scaled to 0..255.
+
+        Deprecated: use `to_bytes()`. Note the difference: this method always
+        rescales the values to 0..255 (it equals ``to_bytes(256)``), while
+        ``to_bytes()`` sends the values as stored.
 
         Returns:
             Raw bytes (length height*width) suitable for the firmware.
         """
-        scaled = self.rescale_quantized_frame(scale_max=255)
-        flat = [int(x) for x in scaled.flatten().tolist()]
-        return bytes(flat)
+        warnings.warn(
+            "Frame.to_board_bytes() is deprecated, use Frame.to_bytes() (to_bytes(256) for values scaled to 0..255)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return bytes(int(v) for v in self._scaled(255).flatten().tolist())
 
     # -- validation helpers ----------------------------------------------
     @staticmethod
@@ -440,7 +494,14 @@ class Frame:
         This does not mutate self.arr; it returns a new numpy array of dtype
         uint8 suitable for sending to the board or for further formatting.
         With scale_max None no scaling is applied and the array itself is returned.
+
+        Deprecated: use `quantize()`, ``quantize(scale_max + 1).arr`` holds the same values.
         """
+        warnings.warn(
+            "Frame.rescale_quantized_frame() is deprecated, use Frame.quantize()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # If no scaling requested, return integer copy
         if scale_max is None:
             return self.arr
