@@ -4,63 +4,120 @@
 
 from __future__ import annotations
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     # numpy is imported where it is used: arduino.app_utils imports this module, a module-level import would slow down every app start
     import numpy as np
 
+__all__ = [
+    "Frame",
+    "FrameDesigner",
+    "MODULINO_MATRIX",
+    "UNO_Q_MATRIX",
+]
+
+# Convenience geometries, as (width, height) tuples, of some Arduino LED matrices. Frame and
+# FrameDesigner work with any size: these only save typing, e.g. Frame.empty(*MODULINO_MATRIX).
+UNO_Q_MATRIX: tuple[int, int] = (13, 8)
+"""(width, height) of the LED matrix built into Arduino UNO Q and VENTUNO Q."""
+
+MODULINO_MATRIX: tuple[int, int] = (12, 8)
+"""(width, height) of the Arduino Modulino Matrix, same layout as the UNO R4 WiFi LED matrix."""
+
 
 class Frame:
-    """Represents a brightness matrix for the LED matrix.
+    """Represents a brightness matrix for an LED matrix of any size.
 
-    Internally stores a numpy array of shape (8, 13) with integer
-    brightness levels in range [0, brightness_levels-1].
+    Internally stores a 2-D numpy array of shape (height, width) with integer
+    brightness levels in range [0, brightness_levels-1]. The geometry is
+    taken from the array: a (8, 13) array is a frame for the UNO Q matrix,
+    a (8, 12) array one for the Modulino Matrix.
+
+    Application metadata (a name, a duration, a database id...) is best added
+    by composition, wrapping a Frame in your own dataclass, rather than by
+    subclassing. Subclassing keeps working: the factories (`from_rows`,
+    `empty`, `copy`) return an instance of the subclass when its constructor
+    accepts Frame's arguments, a plain Frame otherwise; a subclass whose
+    constructor takes extra arguments overrides them to keep its own type.
     """
 
-    def __init__(self, arr: np.ndarray, brightness_levels: int = 256) -> None:
+    def __init__(
+        self,
+        arr: np.ndarray,
+        brightness_levels: int = 256,
+        *,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> None:
         """Create a Frame from a numpy array.
 
         Args:
-            arr (numpy.ndarray): numpy array of shape (8, 13) with integer values
-            brightness_levels (int): number of brightness levels (default 256)
+            arr (numpy.ndarray): 2-D numpy array of shape (height, width) with integer values.
+            brightness_levels (int): number of brightness levels (default 256).
+            width (int | None): expected width; the array must match it when given.
+            height (int | None): expected height; the array must match it when given.
+
+        Raises:
+            ValueError: on a geometry mismatch or out-of-range values.
+            TypeError: on a non integer array.
         """
-        self.height = 8
-        self.width = 13
-        self.brightness_levels = int(brightness_levels)
-        self._arr = arr
-        self._validate()
+        import numpy as np
+
+        self.brightness_levels = brightness_levels
+        if arr is None:  # pyright: ignore[reportUnnecessaryComparison]  # runtime guard for untyped callers
+            raise TypeError("array is not set")
+        np_arr = np.asarray(arr)
+        self._validate_array_input(np_arr)
+        actual_height, actual_width = np_arr.shape
+        expected = (
+            actual_height if height is None else int(height),
+            actual_width if width is None else int(width),
+        )
+        if np_arr.shape != expected:
+            raise ValueError(f"array must have shape ({expected[0]}, {expected[1]})")
+        self._assert_array_in_range(np_arr, self.brightness_levels)
+        self._arr = np_arr
 
     def __repr__(self) -> str:
         """Return the array as representation of the Frame."""
         return self.arr.__repr__()
 
-    def __setattr__(self, name: str, value: Any) -> None:  # noqa: ANN401
-        """Intercept setting of certain attributes.
+    # -- geometry and state ---------------------------------------------
+    @property
+    def width(self) -> int:
+        """Number of columns of the frame."""
+        return int(self._arr.shape[1])
 
-        Public `arr` is exposed as a read-only property; to replace the
-        array please use `set_array(...)` which performs validation and assigns
-        to private attribute `_arr`.
-        """
-        # allow direct assignment for internal storage
-        if name == "_arr":
-            super().__setattr__(name, value)
-            self._validate_array_input()
-            self._assert_array_in_range() if getattr(self, "brightness_levels", None) is not None else None
-            return
-        if name == "brightness_levels":
-            super().__setattr__(name, int(value))
-            self._validate_brightness_levels()
-            if getattr(self, "_arr", None) is not None:
-                self._assert_array_in_range()
-            return
-
-        super().__setattr__(name, value)
+    @property
+    def height(self) -> int:
+        """Number of rows of the frame."""
+        return int(self._arr.shape[0])
 
     @property
     def shape(self) -> tuple[int, ...]:
         """Return the (height, width) shape of the frame as a tuple of ints."""
-        return self.arr.shape
+        return self._arr.shape
+
+    @property
+    def brightness_levels(self) -> int:
+        """Number of discrete brightness levels (2..256): values range in 0..brightness_levels-1."""
+        return self._brightness_levels
+
+    @brightness_levels.setter
+    def brightness_levels(self, value: int) -> None:
+        """Change the number of brightness levels, the current values must fit the new range.
+
+        Raises:
+            ValueError: if the value is not in 2..256 or the array has values outside the new range.
+        """
+        levels = int(value)
+        if not 2 <= levels <= 256:
+            raise ValueError("brightness_levels must be an integer in 2..256")
+        arr = getattr(self, "_arr", None)
+        if arr is not None:
+            self._assert_array_in_range(arr, levels)
+        self._brightness_levels = levels
 
     @property
     def arr(self) -> np.ndarray:
@@ -68,15 +125,8 @@ class Frame:
 
         Returns a numpy ndarray view with the writeable flag turned off so
         callers cannot mutate the internal storage in-place. Use
-        `set_array` to replace the whole array. A frame whose array has not
-        been set reads as a blank frame, every LED off.
+        `set_array` to replace the whole array.
         """
-        import numpy as np
-
-        if getattr(self, "_arr", None) is None:
-            blank = np.zeros((self.height, self.width), dtype=np.int32)
-            blank.flags.writeable = False
-            return blank
         v = self._arr.view()
         try:
             v.flags.writeable = False
@@ -86,17 +136,46 @@ class Frame:
 
     # -- factory methods ----------------------------------------------
     @classmethod
-    def from_rows(cls, rows: Sequence[list[int]] | Sequence[str] | None, brightness_levels: int = 256) -> Frame:
+    def _from_array(cls, arr: np.ndarray, brightness_levels: int) -> Frame:
+        """Build a frame of this class from an already validated array (internal constructor path).
+
+        A subclass whose constructor does not accept ``(arr, brightness_levels)``
+        gets a plain Frame: it overrides this method, or the public factories,
+        to build instances of its own type.
+        """
+        import inspect
+
+        try:
+            inspect.signature(cls).bind(arr, brightness_levels=brightness_levels)
+        except (TypeError, ValueError):
+            return Frame(arr, brightness_levels=brightness_levels)
+        return cls(arr, brightness_levels=brightness_levels)
+
+    @classmethod
+    def from_rows(
+        cls,
+        rows: Sequence[list[int]] | Sequence[str] | None,
+        brightness_levels: int = 256,
+        *,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> Frame:
         """Create a Frame from frontend rows.
 
+        The geometry is inferred from the rows (number of rows and length of
+        the first row) unless width and height are given, in which case the
+        rows must match them.
+
         Args:
-            rows (Sequence[list[int]] | Sequence[str]): Either a list or tuple of 8 lists each with 13 ints, or of 8
-                CSV strings with 13 numeric values each.
+            rows (Sequence[list[int]] | Sequence[str]): Either a list or tuple of rows, each a list of ints, or of
+                CSV strings of numeric values. Every row must have the same number of values.
             brightness_levels (int): Number of discrete brightness levels for the
                 resulting Frame (2..256).
+            width (int | None): expected number of values per row.
+            height (int | None): expected number of rows.
 
         Returns:
-            frame: A validated `Frame` instance.
+            frame: A validated frame, an instance of the class it is called on (see the class docstring).
 
         Raises:
             ValueError: on missing or malformed rows, or out-of-range values.
@@ -109,19 +188,23 @@ class Frame:
 
         if rows is None:
             raise ValueError("rows missing")
-        # Expect exactly 8 rows and 13 columns
-        if len(rows) != 8:
-            raise ValueError("rows must be a list of 8 rows")
+        if height is not None and len(rows) != height:
+            raise ValueError(f"rows must be a list of {height} rows")
+        if len(rows) == 0:
+            raise ValueError("rows must not be empty")
 
         # Case: comma-separated numeric strings
         if isinstance(rows[0], str):
             parsed: list[list[int]] = []
+            expected_width = width
             for i, row in enumerate(rows):
                 if not isinstance(row, str):
                     raise ValueError(f"row {i} is not a string")
                 parts = [p.strip() for p in row.split(",")]
-                if len(parts) != 13:
-                    raise ValueError(f"row {i} must contain 13 comma-separated values")
+                if expected_width is None:
+                    expected_width = len(parts)
+                if len(parts) != expected_width:
+                    raise ValueError(f"row {i} must contain {expected_width} comma-separated values")
                 try:
                     nums = [int(p) for p in parts]
                 except Exception as e:
@@ -131,16 +214,45 @@ class Frame:
 
         # Case: list of lists
         else:
-            # ensure every row is a list of length 13
+            expected_width = width
+            # ensure every row is a list, all of the same length
             for i, row in enumerate(rows):
-                if not isinstance(row, list) or len(row) != 13:
-                    raise ValueError(f"row {i} must be a list of 13 values")
+                if not isinstance(row, (list, tuple)):
+                    raise ValueError(f"row {i} must be a list of values")
+                if expected_width is None:
+                    expected_width = len(row)
+                if len(row) != expected_width:
+                    raise ValueError(f"row {i} must be a list of {expected_width} values")
             np_arr = np.asarray(rows, dtype=int)
             # Validate values are within declared brightness range
             if np.any(np_arr < 0) or np.any(np_arr >= brightness_levels):
                 raise ValueError(f"row values must be in 0..{brightness_levels - 1}")
 
-        return Frame(arr=np_arr, brightness_levels=brightness_levels)
+        return cls._from_array(np_arr, brightness_levels)
+
+    @classmethod
+    def empty(cls, width: int, height: int, brightness_levels: int = 256) -> Frame:
+        """Create a frame with every LED off.
+
+        Args:
+            width (int): number of columns.
+            height (int): number of rows.
+            brightness_levels (int): number of brightness levels (default 256).
+
+        Returns:
+            Frame: a blank frame, an instance of the class it is called on (see the class docstring).
+        """
+        import numpy as np
+
+        return cls._from_array(np.zeros((int(height), int(width)), dtype=np.uint8), brightness_levels)
+
+    def copy(self) -> Frame:
+        """Return an independent copy of this frame.
+
+        Returns:
+            Frame: a frame of the same class with a copy of the array (see the class docstring).
+        """
+        return self._from_array(self._arr.copy(), self.brightness_levels)
 
     def set_value(self, row: int, col: int, value: int) -> None:
         """Set a specific value in the frame array.
@@ -175,6 +287,10 @@ class Frame:
 
     def set_array(self, arr: np.ndarray) -> Frame:
         """Set the internal array to a new numpy array in-place.
+
+        The new array must have the shape of the frame; on invalid input the
+        frame is left unchanged.
+
         Args:
             arr (numpy.ndarray): numpy array of shape (height, width) with integer values
         Returns:
@@ -182,15 +298,12 @@ class Frame:
         """
         import numpy as np
 
-        prev = self._arr
-        try:
-            np_arr = np.asarray(arr)
-            self._arr = np_arr.copy()
-            self._validate()
-        except Exception:
-            # rollback
-            self._arr = prev
-            raise
+        np_arr = np.asarray(arr).copy()
+        self._validate_array_input(np_arr)
+        if np_arr.shape != self.shape:
+            raise ValueError(f"array must have shape ({self.height}, {self.width})")
+        self._assert_array_in_range(np_arr, self.brightness_levels)
+        self._arr = np_arr
         return self
 
     # -- export methods -------------------------------------------------
@@ -207,42 +320,24 @@ class Frame:
         return bytes(flat)
 
     # -- validation helpers ----------------------------------------------
-    def _validate(self) -> None:
-        """Validate the current Frame instance in-place (internal)."""
-        self._validate_brightness_levels()
-        self._validate_array_input()
-        self._assert_array_in_range()
-
-    def _validate_brightness_levels(self) -> None:
-        """Ensure :attr:`brightness_levels` is an int in 2..256.
-
-        Raises:
-            ValueError: if the attribute is not a valid integer in range.
-        """
-        if not 2 <= self.brightness_levels <= 256:
-            raise ValueError("brightness_levels must be an integer in 2..256")
-
-    def _validate_array_input(self) -> None:
-        """Validate an input array-like of shape (2-D) and integer dtype.
-
-        This method performs validation in-place and does not return the
-        provided array. It raises on invalid input.
+    @staticmethod
+    def _validate_array_input(arr: np.ndarray) -> None:
+        """Validate an array: 2-D, at least one row and column, integer dtype.
 
         Raises:
             TypeError, ValueError on invalid input.
         """
         import numpy as np
 
-        if getattr(self, "_arr", None) is None:
-            raise TypeError("array is not set")
-        if self._arr.ndim != 2:
+        if arr.ndim != 2:
             raise ValueError("array must be 2-dimensional")
-        if self._arr.shape != (self.height, self.width):
-            raise ValueError(f"array must have shape ({self.height}, {self.width})")
-        if not np.issubdtype(self._arr.dtype, np.integer):
+        if 0 in arr.shape:
+            raise ValueError("array must have at least one row and one column")
+        if not np.issubdtype(arr.dtype, np.integer):
             raise TypeError("array must have integer dtype")
 
-    def _assert_array_in_range(self) -> None:
+    @staticmethod
+    def _assert_array_in_range(arr: np.ndarray, brightness_levels: int) -> None:
         """Assert that array values are within 0..brightness_levels-1.
 
         Raises:
@@ -250,12 +345,10 @@ class Frame:
         """
         import numpy as np
 
-        if getattr(self, "_arr", None) is None:
-            raise TypeError("array is not set")
-        maxv = int(self.brightness_levels) - 1
-        if np.any(self._arr < 0) or np.any(self._arr > maxv):
-            a_min = int(np.min(self._arr))
-            a_max = int(np.max(self._arr))
+        maxv = int(brightness_levels) - 1
+        if np.any(arr < 0) or np.any(arr > maxv):
+            a_min = int(np.min(arr))
+            a_max = int(np.max(arr))
             raise ValueError(f"array values out of range 0..{maxv} (found min={a_min}, max={a_max})")
 
     # -- utility methods -------------------------------------------------
