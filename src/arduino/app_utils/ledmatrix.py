@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from __future__ import annotations
+import re
 import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -16,6 +17,9 @@ __all__ = [
     "FrameDesigner",
     "MODULINO_MATRIX",
     "UNO_Q_MATRIX",
+    "c_identifier",
+    "sequence_to_c",
+    "to_c_array",
 ]
 
 # Convenience geometries, as (width, height) tuples, of some Arduino LED matrices. Frame and
@@ -622,3 +626,97 @@ class FrameDesigner:
             Frame: the same Frame instance after modification.
         """
         return frame.flip_vertically()
+
+
+# -- C source formatters ---------------------------------------------------
+def c_identifier(name: str | None, fallback: str = "frame") -> str:
+    """Return a valid C identifier derived from ``name``.
+
+    The name is lower-cased, every run of characters other than ASCII letters,
+    digits and underscores becomes a single underscore, leading and trailing
+    underscores are removed and a leading digit gets an ``f_`` prefix.
+
+    Args:
+        name (str | None): the name to convert.
+        fallback (str): the identifier returned when nothing valid is left of ``name``.
+
+    Returns:
+        str: a C-safe identifier.
+    """
+    if name is None:
+        return fallback
+    s = str(name).strip().lower()
+    s = re.sub(r"[^a-z0-9_]", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    if not s:
+        return fallback
+    if s[0].isdigit():
+        s = f"f_{s}"
+    return s
+
+
+def to_c_array(frame: Frame, name: str = "frame") -> str:
+    """Format a frame as a C ``uint8_t`` array initializer, one value per pixel, row-major.
+
+    The values are written as stored (0..brightness_levels-1), one matrix row
+    per line: the same layout as ``Frame.to_bytes()``, for sketches that call
+    ``Arduino_LED_Matrix::draw()``.
+
+    Args:
+        frame (Frame): the frame to format.
+        name (str): name of the C array, converted with `c_identifier`.
+
+    Returns:
+        str: C source fragment, newline terminated.
+    """
+    rows = frame.arr.tolist()
+    lines = [f"uint8_t {c_identifier(name)}[] = {{"]
+    for r_idx, row in enumerate(rows):
+        line = ", ".join(str(int(v)) for v in row)
+        lines.append(f"  {line}," if r_idx < len(rows) - 1 else f"  {line}")
+    lines.append("};")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def sequence_to_c(
+    frames: Sequence[tuple[Frame, int] | tuple[Frame, int, str]],
+    name: str = "animation",
+) -> str:
+    """Format a sequence of frames as a C ``uint32_t`` array for ``Arduino_LED_Matrix::loadSequence()``.
+
+    Each entry holds the words of `Frame.to_words` followed by the duration in
+    milliseconds: ``const uint32_t NAME[][K] = { {w0, ..., duration}, ... };``
+    with K the number of words plus one (5 for the 13x8 UNO Q matrix).
+
+    Args:
+        frames (Sequence[tuple]): ``(frame, duration_ms)`` or ``(frame, duration_ms, label)``
+            items; the label, when given, is written as a comment after the entry.
+            All frames must have the same number of pixels.
+        name (str): name of the C array, converted with `c_identifier`.
+
+    Returns:
+        str: C source fragment, newline terminated.
+
+    Raises:
+        ValueError: on an empty sequence or frames of different sizes.
+    """
+    if not frames:
+        raise ValueError("frames must not be empty")
+    entries: list[tuple[list[int], int, str | None]] = []
+    for item in frames:
+        frame, duration_ms = item[0], int(item[1])
+        label = str(item[2]) if len(item) > 2 else None
+        entries.append((frame.to_words(), duration_ms, label))
+    word_count = len(entries[0][0])
+    if any(len(words) != word_count for words, _, _ in entries):
+        raise ValueError("all frames must have the same number of pixels")
+
+    lines = [f"const uint32_t {c_identifier(name, fallback='animation')}[][{word_count + 1}] = {{"]
+    for words, duration_ms, label in entries:
+        values = ", ".join([*(f"0x{w:08x}" for w in words), str(duration_ms)])
+        comment = "" if label is None else "  // " + " ".join(label.splitlines())
+        lines.append(f"    {{{values}}},{comment}")
+    lines.append("};")
+    lines.append("")
+    return "\n".join(lines)
