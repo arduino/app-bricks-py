@@ -59,7 +59,8 @@ class Modulino:
         self.hub_address = hub_port.hub_address if hub_port is not None else 0
         self.port = hub_port.port if hub_port is not None else 0
         # The MCU builds the RPC name and returns "" if the modulino can't be created
-        # (e.g. the same address is already used on the same bus or hub port)
+        # (e.g. a modulino of the same type and address already exists on the same bus or hub port).
+        # The name is also the key the MCU uses in delete_modulino and poll_subscribe/unsubscribe.
         try:
             self.name = Bridge.call("create_modulino", type, i2c_address, self.hub_address, self.port)
         except Exception:
@@ -101,7 +102,7 @@ class Modulino_Thermo(Modulino):
     def stop(self) -> None:
         """Stop the Modulino_Thermo."""
         try:
-            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
+            Bridge.call("delete_modulino", self.name)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
@@ -168,7 +169,7 @@ class Modulino_Movement(Modulino):
     def stop(self) -> None:
         """Stop the Modulino_Movement."""
         try:
-            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
+            Bridge.call("delete_modulino", self.name)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
@@ -207,11 +208,11 @@ class Modulino_Movement(Modulino):
         if ms < 100:
             raise ModulinoError("sample rate too small")
         Bridge.provide(f"{self.name}_callback", callback)
-        Bridge.notify("poll_subscribe", self.hub_address, self.port, self.i2caddress, ms)
+        Bridge.notify("poll_subscribe", self.name, ms)
 
     def stopSample(self) -> None:
         """Stop sampling movement data."""
-        Bridge.notify("poll_unsubscribe", self.hub_address, self.port, self.i2caddress)
+        Bridge.notify("poll_unsubscribe", self.name)
 
 class Modulino_Buttons(Modulino):
     """Class to handle a Modulino Buttons."""
@@ -236,7 +237,7 @@ class Modulino_Buttons(Modulino):
     def stop(self) -> None:
         """Stop the Modulino_Buttons."""
         try:
-            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
+            Bridge.call("delete_modulino", self.name)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
@@ -264,14 +265,14 @@ class Modulino_Buttons(Modulino):
         """
         try:
             Bridge.provide(f"{self.name}_callback", callback)
-            Bridge.notify("poll_subscribe", self.hub_address, self.port, self.i2caddress, 10)
+            Bridge.notify("poll_subscribe", self.name, 10)
         except:
             raise ModulinoError(f"cannot set callback for modulino {self.name}")
 
     def removeOnChangeCallback(self) -> None:
         """Remove the callback function for button state changes."""
         try:
-            Bridge.notify("poll_unsubscribe", self.hub_address, self.port, self.i2caddress)
+            Bridge.notify("poll_unsubscribe", self.name)
         except:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
 
@@ -308,7 +309,7 @@ class Modulino_Joystick(Modulino):
     def stop(self) -> None:
         """Stop the joystick modulino."""
         try:
-            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
+            Bridge.call("delete_modulino", self.name)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
@@ -324,14 +325,14 @@ class Modulino_Joystick(Modulino):
         """
         try:
             Bridge.provide(f"{self.name}_callback", callback)
-            Bridge.notify("poll_subscribe", self.hub_address, self.port, self.i2caddress, 10)
+            Bridge.notify("poll_subscribe", self.name, 10)
         except:
             raise ModulinoError(f"cannot set callback for modulino {self.name}")
 
     def removeOnChangeCallback(self) -> None:
         """Remove the callback function for joystick state changes."""
         try:
-            Bridge.notify("poll_unsubscribe", self.hub_address, self.port, self.i2caddress)
+            Bridge.notify("poll_unsubscribe", self.name)
         except:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
 
@@ -369,7 +370,7 @@ class Modulino_Knob(Modulino):
     def stop(self) -> None:
         """Stop the knob modulino."""
         try:
-            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
+            Bridge.call("delete_modulino", self.name)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
@@ -386,14 +387,14 @@ class Modulino_Knob(Modulino):
         """
         try:
             Bridge.provide(f"{self.name}_callback", callback)
-            Bridge.notify("poll_subscribe", self.hub_address, self.port, self.i2caddress, 10)
+            Bridge.notify("poll_subscribe", self.name, 10)
         except:
             raise ModulinoError(f"cannot set callback for modulino {self.name}")
 
     def removeOnChangeCallback(self) -> None:
         """Remove the callback function for knob state changes."""
         try:
-            Bridge.notify("poll_unsubscribe", self.hub_address, self.port, self.i2caddress)
+            Bridge.notify("poll_unsubscribe", self.name)
         except:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
 
@@ -442,7 +443,7 @@ class Modulino_Buzzer(Modulino):
     def stop(self) -> None:
         """Stop the buzzer modulino."""
         try:
-            Bridge.call("delete_modulino", self.hub_address, self.port, self.i2caddress)
+            Bridge.call("delete_modulino", self.name)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
