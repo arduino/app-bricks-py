@@ -4,9 +4,9 @@
 
 from __future__ import annotations
 import re
-import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
+from warnings import deprecated
 
 if TYPE_CHECKING:
     # numpy is imported where it is used: arduino.app_utils imports this module, a module-level import would slow down every app start
@@ -442,6 +442,7 @@ class Frame:
             words.append(word << (32 - len(chunk)))
         return words
 
+    @deprecated("Frame.to_board_bytes() is deprecated, use Frame.to_bytes() (to_bytes(256) for values scaled to 0..255)")
     def to_board_bytes(self) -> bytes:
         """Return the byte buffer (row-major) representing this frame, values scaled to 0..255.
 
@@ -452,11 +453,6 @@ class Frame:
         Returns:
             Raw bytes (length height*width) suitable for the firmware.
         """
-        warnings.warn(
-            "Frame.to_board_bytes() is deprecated, use Frame.to_bytes() (to_bytes(256) for values scaled to 0..255)",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return bytes(int(v) for v in self._scaled(255).flatten().tolist())
 
     # -- validation helpers ----------------------------------------------
@@ -492,6 +488,7 @@ class Frame:
             raise ValueError(f"array values out of range 0..{maxv} (found min={a_min}, max={a_max})")
 
     # -- utility methods -------------------------------------------------
+    @deprecated("Frame.rescale_quantized_frame() is deprecated, use Frame.quantize()")
     def rescale_quantized_frame(self, scale_max: int | None = 255) -> np.ndarray:
         """Return a scaled numpy array with values mapped from [0, brightness_levels-1] -> [0, scale_max].
 
@@ -501,11 +498,6 @@ class Frame:
 
         Deprecated: use `quantize()`, ``quantize(scale_max + 1).arr`` holds the same values.
         """
-        warnings.warn(
-            "Frame.rescale_quantized_frame() is deprecated, use Frame.quantize()",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         # If no scaling requested, return integer copy
         if scale_max is None:
             return self.arr
