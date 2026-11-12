@@ -133,6 +133,7 @@ build = [
 [project.scripts]
 arduino-bricks-list-modules = "arduino.app_tools.module_listing:main"
 arduino-bricks-release = "arduino.app_tools.module_listing:release"
+arduino-app-launcher = "arduino.app_tools.app_launcher.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
