@@ -14,7 +14,7 @@ class ModulinoHubPort:
         self.hub_address = hub_address
         self.port = port
 
-class ModulinoHub:
+class Modulino_Hub:
     """Modulino Hub (I2C multiplexer with 8 ports).
 
     It holds no resources: the hub is created on the MCU together with the first
