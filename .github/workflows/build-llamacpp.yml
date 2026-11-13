@@ -70,7 +70,7 @@ jobs:
       - name: Apply patches
         run: |
           cd llama.cpp
-          git apply -v ../.github/workflows/patches/llama.cpp-hexagon/*.patch
+          git apply -v ../.github/workflows/patches/llama.cpp/*.patch
 
       - name: Build
         env:
@@ -106,12 +106,20 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends git ca-certificates build-essential cmake ninja-build
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Clone llama.cpp
         run: |
           git clone "https://github.com/${{ needs.resolve.outputs.llama_cpp_repo }}" llama.cpp
           cd llama.cpp
           git checkout "${{ needs.resolve.outputs.llama_cpp_ref }}"
           echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - name: Apply patches
+        run: |
+          cd llama.cpp
+          git apply -v ../.github/workflows/patches/llama.cpp/*.patch
 
       - name: Build
         env:
