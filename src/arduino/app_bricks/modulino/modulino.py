@@ -567,3 +567,67 @@ class Modulino_Buzzer(Modulino):
             Bridge.call(f"{self.name}:noTone")
         except:
             raise ModulinoError(f"cannot stop tone on modulino {self.name}")
+
+class Modulino_Pixels(Modulino):
+    """Class to handle a Modulino Pixels (8 RGB LEDs)."""
+    def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
+        """Initialize the Modulino_Pixels with the given I2C address.
+
+        Args:
+            i2c_address (int, optional): The I2C address of the pixels modulino. Defaults it will autoscan for the address.
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
+        """
+        super().__init__("pixels", i2c_address, hub_port)
+
+    @override
+    def start(self) -> None:
+        """Start the pixels modulino."""
+        try:
+            Bridge.call(f"{self.name}:begin")
+        except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+
+    @override
+    def stop(self) -> None:
+        """Stop the pixels modulino."""
+        try:
+            Bridge.call("delete_modulino", self.name)
+        except:
+            raise ModulinoError(f"cannot delete modulino {self.name}")
+
+    def set(self, idx, r, g, b, brightness = 5) -> None:
+        """Set the color and brightness of one LED.
+
+        Args:
+            idx (int): The LED index, 0-7.
+            r (int): Red, 0-255.
+            g (int): Green, 0-255.
+            b (int): Blue, 0-255.
+            brightness (int, optional): Brightness in percent, 0-100. Defaults to 5.
+        """
+        try:
+            ok = Bridge.call(f"{self.name}:set", idx, r, g, b, brightness)
+        except:
+            raise ModulinoError(f"cannot set LED {idx} on modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot set LED {idx} on modulino {self.name}: invalid arguments")
+
+    def clear(self, idx) -> None:
+        """Turn off one LED.
+
+        Args:
+            idx (int): The LED index, 0-7.
+        """
+        try:
+            ok = Bridge.call(f"{self.name}:clear", idx)
+        except:
+            raise ModulinoError(f"cannot clear LED {idx} on modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot clear LED {idx} on modulino {self.name}: invalid index")
+
+    def clearAll(self) -> None:
+        """Turn off all the LEDs."""
+        try:
+            Bridge.call(f"{self.name}:clearAll")
+        except:
+            raise ModulinoError(f"cannot clear LEDs on modulino {self.name}")
