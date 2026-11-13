@@ -1,0 +1,298 @@
+# Decision Model Brick
+
+The Decision Model Brick asks a locally hosted decision model typed questions about a piece of text or a JSON document (the *state*): pick one option, grade on a scale, answer yes or no. Every answer comes back with calibrated probabilities in a single, fast inference step, with no text generation involved.
+
+## Overview
+
+A decision model (TypeSafe "System One" API, served by llama.cpp) is a classifier, not a chat model. You describe the state and the questions; the model answers all of them in one forward pass and returns, for every question, a probability distribution over the options you provided plus a confidence. There is no prompt engineering, no parsing of free text and no risk of a malformed reply: the answer is always one of your options.
+
+Three question types are supported:
+
+- **`Choice`**: pick one option among many (routing, classification, intent detection). Options are a list of names, a dict of name to description, or an `Enum` class.
+- **`Score`**: place the state on a scale of 2 to 10 described levels (urgency, severity, quality). The answer is the expected level plus the probability of every level.
+- **`Noul`**: a yes/no question (checks, filters, flags). The answer is the probability that the answer is yes.
+
+The decision models are downloaded in Arduino App Lab, and every board has a default one that suits it. The model can be changed in `app.yaml` under `arduino:decision_model`: a larger model is more accurate and takes longer to answer. A multimodal model also reads an image together with the state (see [Asking about a Camera Image](#asking-about-a-camera-image)); any other model reads the state alone. Every model answers up to 255 options per question.
+
+The answer time grows with the input tokens: the state is read once per question, so a long state with many questions costs more. Keep the state short and to the point, and use `decide()` to ask everything about a state in one request. The models read the whole state in one pass and refuse one longer than about 2000 tokens with a `DecisionModelError`.
+
+## Features
+
+- **Typed answers**: `Choice`, `Score` and `Noul` questions return `ChoiceAnswer`, `ScoreAnswer` and `NoulAnswer` data classes, with the probabilities of every option; `decide()` returns them in an `Answers` dict with typed accessors.
+- **One request, many questions**: `decide()` answers any number of questions about the same state in a single call.
+- **Text or JSON state**: pass free text, or a dict/list such as a support ticket. Write numeric readings (temperatures, humidity, speeds) in a sentence with their units: the model reads numbers in a sentence much better than in a JSON object.
+- **Local and private**: the model runs on the board inside the `arduino:llamacpp` service, like the Large Language Model Brick.
+- **Shortcuts**: `choose()`, `score()` and `check()` ask a single question and return its typed answer directly.
+
+## Code Example and Usage
+
+### Routing a Customer Message
+
+This example asks three questions about the same message in one request: which department should handle it, how urgent it is and whether the customer is angry. Models must be downloaded and available locally.
+
+```python
+from arduino.app_bricks.decision_model import Choice, DecisionModel, Noul, Score
+from arduino.app_utils import App
+
+decision_model = DecisionModel()
+
+MESSAGE = "Hi, I was charged twice for my last order and nobody answers the phone. Please fix this today!"
+
+
+def route_message():
+    answers = decision_model.decide(
+        state=MESSAGE,
+        questions={
+            "department": Choice(
+                instructions="Which department should handle this customer message?",
+                options={
+                    "billing": "Payments, invoices, refunds and double charges",
+                    "shipping": "Delivery status, lost or damaged parcels",
+                    "technical": "Product not working, setup and firmware problems",
+                },
+            ),
+            "urgency": Score(
+                instructions="How urgent is this message?",
+                levels=["Can wait a week", "Should be handled in a few days", "Needs an answer today"],
+            ),
+            "angry": Noul(instructions="Is the customer angry?"),
+        },
+    )
+
+    department = answers.choice("department")
+    urgency = answers.score("urgency")
+    angry = answers.noul("angry")
+    print(f"Department: {department.choice} (confidence {department.confidence:.2f})")
+    print(f"Urgency: {urgency.level} (score {urgency.score:.1f} of {len(urgency.legend) - 1})")
+    print(f"Angry customer: {angry.is_true} (probability {angry.probability:.2f})")
+    raise StopIteration
+
+
+App.run(route_message)
+```
+
+### Classifying a JSON State with an Enum
+
+The state can be a dict (or a list) instead of text, and the options can be an `Enum` class: the member values are the options and the chosen value converts back to the enum member.
+
+```python
+from enum import Enum
+
+from arduino.app_bricks.decision_model import DecisionModel
+from arduino.app_utils import App
+
+
+class Team(Enum):
+    HARDWARE = "hardware"
+    FIRMWARE = "firmware"
+    CLOUD = "cloud"
+
+
+decision_model = DecisionModel()
+
+TICKET = {
+    "title": "Board not detected after update",
+    "body": "Since the 2.1 update the board shows up for a second and then disappears from the USB devices.",
+    "product": "UNO Q",
+}
+
+
+def triage_ticket():
+    answer = decision_model.choose(
+        state=TICKET,
+        instructions="Which team should investigate this ticket?",
+        options=Team,
+    )
+    team = Team(answer.choice)
+    print(f"Assigned to {team.name} with probability {answer.probabilities[answer.choice]:.2f}")
+    for option, probability in answer.probabilities.items():
+        print(f"  {option}: {probability:.2f}")
+    raise StopIteration
+
+
+App.run(triage_ticket)
+```
+
+### Grading Sensor Readings
+
+`score()` places the state on a scale of levels you describe, lowest first, and `level` is the description of the most probable one, ready to print. Write the limits in the levels: the model compares a reading with a limit very reliably, but does not judge reliably by itself how hot is too hot. The readings are written in a sentence with their units, which the model reads much better than the same numbers in a JSON object.
+
+```python
+from arduino.app_bricks.decision_model import DecisionModel
+from arduino.app_utils import App
+
+decision_model = DecisionModel()
+
+# The readings described in a sentence, with their units
+READINGS = "Server closet: temperature 45.3 °C, humidity 71 %, cooling fan speed 0 rpm, door closed."
+
+# The levels with their limits, lowest first
+LEVELS = [
+    "Normal: below 30 °C and the cooling fan is running",
+    "Warning: between 30 °C and 40 °C, or the cooling fan is stopped",
+    "Critical: above 40 °C",
+]
+
+
+def assess_readings():
+    condition = decision_model.score(state=READINGS, instructions="How safe is this room for the equipment?", levels=LEVELS)
+    print(condition.level)
+    if condition.level == LEVELS[-1]:
+        print("The equipment may overheat: check the cooling now")
+    raise StopIteration
+
+
+App.run(assess_readings)
+```
+
+### Thermostat: Acting on What a Person Says
+
+In this example the decision does not come from the readings alone. A person tells the app how they feel, in their own words and in any language ("It's too hot in here", "Can you make it a bit warmer?", "Ho freddo"), and `score()` reads that sentence together with the sensor readings to grade how the person feels. The app then moves the thermostat target by the number of degrees attached to that level. Each level says which requests it covers, so the model does not have to guess what "fine" means.
+
+```python
+from arduino.app_bricks.decision_model import DecisionModel
+from arduino.app_utils import App
+
+decision_model = DecisionModel()
+
+# How the person feels, coldest first, and how many °C to move the thermostat target for it
+FEELINGS = {
+    "Much too cold": 2,
+    "A bit too cold, or wants it a bit warmer": 1,
+    "Fine, or only bothered by humid air": 0,
+    "A bit too warm, or wants it a bit cooler": -1,
+    "Much too hot": -2,
+}
+
+
+def new_thermostat_target(request: str, temperature: float, humidity: float, target: float) -> float:
+    state = (
+        f"Living room: temperature {temperature:.1f} °C, relative humidity {humidity:.0f} %, thermostat set to {target:.1f} °C."
+        f' A person in the room says: "{request}"'
+    )
+    feeling = decision_model.score(
+        state=state,
+        instructions="How does the person feel about the temperature, or how do they want it to change?",
+        levels=list(FEELINGS),
+    )
+    print(f"The person feels: {feeling.level}")
+    return target + FEELINGS[feeling.level]
+
+
+def on_request():
+    # In a real app the request comes from a chat, a web page or speech-to-text, and the readings from the sensor
+    target = new_thermostat_target("It's too hot in here", temperature=27.0, humidity=45, target=24.0)
+    print(f"New thermostat target: {target:.1f} °C")
+    raise StopIteration
+
+
+App.run(on_request)
+```
+
+### Air Conditioner: Choosing the Mode and the Target
+
+This example extends the thermostat one to an air conditioner that can cool, heat or dry the air. One `decide()` call asks two questions about the same sentence: what the person is asking for, which picks the mode (a person who complains about sticky air gets the dehumidifier, not a colder room), and how they feel, which moves the target temperature. As in the thermostat example, each option says which requests it answers. Choosing the mode asks more of the model than grading the feeling: run this example on the VENTUNO Q with its default model. On the UNO Q the default model picks the mode less reliably, so use the thermostat example there.
+
+```python
+from arduino.app_bricks.decision_model import Choice, DecisionModel, Score
+from arduino.app_utils import App
+
+decision_model = DecisionModel()
+
+# The modes of the air conditioner, each with the requests it answers
+MODES = {
+    "cooling": "A cooler room: the person says it is too hot or too warm",
+    "heating": "A warmer room: the person says it is too cold or chilly",
+    "dehumidifying": "Drier air: the person says the air is humid, muggy, sticky or damp",
+    "unchanged": "Nothing: the person says the room is fine",
+}
+
+# How the person feels, coldest first, and how many °C to move the target temperature for it
+FEELINGS = {
+    "Much too cold": 2,
+    "A bit too cold, or wants it a bit warmer": 1,
+    "Fine, or only bothered by humid air": 0,
+    "A bit too warm, or wants it a bit cooler": -1,
+    "Much too hot": -2,
+}
+
+
+def control_air_conditioner(request: str, temperature: float, humidity: float, mode: str, target: float) -> tuple[str, float]:
+    state = (
+        f"Living room: temperature {temperature:.1f} °C, relative humidity {humidity:.0f} %."
+        f" Air conditioner: {mode}, target {target:.1f} °C."
+        f' A person in the room says: "{request}"'
+    )
+    answers = decision_model.decide(
+        state=state,
+        questions={
+            "mode": Choice(instructions="What is the person asking for?", options=MODES),
+            "feeling": Score(
+                instructions="How does the person feel about the temperature, or how do they want it to change?",
+                levels=list(FEELINGS),
+            ),
+        },
+    )
+    new_mode = answers.choice("mode").choice
+    if new_mode == "unchanged":
+        new_mode = mode
+    return new_mode, target + FEELINGS[answers.score("feeling").level]
+
+
+def on_request():
+    # In a real app the request comes from a chat, a web page or speech-to-text, and the readings from the sensor
+    mode, target = control_air_conditioner("It's so muggy, I'm all sticky", temperature=25.0, humidity=80, mode="off", target=24.0)
+    print(f"Air conditioner: {mode}, target {target:.1f} °C")
+    raise StopIteration
+
+
+App.run(on_request)
+```
+
+### Asking about a Camera Image
+
+With a multimodal model every method also takes an `image`: a frame from `Camera.capture()` (a numpy array in BGR order), the bytes of a JPEG or PNG file, or the path to one. The questions see the image together with the state, which says what the image is. One image per request; an image above one megapixel is downscaled to one megapixel (keeping its aspect ratio) before it is sent, so that the state, the question and its options still fit the batch the model reads in one pass. A model that is not multimodal answers a request with an `image` with a `DecisionModelError`: send the request without it, or pick a multimodal model. On the UNO Q no model reads images yet.
+
+```python
+import time
+
+from arduino.app_bricks.decision_model import Choice, DecisionModel, Noul
+from arduino.app_peripherals.camera import Camera
+from arduino.app_utils import App
+
+decision_model = DecisionModel()
+camera = Camera()
+camera.start()
+
+
+def watch_garage():
+    frame = camera.capture()
+    if frame is None:
+        return
+    answers = decision_model.decide(
+        state="A frame of the camera pointed at the garage door",
+        questions={
+            "door": Choice(instructions="Is the garage door open?", options=["open", "half open", "closed"]),
+            "car": Noul(instructions="Is a car parked inside?"),
+        },
+        image=frame,
+    )
+    print(f"Door: {answers.choice('door').choice}, car parked: {answers.noul('car').is_true}")
+    time.sleep(10)
+
+
+App.run(watch_garage)
+```
+
+## Methods
+
+- **`decide(state, questions, image=None)`**: Answers several questions about `state` (and `image`, when given) in one request. `questions` maps an id of your choice to a `Choice`, `Score` or `Noul`; the result is an `Answers` dict mapping the same ids to a `ChoiceAnswer`, `ScoreAnswer` or `NoulAnswer`, with the typed accessors `answers.choice(id)`, `answers.score(id)` and `answers.noul(id)`.
+- **`choose(state, instructions, options, image=None)`**: Asks a single multiple-choice question and returns a `ChoiceAnswer` (`choice`, `probabilities`, `confidence`). `options` is a list of names, a dict of name to description (or `None`), or an `Enum` class.
+- **`score(state, instructions, levels, image=None)`**: Asks a single graded question and returns a `ScoreAnswer` (`score`, `legend`, `probabilities`, `confidence`, and the `level` property with the most probable level description). `levels` lists 2 to 10 level descriptions, lowest first.
+- **`check(state, instructions, true_description=None, false_description=None, image=None)`**: Asks a single yes/no question and returns a `NoulAnswer` (`probability` of yes, and the `is_true` property). The two descriptions are optional but must be given together.
+- **`list_models()`**: Returns the model identifiers available on the local inference service (without the `llamacpp:` prefix).
+- **`start()`**: Loads the model with a warm-up request so that the first real decision is fast. Called automatically by `App.run()`.
+
+All methods raise a `DecisionModelError` (with a hint on how to fix the problem) when the runner cannot be reached, the model is not downloaded or the request is rejected, and `TypeError`/`ValueError` for invalid questions (for example a `Score` with a single level or a `Choice` without options) or an image that cannot be decoded (`FileNotFoundError` for an image path that does not exist).
+
+On the UNO Q the llama.cpp runner serves one model at a time (`LLAMA_ARG_MODELS_MAX=1`): an app that alternates `DecisionModel` and `LargeLanguageModel` requests reloads a model at every switch, so keep the two kinds of requests grouped when latency matters.
