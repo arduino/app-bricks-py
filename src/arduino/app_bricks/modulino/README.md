@@ -72,3 +72,21 @@ distance.setThresholdCallback(150, on_proximity)   # stop below 15 cm, restart a
 The sensor measures every 20 ms. By default a new state is notified after the next measure confirms it. Use `setDebounce(ms)` to require a longer stable time. `removeThresholdCallback()` stops the notifications.
 
 The notification goes from the board through the Linux side to your app, so it can arrive late or not at all if the app is busy or stuck. Don't use it as a safety-rated emergency stop.
+
+## Modulino Pixels
+
+`Modulino_Pixels` drives 8 RGB LEDs (index 0-7). `set(idx, r, g, b, brightness=5)` sets the color (0-255 per channel) and the brightness (0-100 %) of one LED, `clear(idx)` turns one off and `clearAll()` turns all of them off. Each call updates the LEDs right away.
+
+```python
+from arduino.app_bricks.modulino import Modulino_Pixels
+
+pixels = Modulino_Pixels()   # autoscan for the address
+pixels.start()
+
+pixels.set(0, 255, 0, 0, 20)   # LED 0 red at 20 %
+pixels.set(7, 0, 0, 255)       # LED 7 blue at the default 5 %
+
+pixels.clearAll()              # all LEDs off
+```
+
+Out-of-range values raise `ModulinoError`.
