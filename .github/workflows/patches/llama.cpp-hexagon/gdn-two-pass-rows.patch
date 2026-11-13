@@ -1,0 +1,143 @@
+From ac04b9f902ebedf9e78e7b4170cfb5e5c130ec9e Mon Sep 17 00:00:00 2001
+From: Marco Colombo <ing.marco.colombo@gmail.com>
+Date: Thu, 12 Nov 2026 10:20:05 +0100
+Subject: [PATCH] ggml-cpu: do the gated delta rule in two passes per state row
+
+Assisted-by: Claude Fable 5.2
+---
+ ggml/src/ggml-cpu/ops.cpp | 99 +++++++++++++++++++++++++++++----------
+ 1 file changed, 74 insertions(+), 25 deletions(-)
+
+diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
+index adc92dd2c..06da9692e 100644
+--- a/ggml/src/ggml-cpu/ops.cpp
++++ b/ggml/src/ggml-cpu/ops.cpp
+@@ -11027,6 +11027,70 @@ void ggml_compute_forward_solve_tri(const struct ggml_compute_params * params, s
+ }
+ 
+ // ggml_compute_forward_gated_delta_net
++// One gated delta rule step on row j of the transposed state M (row j of M is column j of S), dst may be src:
++//   dst = src * exp(g); dst += k * (v - dot(dst, k)) * beta; return dot(dst, q)
++// The SIMD path does the four steps in two passes over the row and keeps the accumulation order of
++// ggml_vec_scale_f32, ggml_vec_dot_f32 and ggml_vec_mad_f32, so the result does not change.
++static float ggml_gated_delta_row_f32(const int n, float * dst, const float * src, const float * k, const float * q,
++        const float * eg, const float eg1, const float v, const float beta) {
++#if defined(GGML_SIMD) && !defined(__ARM_FEATURE_SVE) && !defined(__riscv_v)
++    const int np = n & ~(GGML_F32_STEP - 1);
++    const GGML_F32_VEC veg1 = GGML_F32_VEC_SET1(eg1);
++
++    // pass 1: sum = dot(src * exp(g), k)
++    GGML_F32_VEC acc1[GGML_F32_ARR] = { GGML_F32_VEC_ZERO };
++    for (int i = 0; i < np; i += GGML_F32_STEP) {
++        for (int a = 0; a < GGML_F32_ARR; ++a) {
++            const int ia = i + a*GGML_F32_EPR;
++            const GGML_F32_VEC x = GGML_F32_VEC_MUL(GGML_F32_VEC_LOAD(src + ia), eg ? GGML_F32_VEC_LOAD(eg + ia) : veg1);
++            acc1[a] = GGML_F32_VEC_FMA(acc1[a], x, GGML_F32_VEC_LOAD(k + ia));
++        }
++    }
++    float sum;
++    GGML_F32_VEC_REDUCE(sum, acc1);
++    for (int i = np; i < n; ++i) {
++        sum += (src[i] * (eg ? eg[i] : eg1)) * k[i];
++    }
++
++    // pass 2: dst = src * exp(g) + k * d, out = dot(dst, q)
++    const float d = (v - sum) * beta;
++    const GGML_F32_VEC vd = GGML_F32_VEC_SET1(d);
++    GGML_F32_VEC acc2[GGML_F32_ARR] = { GGML_F32_VEC_ZERO };
++    for (int i = 0; i < np; i += GGML_F32_STEP) {
++        for (int a = 0; a < GGML_F32_ARR; ++a) {
++            const int ia = i + a*GGML_F32_EPR;
++            GGML_F32_VEC x = GGML_F32_VEC_MUL(GGML_F32_VEC_LOAD(src + ia), eg ? GGML_F32_VEC_LOAD(eg + ia) : veg1);
++            x = GGML_F32_VEC_FMA(x, GGML_F32_VEC_LOAD(k + ia), vd);
++            GGML_F32_VEC_STORE(dst + ia, x);
++            acc2[a] = GGML_F32_VEC_FMA(acc2[a], x, GGML_F32_VEC_LOAD(q + ia));
++        }
++    }
++    float out;
++    GGML_F32_VEC_REDUCE(out, acc2);
++    for (int i = np; i < n; ++i) {
++        const float x = src[i] * (eg ? eg[i] : eg1) + k[i] * d;
++        dst[i] = x;
++        out += x * q[i];
++    }
++    return out;
++#else
++    if (dst != src) {
++        memcpy(dst, src, n * sizeof(float));
++    }
++    if (eg) {
++        ggml_vec_mul_f32(n, dst, dst, eg);
++    } else {
++        ggml_vec_scale_f32(n, dst, eg1);
++    }
++    float sum = 0.0f;
++    ggml_vec_dot_f32(n, &sum, 0, dst, 0, k, 0, 1);
++    ggml_vec_mad_f32(n, dst, k, (v - sum) * beta);
++    float out = 0.0f;
++    ggml_vec_dot_f32(n, &out, 0, dst, 0, q, 0, 1);
++    return out;
++#endif
++}
++
+ static void ggml_compute_forward_gated_delta_net_one_chunk(
+     const ggml_compute_params * params,
+     ggml_tensor * dst,
+@@ -11115,10 +11179,12 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+             ? state_work
+             : state_out_base + (iv3 * H + iv1) * S_v * S_v;
+ 
+-        // copy input state into the working buffer and operate in-place
++        // the first token reads the input state, the next ones update the working buffer in place
+         // state layout [S_v, S_v, H, n_seqs]: seq iv3 starts at iv3 * state_seq_stride.
+         const float * s_in = state_in_base + iv3 * state_seq_stride + iv1 * S_v * S_v;
+-        memcpy(s_out, s_in, S_v * S_v * sizeof(float));
++        if (n_tokens == 0) {
++            memcpy(s_out, s_in, S_v * S_v * sizeof(float));
++        }
+ 
+         // attn output pointer for first token of this (head, seq)
+         float * attn_data = attn_out_base + (iv3 * n_tokens * H + iv1) * S_v;
+@@ -11134,36 +11200,19 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+             // state is stored transposed: s_out[j*S_v + i] = S[i][j]
+             // so row j of s_out = column j of S (contiguous access)
+ 
++            // exp(g): one value, or one per element of S[i][:] (kda) kept in the delta scratch
++            const float eg1 = kda ? 0.0f : expf(g_d[0]);
+             if (kda) {
+-                // precompute exp(g) into delta scratch (reused below)
+                 for (int64_t i = 0; i < S_v; ++i) {
+                     delta[i] = expf(g_d[i]);
+                 }
+-                // S[i][:] *= exp(g[i]) => for each row j of M: M[j][i] *= exp(g[i])
+-                for (int64_t j = 0; j < S_v; ++j) {
+-                    ggml_vec_mul_f32(S_v, &s_out[j * S_v], &s_out[j * S_v], delta);
+-                }
+-            } else {
+-                ggml_vec_scale_f32(S_v * S_v, s_out, expf(g_d[0]));
+-            }
+-
+-            // delta[j] = sum_i S[i][j] * k[i] = dot(row j of M, k)
+-            for (int64_t j = 0; j < S_v; ++j) {
+-                float sum = 0.0f;
+-                ggml_vec_dot_f32(S_v, &sum, 0, &s_out[j * S_v], 0, k_d, 0, 1);
+-                delta[j] = (v_d[j] - sum) * beta_val;
+             }
+ 
+-            // outer product: S[i][j] += k[i] * delta[j] => M[j][i] += delta[j] * k[i]
++            // each row of s_out only depends on itself, k, q and v[j]
++            const float * s_src = t == 0 ? s_in : s_out;
+             for (int64_t j = 0; j < S_v; ++j) {
+-                ggml_vec_mad_f32(S_v, &s_out[j * S_v], k_d, delta[j]);
+-            }
+-
+-            // attn_out[j] = sum_i S[i][j] * q[i] = dot(row j of M, q)
+-            for (int64_t j = 0; j < S_v; ++j) {
+-                float sum = 0.0f;
+-                ggml_vec_dot_f32(S_v, &sum, 0, &s_out[j * S_v], 0, q_d, 0, 1);
+-                attn_data[j] = sum * scale;
++                attn_data[j] = ggml_gated_delta_row_f32(S_v, &s_out[j * S_v], &s_src[j * S_v], k_d, q_d,
++                        kda ? delta : nullptr, eg1, v_d[j], beta_val) * scale;
+             }
+ 
+             attn_data += S_v * H; // advance to next token
