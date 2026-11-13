@@ -24,9 +24,11 @@ REQUIREMENTS_FILE="$BASE_DIR/python/requirements.txt"
 PYTHON_LIBS_DIR="$BASE_DIR/python-libraries"
 INSTALLED_REQUIREMENTS_FILE="$CACHE_DIR/installed_requirements.txt"
 # Bricks installed from the bricks registry. arduino-app-cli mounts the Python
-# module of each one at <this folder>/<mount>/<brick_name>, where <mount> is a
-# name of its choice: adding <this folder>/<mount> to PYTHONPATH lets the app
-# write `from <brick_name> import ...`, as for the bricks in /app/bricks.
+# module of each one at:
+#   /opt/third-party-bricks/<random_string>/<brick_name>
+# <random_string> is a random folder name arduino-app-cli generates, one per
+# brick. Adding /opt/third-party-bricks/<random_string> to PYTHONPATH lets the
+# app write `from <brick_name> import ...`, as for the bricks in /app/bricks.
 THIRD_PARTY_BRICKS_DIR="/opt/third-party-bricks"
 
 # Set when a dependency install fails: only `prepare` acts on it, starting the
@@ -172,9 +174,9 @@ if [ -d "$BASE_DIR/bricks" ]; then
 fi
 
 # Install the requirements of the bricks installed from the registry, after the
-# ones of the app and of its custom bricks. The cache folder is named after the
-# brick, not after the folder arduino-app-cli mounts it in: that name may change
-# from a start to the next.
+# ones of the app and of its custom bricks. The cache folder is named after
+# <brick_name>, not after <random_string>: the random name may change from a
+# start to the next.
 if [ -d "$THIRD_PARTY_BRICKS_DIR" ]; then
   BRICK_DEPS_INSTALLED=0
   for brick_dir in "$THIRD_PARTY_BRICKS_DIR"/*/*; do
@@ -209,7 +211,7 @@ if [ -d "$BASE_DIR/bricks" ]; then
 fi
 
 # Load the bricks installed from the registry, after the custom ones: every
-# folder arduino-app-cli mounted holds the module of one brick.
+# /opt/third-party-bricks/<random_string> folder holds the module of one brick.
 if [ -d "$THIRD_PARTY_BRICKS_DIR" ]; then
     for mount_dir in "$THIRD_PARTY_BRICKS_DIR"/*; do
         if [ -d "$mount_dir" ]; then

@@ -93,7 +93,7 @@ def _python_path(tmp_path: Path) -> list[str]:
 
 
 def _third_party_brick(tmp_path: Path, mount: str, name: str, requirements: str | None = None) -> Path:
-    """A brick as arduino-app-cli mounts it: <third-party dir>/<mount>/<brick name>/, the folder of the Python module."""
+    """A brick as arduino-app-cli mounts it: /opt/third-party-bricks/<random_string>/<brick_name>/; `mount` is the random string."""
     brick = _third_party_dir(tmp_path) / mount / name
     brick.mkdir(parents=True)
     (brick / "__init__.py").write_text(f"NAME = '{name}'\n")
@@ -231,7 +231,7 @@ def test_third_party_brick_requirements_are_installed_once_whatever_the_mount_fo
     _run(app, tmp_path)
     recorded = app / ".cache" / "third-party-bricks" / "camera" / "installed_requirements.txt"
     assert recorded.read_text() == "paho-mqtt==2.2.0\n"
-    # arduino-app-cli may mount the same brick under another folder name at the next start
+    # arduino-app-cli may mount the same brick under another random string at the next start
     brick.parent.rename(brick.parent.with_name("z9y8x7"))
     calls = _run(app, tmp_path)
     assert not any(c.startswith("uv pip install") for c in calls), calls
