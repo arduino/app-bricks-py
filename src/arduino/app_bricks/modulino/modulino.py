@@ -420,6 +420,104 @@ class Modulino_Knob(Modulino):
         except:
             raise ModulinoError(f"cannot set start position for modulino {self.name}")
 
+class Modulino_Distance(Modulino):
+    """Class to handle a Modulino Distance (time-of-flight sensor, I2C address 0x29)."""
+    FAR = 0
+    """Proximity state: nothing closer than the threshold."""
+    NEAR = 1
+    """Proximity state: an object is closer than the threshold."""
+
+    I2C_ADDRESS = 0x29
+
+    def __init__(self, hub_port = None) -> None:
+        """Initialize the Modulino_Distance.
+
+        Args:
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
+        """
+        super().__init__("distance", self.I2C_ADDRESS, hub_port)
+
+    @override
+    def start(self) -> None:
+        """Start the Modulino_Distance."""
+        try:
+            ok = Bridge.call(f"{self.name}:begin")
+        except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+
+    @override
+    def stop(self) -> None:
+        """Stop the Modulino_Distance."""
+        try:
+            Bridge.call("delete_modulino", self.name)
+        except:
+            raise ModulinoError(f"cannot delete modulino {self.name}")
+
+    def getDistance(self) -> float:
+        """Get the last measured distance.
+
+        Returns:
+            float: The distance in millimeters, NaN if the measure is not valid (e.g. nothing in range).
+        """
+        try:
+            return Bridge.call(f"{self.name}:getDistance")
+        except:
+            raise ModulinoError(f"cannot get distance from modulino {self.name}")
+
+    def setThresholdCallback(self, threshold_mm, callback, hysteresis_mm = 20) -> None:
+        """Call a callback when an object enters or leaves the zone closer than a threshold.
+
+        The state becomes `NEAR` when the distance goes below `threshold_mm` and goes back
+        to `FAR` only when it rises above `threshold_mm + hysteresis_mm`, so an object standing
+        on the threshold does not flood the callback. The callback is called only on state changes.
+        An invalid measure (e.g. nothing in range) counts as `FAR`.
+
+        This runs through the Linux side and is not a safety-rated emergency stop.
+
+        Args:
+            threshold_mm (int): The threshold distance in millimeters.
+            callback (Callable[[int, int], None]): Called with the new state (`NEAR` or `FAR`)
+              and the distance in millimeters (-1 if not valid):
+                  def callback(state: int, distance_mm: int) -> None:
+            hysteresis_mm (int, optional): The hysteresis in millimeters. Defaults to 20.
+        """
+        if not isinstance(threshold_mm, int) or not isinstance(hysteresis_mm, int) or threshold_mm <= 0 or hysteresis_mm < 0:
+            raise ModulinoError("threshold_mm must be a positive integer and hysteresis_mm a non-negative integer")
+        try:
+            ok = Bridge.call(f"{self.name}:setThreshold", threshold_mm, hysteresis_mm)
+        except:
+            raise ModulinoError(f"cannot set threshold for modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot set threshold for modulino {self.name}")
+        try:
+            # The MCU notifies 3 integers, the third is unused
+            Bridge.provide(f"{self.name}_callback", lambda state, distance, _unused: callback(state, distance))
+            Bridge.notify("poll_subscribe", self.name, 20)   # the sensor measures every 20 ms
+        except:
+            raise ModulinoError(f"cannot set callback for modulino {self.name}")
+
+    def removeThresholdCallback(self) -> None:
+        """Remove the threshold callback."""
+        try:
+            Bridge.notify("poll_unsubscribe", self.name)
+        except:
+            raise ModulinoError(f"cannot remove callback for modulino {self.name}")
+
+    def setDebounce(self, ms) -> None:
+        """Set how long a new state must be stable before the callback is called.
+
+        Defaults to 0: a state change is confirmed by the next measure (about 20 ms).
+
+        Args:
+            ms (int): Debounce time in milliseconds.
+        """
+        try:
+            Bridge.call(f"{self.name}:setDebounce", ms)
+        except:
+            raise ModulinoError(f"cannot set debounce for modulino {self.name}")
+
 class Modulino_Buzzer(Modulino):
     """Class to handle a Modulino Buzzer."""
     def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
