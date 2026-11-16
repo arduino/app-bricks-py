@@ -27,7 +27,8 @@ logger = Logger("DecisionModel")
 LIST_MODELS_MAX_ATTEMPTS = 10
 LIST_MODELS_RETRY_DELAY_S = 1.0
 LIST_MODELS_TIMEOUT_S = 10.0
-DEFAULT_TIMEOUT_S = 60.0
+# Multimodal requests on UNO Q can take a few minutes to answer.
+DEFAULT_TIMEOUT_S = 300.0
 # The first request loads the model into memory, which takes much longer than answering.
 WARMUP_TIMEOUT_S = 300.0
 RUNNER_HOST = "llamacpp-models-runner"
@@ -650,7 +651,7 @@ class DecisionModel:
                 If not provided, the model is read from the app configuration (app.yaml), falling back
                 to the brick default for the board.
             timeout (float | None): The maximum duration in seconds to wait for an answer. None waits forever.
-                Defaults to 60 seconds.
+                Defaults to 300 seconds.
 
         Raises:
             DecisionModelError: If the runner address cannot be resolved, no model is configured, or the configured

@@ -340,6 +340,16 @@ def test_decide_forwards_the_configured_timeout(runner):
     assert runner.posts[0]["timeout"] is None
 
 
+def test_default_timeout_waits_minutes_for_multimodal_answers(runner):
+    brick = DecisionModel(model=MODEL_ID)
+    App.unregister(brick)
+    runner.responses = [answers_response(q=NOUL_RAW)]
+
+    brick.decide("x", {"q": Noul("Hot?")})
+
+    assert runner.posts[0]["timeout"] == 300.0
+
+
 @pytest.mark.parametrize("state, error", [("", ValueError), ({}, ValueError), (b"x", TypeError), (12, TypeError), (None, TypeError)])
 def test_decide_rejects_bad_state(brick, runner, state, error):
     with pytest.raises(error):
