@@ -23,6 +23,13 @@ PYTHON_SCRIPT="$BASE_DIR/python/main.py"
 REQUIREMENTS_FILE="$BASE_DIR/python/requirements.txt"
 PYTHON_LIBS_DIR="$BASE_DIR/python-libraries"
 INSTALLED_REQUIREMENTS_FILE="$CACHE_DIR/installed_requirements.txt"
+# Bricks installed from the bricks registry. arduino-app-cli mounts the Python
+# module of each one at:
+#   /opt/third-party-bricks/<random_string>/<brick_name>
+# <random_string> is a random folder name arduino-app-cli generates, one per
+# brick. Adding /opt/third-party-bricks/<random_string> to PYTHONPATH lets the
+# app write `from <brick_name> import ...`, as for the bricks in /app/bricks.
+THIRD_PARTY_BRICKS_DIR="/opt/third-party-bricks"
 
 # Set when a dependency install fails: only `prepare` acts on it, starting the
 # app stays best-effort as before.
@@ -61,7 +68,8 @@ needs_venv() {
   [ -d "$CACHE_DIR/.venv" ] && return 0
   [ -d "$PYTHON_LIBS_DIR" ] && return 0
   has_requirements "$REQUIREMENTS_FILE" && return 0
-  for brick_requirements in "$BASE_DIR"/bricks/*/requirements.txt; do
+  for brick_requirements in "$BASE_DIR"/bricks/*/requirements.txt \
+    "$THIRD_PARTY_BRICKS_DIR"/*/*/requirements.txt; do
     has_requirements "$brick_requirements" && return 0
   done
   check_streamlit_ui
@@ -123,46 +131,64 @@ if [ -f "$REQUIREMENTS_FILE" ]; then
   uv cache clean
 fi
 
+# Install the requirements of a brick, unless the same file was installed already:
+# a copy of it is kept in the cache folder and compared at every start.
+install_brick_requirements() { # <brick dir> <cache dir>
+  brick_dir="$1"
+  brick_cache_dir="$2"
+  brick_name=$(basename "$brick_dir")
+  brick_requirements="${brick_dir}/requirements.txt"
+  brick_installed_requirements="$brick_cache_dir/installed_requirements.txt"
+
+  [ -f "$brick_requirements" ] || return 0
+  mkdir -p "$brick_cache_dir"
+
+  if [ -f "$brick_installed_requirements" ] && cmp -s "$brick_requirements" "$brick_installed_requirements"; then
+    echo "Brick requirements for '$brick_name' already installed."
+    return 0
+  fi
+
+  if [ "$(grep -c '[^[:space:]]' "$brick_requirements")" -ne 0 ]; then
+    echo "Installing requirements for brick: $brick_name"
+    BRICK_DEPS_INSTALLED=1
+    if uv pip install --compile-bytecode -r "$brick_requirements"; then
+      cp "$brick_requirements" "$brick_installed_requirements"
+    else
+      DEPS_FAILED=1
+    fi
+  else
+    cp "$brick_requirements" "$brick_installed_requirements"
+  fi
+}
+
 # Install custom brick requirements with caching
 if [ -d "$BASE_DIR/bricks" ]; then
-  for brick_dir in $BASE_DIR/bricks/*; do
+  for brick_dir in "$BASE_DIR"/bricks/*; do
     if [ -d "$brick_dir" ]; then
-      brick_name=$(basename "$brick_dir")
-      brick_requirements="${brick_dir}/requirements.txt"
-      brick_cache_dir="$CACHE_DIR/$brick_name"
-      brick_installed_requirements="$brick_cache_dir/installed_requirements.txt"
-      
-      if [ -f "$brick_requirements" ]; then
-        mkdir -p "$brick_cache_dir"
-        
-        INSTALL_BRICK_DEPS=1
-        BRICK_REQUIREMENTS_LINES="$(grep -c '[^[:space:]]' "$brick_requirements")"
-        
-        if [ -f "$brick_installed_requirements" ]; then
-          if cmp -s "$brick_requirements" "$brick_installed_requirements"; then
-            echo "Brick requirements for '$brick_name' already installed."
-            INSTALL_BRICK_DEPS=0
-          fi
-        fi
-        
-        if [ "$INSTALL_BRICK_DEPS" -gt 0 ]; then
-          if [ "$BRICK_REQUIREMENTS_LINES" -ne 0 ]; then
-            echo "Installing requirements for brick: $brick_name"
-            if uv pip install --compile-bytecode -r "$brick_requirements"; then
-              cp "$brick_requirements" "$brick_installed_requirements"
-            else
-              DEPS_FAILED=1
-            fi
-          else
-            cp "$brick_requirements" "$brick_installed_requirements"
-          fi
-        fi
-      fi
+      install_brick_requirements "$brick_dir" "$CACHE_DIR/$(basename "$brick_dir")"
     fi
   done
-  
+
   # clean up cache after all brick installs
   uv cache clean
+fi
+
+# Install the requirements of the bricks installed from the registry, after the
+# ones of the app and of its custom bricks. The cache folder is named after
+# <brick_name>, not after <random_string>: the random name may change from a
+# start to the next.
+if [ -d "$THIRD_PARTY_BRICKS_DIR" ]; then
+  BRICK_DEPS_INSTALLED=0
+  for brick_dir in "$THIRD_PARTY_BRICKS_DIR"/*/*; do
+    if [ -d "$brick_dir" ]; then
+      install_brick_requirements "$brick_dir" "$CACHE_DIR/third-party-bricks/$(basename "$brick_dir")"
+    fi
+  done
+
+  # clean up cache, only when something was installed
+  if [ "$BRICK_DEPS_INSTALLED" -ne 0 ]; then
+    uv cache clean
+  fi
 fi
 
 # Pre-provision ALSA wrapped devices. The image bakes the file at build time;
@@ -182,6 +208,16 @@ if [ -d "$BASE_DIR/bricks" ]; then
     else
         export PYTHONPATH="$PYTHONPATH:$BASE_DIR/bricks"
     fi
+fi
+
+# Load the bricks installed from the registry, after the custom ones: every
+# /opt/third-party-bricks/<random_string> folder holds the module of one brick.
+if [ -d "$THIRD_PARTY_BRICKS_DIR" ]; then
+    for mount_dir in "$THIRD_PARTY_BRICKS_DIR"/*; do
+        if [ -d "$mount_dir" ]; then
+            export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$mount_dir"
+        fi
+    done
 fi
 
 install_streamlit() {
