@@ -1,0 +1,14 @@
+diff --git a/ggml/src/ggml-hexagon/htp-repack.h b/ggml/src/ggml-hexagon/htp-repack.h
+index f3206bc87..a2d9cffa3 100644
+--- a/ggml/src/ggml-hexagon/htp-repack.h
++++ b/ggml/src/ggml-hexagon/htp-repack.h
+@@ -29,7 +29,8 @@ static inline bool htp_is_tiled_weight_tensor(const struct ggml_tensor * t) {
+         return false;
+     }
+     if (!ggml_is_quantized(t->type)) {
+-        return t->ne[1] > 1;
++        // fp tiles are whole 32-row groups: a few-row fp tensor (recurrent state) would be padded 4x
++        return (t->ne[1] % 32 == 0) && (t->ne[2] == 1);
+     }
+     return true;
+ }
