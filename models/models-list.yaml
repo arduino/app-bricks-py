@@ -2540,7 +2540,6 @@ models:
       d3-edge is a 0.6 billion parameter decision model (Decision 3.0 by vLLM Semantic Router, built on Qwen3.5) for the Decision Model brick.
       Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
       with a probability for every answer. It supports up to 255 options per question.
-    supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:decision_model"
         model_configuration:
