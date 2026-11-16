@@ -2521,12 +2521,12 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/753af7a406f0025e46bb3af5b982b3e3590e522c/vllm-d3-edge-Q8_0.gguf"
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/vllm-d3-edge-Q8_0.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-edge-GGUF"
         - unoq:
             variables:
-              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/753af7a406f0025e46bb3af5b982b3e3590e522c/vllm-d3-edge-Q8_0.gguf"
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/vllm-d3-edge-Q8_0.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-edge-GGUF"
     metadata:
@@ -2550,8 +2550,8 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/753af7a406f0025e46bb3af5b982b3e3590e522c/vllm-d3-edge-Q8_0.gguf"
-              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/753af7a406f0025e46bb3af5b982b3e3590e522c/mmproj-vllm-d3-edge-BF16.gguf"
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/vllm-d3-edge-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/mmproj-vllm-d3-edge-BF16.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-edge-GGUF"
     metadata:
@@ -2575,7 +2575,7 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/a1f9fa124e8d60ac02d1a2884b1dec5a3ec2fd21/vllm-d3-lite-Q8_0.gguf"
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/0d544132bc35075d6346013f56454ea6dc19e640/vllm-d3-lite-Q8_0.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-lite-GGUF"
     metadata:
@@ -2599,8 +2599,8 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/a1f9fa124e8d60ac02d1a2884b1dec5a3ec2fd21/vllm-d3-lite-Q8_0.gguf"
-              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/a1f9fa124e8d60ac02d1a2884b1dec5a3ec2fd21/mmproj-vllm-d3-lite-BF16.gguf"
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/0d544132bc35075d6346013f56454ea6dc19e640/vllm-d3-lite-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/0d544132bc35075d6346013f56454ea6dc19e640/mmproj-vllm-d3-lite-BF16.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-lite-GGUF"
     metadata:
@@ -2624,7 +2624,7 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/ggml-org/vllm-d3-nano-GGUF/blob/50dea2057df10c4b393559a155ab3bf0bc7532c6/vllm-d3-nano-Q8_0.gguf"
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-nano-GGUF/blob/f2256dfaff5b8337e8bf67ca064aeef18ee14a79/vllm-d3-nano-Q8_0.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-nano-GGUF"
     metadata:
@@ -2648,8 +2648,8 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/ggml-org/vllm-d3-nano-GGUF/blob/50dea2057df10c4b393559a155ab3bf0bc7532c6/vllm-d3-nano-Q8_0.gguf"
-              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-nano-GGUF/blob/50dea2057df10c4b393559a155ab3bf0bc7532c6/mmproj-vllm-d3-nano-Q8_0.gguf"
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-nano-GGUF/blob/f2256dfaff5b8337e8bf67ca064aeef18ee14a79/vllm-d3-nano-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-nano-GGUF/blob/f2256dfaff5b8337e8bf67ca064aeef18ee14a79/mmproj-vllm-d3-nano-Q8_0.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-nano-GGUF"
     metadata:
