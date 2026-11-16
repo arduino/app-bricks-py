@@ -23,6 +23,7 @@ from arduino.app_bricks.decision_model import (
     ChoiceAnswer,
     DecisionModel,
     DecisionModelError,
+    ImageNotSupportedError,
     Noul,
     NoulAnswer,
     Score,
@@ -33,6 +34,7 @@ from arduino.app_utils import App
 MODULE = "arduino.app_bricks.decision_model.decision_model"
 MODEL_ID = "llamacpp:vllm-d3-edge-Q8_0"
 MODEL_NAME = "vllm-d3-edge-Q8_0"
+MULTIMODAL_MODEL_ID = "llamacpp:vllm-d3-edge-Q8_0-multimodal"
 BASE_URL = "http://127.0.0.1:9999"
 REPO_ROOT = Path(__file__).resolve().parents[4]
 BRICK_DIR = REPO_ROOT / "src" / "arduino" / "app_bricks" / "decision_model"
@@ -127,6 +129,14 @@ def runner(monkeypatch, sleeps):
 @pytest.fixture
 def brick(runner):
     instance = DecisionModel(model=MODEL_ID)
+    App.unregister(instance)
+    return instance
+
+
+@pytest.fixture
+def multimodal_brick(runner):
+    runner.get_outcomes = [FakeResponse(json_data={"data": [{"id": MULTIMODAL_MODEL_ID.removeprefix("llamacpp:")}]})]
+    instance = DecisionModel(model=MULTIMODAL_MODEL_ID)
     App.unregister(instance)
     return instance
 
@@ -826,21 +836,21 @@ def test_a_request_without_an_image_sends_no_images_field(brick, runner):
     assert "images" not in runner.posts[0]["json"]
 
 
-def test_a_frame_is_sent_as_one_jpeg_data_url_at_its_own_size(brick, runner):
+def test_a_frame_is_sent_as_one_jpeg_data_url_at_its_own_size(multimodal_brick, runner):
     runner.responses = [answers_response(q=NOUL_RAW)]
 
-    brick.decide("A frame of the garage camera", {"q": Noul("Is the door open?")}, image=_frame(640, 480))
+    multimodal_brick.decide("A frame of the garage camera", {"q": Noul("Is the door open?")}, image=_frame(640, 480))
 
     assert runner.posts[0]["json"]["state"] == "A frame of the garage camera"
     assert _sent_image(runner).shape[:2] == (480, 640)
 
 
-def test_an_image_above_one_megapixel_is_downscaled_keeping_its_aspect_ratio(brick, runner):
+def test_an_image_above_one_megapixel_is_downscaled_keeping_its_aspect_ratio(multimodal_brick, runner):
     """llama.cpp gives the image half of the 2048-token micro-batch (1024 tokens of 32x32 pixels): a 12 MP photo
     is brought under that before it leaves the brick, so the state and the options keep the other half."""
     runner.responses = [answers_response(q=NOUL_RAW)]
 
-    brick.decide("s", {"q": Noul("?")}, image=_frame(4000, 3000))
+    multimodal_brick.decide("s", {"q": Noul("?")}, image=_frame(4000, 3000))
 
     height, width = _sent_image(runner).shape[:2]
     assert height * width <= dm.MAX_IMAGE_PIXELS == 1024 * 1024
@@ -849,7 +859,7 @@ def test_an_image_above_one_megapixel_is_downscaled_keeping_its_aspect_ratio(bri
 
 
 @pytest.mark.parametrize("as_path", [False, True], ids=["bytes", "path"])
-def test_an_encoded_image_is_accepted_as_bytes_or_as_a_path(brick, runner, tmp_path, as_path):
+def test_an_encoded_image_is_accepted_as_bytes_or_as_a_path(multimodal_brick, runner, tmp_path, as_path):
     ok, png = cv2.imencode(".png", _frame(320, 200))
     assert ok
     image = tmp_path / "frame.png" if as_path else png.tobytes()
@@ -857,7 +867,7 @@ def test_an_encoded_image_is_accepted_as_bytes_or_as_a_path(brick, runner, tmp_p
         image.write_bytes(png.tobytes())
     runner.responses = [answers_response(q=NOUL_RAW)]
 
-    brick.decide("s", {"q": Noul("?")}, image=image)
+    multimodal_brick.decide("s", {"q": Noul("?")}, image=image)
 
     assert _sent_image(runner).shape[:2] == (200, 320)
 
@@ -866,26 +876,47 @@ def test_an_encoded_image_is_accepted_as_bytes_or_as_a_path(brick, runner, tmp_p
     ("image", "error"),
     [(b"not an image", ValueError), (np.zeros((0, 0, 3), np.uint8), ValueError), (42, TypeError), ("missing.png", FileNotFoundError)],
 )
-def test_a_bad_image_is_rejected_before_posting(brick, runner, image, error):
+def test_a_bad_image_is_rejected_before_posting(multimodal_brick, runner, image, error):
     with pytest.raises(error):
-        brick.decide("s", {"q": Noul("?")}, image=image)
+        multimodal_brick.decide("s", {"q": Noul("?")}, image=image)
     assert runner.posts == []
 
 
-def test_an_image_sent_to_a_model_without_vision_hints_at_a_multimodal_model(brick, runner):
-    """What llama.cpp answers when the model has no vision projector (a model that is not multimodal)."""
+@pytest.mark.parametrize("call", ["decide", "choose", "score", "check"])
+def test_an_image_for_a_model_that_is_not_multimodal_raises_before_posting(brick, runner, call):
+    """A model without the -multimodal suffix is served without its vision projector: the brick says so itself,
+    with the multimodal identifier to configure, instead of encoding the image for a runner that rejects it."""
+    frame = _frame(64, 64)
+    calls = {
+        "decide": lambda: brick.decide("s", {"q": Noul("?")}, image=frame),
+        "choose": lambda: brick.choose("s", "?", ["a", "b"], image=frame),
+        "score": lambda: brick.score("s", "?", ["low", "high"], image=frame),
+        "check": lambda: brick.check("s", "?", image=frame),
+    }
+
+    with pytest.raises(ImageNotSupportedError, match="not a multimodal model") as info:
+        calls[call]()
+
+    assert isinstance(info.value, DecisionModelError)
+    assert MULTIMODAL_MODEL_ID in info.value.hint
+    assert "app.yaml" in info.value.hint
+    assert runner.posts == []
+
+
+def test_an_image_the_runner_cannot_read_hints_at_a_multimodal_model(multimodal_brick, runner):
+    """What llama.cpp answers when the served model has no vision projector after all."""
     message = "This server does not support image input for decisions. For a model that supports it, start it with `--mmproj`"
     runner.responses = [FakeResponse(501, {"error": {"code": 501, "message": message, "type": "not_supported_error"}})]
 
     with pytest.raises(DecisionModelError, match="HTTP 501") as info:
-        brick.decide("s", {"q": Noul("?")}, image=_frame(64, 64))
+        multimodal_brick.decide("s", {"q": Noul("?")}, image=_frame(64, 64))
 
     assert MODEL_ID in info.value.hint
     assert "multimodal" in info.value.hint
     assert "is not a decision model" not in info.value.hint
 
 
-def test_the_shortcuts_send_the_image_with_their_question(brick, runner):
+def test_the_shortcuts_send_the_image_with_their_question(multimodal_brick, runner):
     frame = _frame(64, 48)
     runner.responses = [
         answers_response(answer={"choice": "open", "probabilities": {"open": 0.9, "closed": 0.1}, "confidence": 0.8}),
@@ -893,9 +924,9 @@ def test_the_shortcuts_send_the_image_with_their_question(brick, runner):
         answers_response(answer=NOUL_RAW),
     ]
 
-    brick.choose("garage", "Door?", ["open", "closed"], image=frame)
-    brick.score("garage", "How tidy?", ["low", "mid", "high"], image=frame)
-    brick.check("garage", "Is a car parked?", image=frame)
+    multimodal_brick.choose("garage", "Door?", ["open", "closed"], image=frame)
+    multimodal_brick.score("garage", "How tidy?", ["low", "mid", "high"], image=frame)
+    multimodal_brick.check("garage", "Is a car parked?", image=frame)
 
     assert len(runner.posts) == 3
     for post in runner.posts:

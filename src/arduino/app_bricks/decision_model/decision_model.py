@@ -43,6 +43,9 @@ MAX_SCORE_LEVELS = 10
 # the other half of the micro-batch stays free for the state, the question and its options.
 MAX_IMAGE_PIXELS = 1024 * 32 * 32
 JPEG_QUALITY = 90
+# The runner serves a catalog model installed with its vision projector under the model name plus this
+# suffix (e.g. vllm-d3-lite-Q8_0-multimodal), and the plain name without the projector: only the former reads images.
+MULTIMODAL_SUFFIX = "-multimodal"
 
 _CONFIGURE_MODEL_HINT = (
     "Configure a llama.cpp decision model such as llamacpp:vllm-d3-lite-Q8_0 in app.yaml under arduino:decision_model;"
@@ -59,6 +62,10 @@ type Json = None | bool | int | float | str | Sequence[Json] | Mapping[str, Json
 
 class DecisionModelError(AppError):
     """Raised when the decision model cannot be reached, is misconfigured or rejects a request."""
+
+
+class ImageNotSupportedError(DecisionModelError):
+    """Raised when a request carries an image and the configured model is not multimodal."""
 
 
 def _as_mapping(value: object) -> Mapping[object, object] | None:
@@ -721,8 +728,8 @@ class DecisionModel:
             image (np.ndarray | bytes | str | Path | None): An image every question also sees: a numpy array in
                 BGR channel order (as returned by `Camera.capture()`), the bytes of an encoded image file (e.g.
                 JPEG or PNG) or the path to one. An image above one megapixel is downscaled to one megapixel,
-                keeping its aspect ratio. Only a multimodal model (installed with its vision projector) reads
-                images. None (default) asks about the state alone.
+                keeping its aspect ratio. Only a multimodal model (e.g. "llamacpp:vllm-d3-lite-Q8_0-multimodal")
+                reads images. None (default) asks about the state alone.
 
         Returns:
             Answers: One answer per question id: a `ChoiceAnswer` for a `Choice`, a `ScoreAnswer` for a `Score`
@@ -732,8 +739,8 @@ class DecisionModel:
             TypeError: If `state`, `questions` or `image` have the wrong type.
             ValueError: If `state` or `questions` are empty, or `image` cannot be decoded.
             FileNotFoundError: If `image` is a path to a file that does not exist.
-            DecisionModelError: If the runner cannot be reached, rejects the request (for example an image sent to a
-                model that does not read images) or returns an unexpected answer.
+            ImageNotSupportedError: If `image` is given and the model is not multimodal; nothing is sent.
+            DecisionModelError: If the runner cannot be reached, rejects the request or returns an unexpected answer.
         """
         _validate_state(state)
         validated = _validate_questions(questions)
@@ -743,6 +750,12 @@ class DecisionModel:
             "questions": {question_id: _question_to_request(question) for question_id, question in validated.items()},
         }
         if image is not None:
+            if not self._model_name.endswith(MULTIMODAL_SUFFIX):
+                raise ImageNotSupportedError(
+                    f"'{self._model_id}' is not a multimodal model and cannot read images.",
+                    hint=f"Configure the multimodal version of the model ('{self._model_id}{MULTIMODAL_SUFFIX}') in app.yaml under"
+                    " arduino:decision_model, or send the request without `image`.",
+                )
             body["images"] = [_image_data_url(image)]
         data = self._post(body, timeout=self._timeout)
         raw_answers = _as_mapping(data.get("answers"))
@@ -782,6 +795,7 @@ class DecisionModel:
             TypeError: If the arguments have the wrong type.
             ValueError: If the arguments are empty or the image cannot be decoded.
             FileNotFoundError: If `image` is a path to a file that does not exist.
+            ImageNotSupportedError: If `image` is given and the model is not multimodal.
             DecisionModelError: If the runner cannot be reached, rejects the request or returns an unexpected answer.
         """
         answer = self._decide_one(state, Choice(instructions=instructions, options=options), image)
@@ -811,6 +825,7 @@ class DecisionModel:
             TypeError: If the arguments have the wrong type.
             ValueError: If the arguments are empty, the number of levels is not between 2 and 10 or the image cannot be decoded.
             FileNotFoundError: If `image` is a path to a file that does not exist.
+            ImageNotSupportedError: If `image` is given and the model is not multimodal.
             DecisionModelError: If the runner cannot be reached, rejects the request or returns an unexpected answer.
         """
         answer = self._decide_one(state, Score(instructions=instructions, levels=levels), image)
@@ -842,6 +857,7 @@ class DecisionModel:
             TypeError: If the arguments have the wrong type.
             ValueError: If the arguments are empty, only one of the two descriptions is given or the image cannot be decoded.
             FileNotFoundError: If `image` is a path to a file that does not exist.
+            ImageNotSupportedError: If `image` is given and the model is not multimodal.
             DecisionModelError: If the runner cannot be reached, rejects the request or returns an unexpected answer.
         """
         question = Noul(instructions=instructions, true_description=true_description, false_description=false_description)

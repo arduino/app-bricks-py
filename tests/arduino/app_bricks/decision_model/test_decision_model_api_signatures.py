@@ -21,6 +21,7 @@ from arduino.app_bricks.decision_model import (
     ChoiceAnswer,
     DecisionModel,
     DecisionModelError,
+    ImageNotSupportedError,
     Noul,
     NoulAnswer,
     Question,
@@ -104,6 +105,7 @@ def test_package_exports_exactly_the_public_names():
     assert package.__all__ == [
         "DecisionModel",
         "DecisionModelError",
+        "ImageNotSupportedError",
         "Choice",
         "Score",
         "Noul",
@@ -125,6 +127,7 @@ def test_type_aliases_cover_the_question_and_answer_classes():
 
 def test_error_is_a_user_facing_app_error():
     assert issubclass(DecisionModelError, AppError)
+    assert issubclass(ImageNotSupportedError, DecisionModelError)
     assert DecisionModel.LLAMACPP_MODEL == "llamacpp"
 
 

@@ -9,6 +9,7 @@ from .decision_model import (
     ChoiceAnswer,
     DecisionModel,
     DecisionModelError,
+    ImageNotSupportedError,
     Noul,
     NoulAnswer,
     Question,
@@ -19,6 +20,7 @@ from .decision_model import (
 __all__ = [
     "DecisionModel",
     "DecisionModelError",
+    "ImageNotSupportedError",
     "Choice",
     "Score",
     "Noul",

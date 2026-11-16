@@ -12,7 +12,7 @@ Three question types are supported:
 - **`Score`**: place the state on a scale of 2 to 10 described levels (urgency, severity, quality). The answer is the expected level plus the probability of every level.
 - **`Noul`**: a yes/no question (checks, filters, flags). The answer is the probability that the answer is yes.
 
-The decision models are downloaded in Arduino App Lab, and every board has a default one that suits it. The model can be changed in `app.yaml` under `arduino:decision_model`: a larger model is more accurate and takes longer to answer. A multimodal model also reads an image together with the state (see [Asking about a Camera Image](#asking-about-a-camera-image)); any other model reads the state alone. Every model answers up to 255 options per question.
+The decision models are downloaded in Arduino App Lab, and every board has a default one that suits it. The model can be changed in `app.yaml` under `arduino:decision_model`: a larger model is more accurate and takes longer to answer. A Multimodal model can also look at an image together with the state (see [Asking about a Camera Image](#asking-about-a-camera-image)). Every model answers up to 255 options per question.
 
 The answer time grows with the input tokens: the state is read once per question, so a long state with many questions costs more. Keep the state short and to the point, and use `decide()` to ask everything about a state in one request. The models read the whole state in one pass and refuse one longer than about 2000 tokens with a `DecisionModelError`.
 
@@ -251,7 +251,25 @@ App.run(on_request)
 
 ### Asking about a Camera Image
 
-With a multimodal model every method also takes an `image`: a frame from `Camera.capture()` (a numpy array in BGR order), the bytes of a JPEG or PNG file, or the path to one. The questions see the image together with the state, which says what the image is. One image per request; an image above one megapixel is downscaled to one megapixel (keeping its aspect ratio) before it is sent, so that the state, the question and its options still fit the batch the model reads in one pass. A model that is not multimodal answers a request with an `image` with a `DecisionModelError`: send the request without it, or pick a multimodal model. On the UNO Q no model reads images yet.
+A Multimodal model can also look at an image. Pass the image as `image` to any method, and every question is answered looking at both the image and the state. Use the state to say what the image shows, for example "A frame of the camera pointed at the garage door".
+
+To work with images, select a Multimodal model for the brick in Arduino App Lab (for example **vLLM-SR d3-lite Multimodal**), or set it in `app.yaml`:
+
+```yaml
+bricks:
+  - arduino:decision_model:
+    model: llamacpp:vllm-d3-lite-Q8_0-multimodal
+```
+
+The default models do not look at images: if you send an image to a model that is not Multimodal, the brick raises an `ImageNotSupportedError` that names the Multimodal model to select instead.
+
+The image can be:
+
+- a frame from `Camera.capture()`;
+- the bytes of a JPEG or PNG file;
+- the path to a JPEG or PNG file.
+
+Send one image per request. You don't need to resize it: an image larger than about one megapixel is scaled down automatically, keeping its proportions.
 
 ```python
 import time
@@ -293,6 +311,11 @@ App.run(watch_garage)
 - **`list_models()`**: Returns the model identifiers available on the local inference service (without the `llamacpp:` prefix).
 - **`start()`**: Loads the model with a warm-up request so that the first real decision is fast. Called automatically by `App.run()`.
 
-All methods raise a `DecisionModelError` (with a hint on how to fix the problem) when the runner cannot be reached, the model is not downloaded or the request is rejected, and `TypeError`/`ValueError` for invalid questions (for example a `Score` with a single level or a `Choice` without options) or an image that cannot be decoded (`FileNotFoundError` for an image path that does not exist).
+All methods raise:
+
+- `DecisionModelError` when the model cannot be reached, is not downloaded or rejects the request. Its hint says how to fix the problem.
+- `ImageNotSupportedError`, a kind of `DecisionModelError`, when an `image` is sent to a model that is not Multimodal.
+- `TypeError` or `ValueError` for invalid questions (for example a `Score` with a single level or a `Choice` without options) or an image that cannot be read.
+- `FileNotFoundError` when the image path does not exist.
 
 On the UNO Q the llama.cpp runner serves one model at a time (`LLAMA_ARG_MODELS_MAX=1`): an app that alternates `DecisionModel` and `LargeLanguageModel` requests reloads a model at every switch, so keep the two kinds of requests grouped when latency matters.
