@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""check_brick_conflicts.py of python-apps-base warns about the third-party bricks Python does not load by their name.
+"""check_brick_conflicts.py of python-apps-base warns about the custom and third-party bricks Python does not load by their name.
 
 The script runs the way run.sh runs it, in isolated mode with PYTHONPATH as run.sh builds it: the folder of the
 custom bricks first, then one folder for each mounted brick.
@@ -42,7 +42,7 @@ def _check(tmp_path: Path) -> list[str]:
     if third_party.is_dir():
         python_path += sorted(str(mount) for mount in third_party.iterdir())
     result = subprocess.run(
-        [sys.executable, "-I", str(CHECK), str(app / "python"), str(third_party)],
+        [sys.executable, "-I", str(CHECK), str(app / "python"), str(app / "bricks"), str(third_party)],
         env={**os.environ, "PYTHONPATH": os.pathsep.join(python_path)},
         capture_output=True,
         text=True,
@@ -132,8 +132,38 @@ def test_a_brick_named_like_an_installed_package_without_init_hides_it(tmp_path:
     finally:
         sys.path.pop(0)
     third_party = tmp_path / "third-party-bricks"
-    messages = find_conflicts(str(tmp_path / "app" / "python"), str(third_party), [str(third_party / "a1b2c3")], [str(site)])
+    app = tmp_path / "app"
+    messages = find_conflicts(str(app / "python"), str(app / "bricks"), str(third_party), [str(third_party / "a1b2c3")], [str(site)])
     assert messages == [f"The brick 'acme:arduino' hides {site / 'arduino'}: `import arduino` loads the brick."]
+
+
+def test_a_module_of_the_app_hides_a_custom_brick(tmp_path: Path):
+    _app_file(tmp_path, "bricks/soil_sensor/__init__.py")
+    module = _app_file(tmp_path, "python/soil_sensor.py")
+    assert _check(tmp_path) == [f"Warning: The custom brick 'soil_sensor' is hidden: `import soil_sensor` loads {module}, which comes first."]
+
+
+def test_a_custom_brick_named_like_a_standard_library_module_replaces_it(tmp_path: Path):
+    _app_file(tmp_path, "bricks/json/__init__.py")
+    _app_file(tmp_path, "bricks/time/__init__.py")
+    assert _check(tmp_path) == [
+        "Warning: The custom brick 'json' replaces the standard library module 'json' for the whole app.",
+        "Warning: The custom brick 'time' cannot be imported: 'time' is a module built into Python, which is loaded in its place.",
+    ]
+
+
+def test_a_custom_brick_named_like_an_installed_package_hides_it(tmp_path: Path):
+    import pytest
+
+    _app_file(tmp_path, "bricks/pytest/__init__.py")
+    assert _check(tmp_path) == [f"Warning: The custom brick 'pytest' hides {pytest.__file__}: `import pytest` loads the brick."]
+
+
+def test_folders_of_the_custom_bricks_that_are_not_packages_are_not_reported(tmp_path: Path):
+    _app_file(tmp_path, "bricks/__pycache__/x.pyc")
+    _app_file(tmp_path, "bricks/my-brick/__init__.py")  # not a name Python can import
+    _app_file(tmp_path, "bricks/json/notes.txt")  # no __init__.py
+    assert _check(tmp_path) == []
 
 
 def test_a_brick_without_an_id_is_named_after_its_folder(tmp_path: Path):
@@ -141,6 +171,7 @@ def test_a_brick_without_an_id_is_named_after_its_folder(tmp_path: Path):
     assert _check(tmp_path) == ["Warning: The brick 'json' replaces the standard library module 'json' for the whole app."]
 
 
-def test_a_missing_third_party_folder_is_not_an_error(tmp_path: Path):
-    result = subprocess.run([sys.executable, "-I", str(CHECK), str(tmp_path / "python"), str(tmp_path / "nope")], capture_output=True, text=True)
+def test_missing_bricks_folders_are_not_an_error(tmp_path: Path):
+    command = [sys.executable, "-I", str(CHECK), str(tmp_path / "python"), str(tmp_path / "no-bricks"), str(tmp_path / "nope")]
+    result = subprocess.run(command, capture_output=True, text=True)
     assert (result.returncode, result.stdout, result.stderr) == (0, "", "")

@@ -2,17 +2,19 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Report the third-party bricks whose module name is also the name of something else the app can import.
+"""Report the bricks of an app whose module name is also the name of something else the app can import.
 
-A third-party brick is imported by the name of its folder, `from <brick_name> import ...`. The name may also be
-the one of a module of the app, of a custom brick, of another third-party brick, of a standard library module or
-of an installed package: Python then loads the first it finds and says nothing. This script asks the import
-system which one that is, for every brick mounted, and prints a warning for each brick that is hidden or hides
-something else. It reports and never fails: the app starts in any case.
+A custom brick, in the bricks folder of the app, and a third-party brick, installed from the bricks registry,
+are imported by the name of their folder: `from <brick_name> import ...`. The name may also be the one of a
+module of the app, of another brick, of a standard library module or of an installed package: Python then loads
+the first it finds and says nothing. This script asks the import system which one that is, for every brick, and
+prints a warning for each brick that is hidden or hides something else. It reports and never fails: the app
+starts in any case.
 
-run.sh runs it right before the app, once the requirements are installed, as:
+run.sh runs it right before the app, once the requirements are installed, and only for an app that has a custom
+or a third-party brick:
 
-    python -I check_brick_conflicts.py <app python dir> <third-party bricks dir>
+    python -I check_brick_conflicts.py <app python dir> <custom bricks dir> <third-party bricks dir>
 
 In isolated mode (-I) neither PYTHONPATH nor the folder of this script reach sys.path, so that a brick named
 like a module this script imports cannot break it. The search path of the app is rebuilt here: the folder of
@@ -26,19 +28,16 @@ import sys
 from importlib.machinery import BuiltinImporter, FrozenImporter, PathFinder
 
 
-def _brick_dirs(third_party_dir: str) -> list[str]:
-    """The folders of the mounted bricks, <third-party dir>/<mount>/<brick_name>, in the order run.sh lists them."""
-    found = []
+def _subfolders(folder: str) -> list[str]:
     try:
-        mounts = sorted(entry.path for entry in os.scandir(third_party_dir) if entry.is_dir())
+        return sorted(entry.path for entry in os.scandir(folder) if entry.is_dir())
     except OSError:
-        return found
-    for mount in mounts:
-        try:
-            found.extend(sorted(entry.path for entry in os.scandir(mount) if entry.is_dir()))
-        except OSError:
-            continue
-    return found
+        return []
+
+
+def _third_party_brick_dirs(third_party_dir: str) -> list[str]:
+    """The folders of the mounted bricks, <third-party dir>/<mount>/<brick_name>, in the order run.sh lists them."""
+    return [brick_dir for mount in _subfolders(third_party_dir) for brick_dir in _subfolders(mount)]
 
 
 def _brick_id(brick_dir: str) -> str:
@@ -59,13 +58,18 @@ def _is_within(path: str, folder: str) -> bool:
     return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
 
 
-def find_conflicts(app_python_dir: str, third_party_dir: str, python_path: list[str], interpreter_path: list[str]) -> list[str]:
-    """One message for each mounted brick that Python does not load by its name, or that hides something else."""
+def find_conflicts(
+    app_python_dir: str, custom_bricks_dir: str, third_party_dir: str, python_path: list[str], interpreter_path: list[str]
+) -> list[str]:
+    """One message for each brick that Python does not load by its name, or that hides something else."""
     search_path = [app_python_dir, *python_path, *interpreter_path]
+    bricks = [(brick_dir, f"The custom brick '{os.path.basename(brick_dir)}'") for brick_dir in _subfolders(custom_bricks_dir)]
+    bricks += [(brick_dir, f"The brick '{_brick_id(brick_dir)}'") for brick_dir in _third_party_brick_dirs(third_party_dir)]
     messages = []
-    for brick_dir in _brick_dirs(third_party_dir):
+    for brick_dir, brick in bricks:
         name = os.path.basename(brick_dir)
-        brick = f"The brick '{_brick_id(brick_dir)}'"
+        if not os.path.isfile(os.path.join(brick_dir, "__init__.py")):
+            continue  # Not a package, so not a brick: a folder of data, __pycache__
 
         # Modules built into the interpreter are found before any folder is searched
         if BuiltinImporter.find_spec(name) is not None or FrozenImporter.find_spec(name) is not None:
@@ -74,7 +78,7 @@ def find_conflicts(app_python_dir: str, third_party_dir: str, python_path: list[
 
         loaded = PathFinder.find_spec(name, search_path)
         if loaded is None or loaded.origin is None:
-            continue  # A folder without __init__.py: not a brick the registry accepts, nothing to compare
+            continue  # A folder with a name Python cannot import
         if not _is_within(loaded.origin, brick_dir):
             messages.append(f"{brick} is hidden: `import {name}` loads {loaded.origin}, which comes first.")
             continue
@@ -83,8 +87,8 @@ def find_conflicts(app_python_dir: str, third_party_dir: str, python_path: list[
             messages.append(f"{brick} replaces the standard library module '{name}' for the whole app.")
             continue
 
-        # The same name without the folder the brick is mounted in: what the brick takes the place of.
-        # Another third-party brick is left out, it gets its own "is hidden" message.
+        # The same name without the folder the brick is in: what the brick takes the place of.
+        # A third-party brick is left out, it gets its own "is hidden" message.
         mount_dir = os.path.dirname(brick_dir)
         hidden = PathFinder.find_spec(name, [entry for entry in search_path if entry != mount_dir])
         if hidden is None:
@@ -104,11 +108,11 @@ def find_conflicts(app_python_dir: str, third_party_dir: str, python_path: list[
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
-        print(f"usage: {argv[0]} <app python dir> <third-party bricks dir>")
+    if len(argv) != 4:
+        print(f"usage: {argv[0]} <app python dir> <custom bricks dir> <third-party bricks dir>")
         return 2
     python_path = [entry for entry in os.environ.get("PYTHONPATH", "").split(os.pathsep) if entry]
-    for message in find_conflicts(argv[1], argv[2], python_path, list(sys.path)):
+    for message in find_conflicts(argv[1], argv[2], argv[3], python_path, list(sys.path)):
         print(f"Warning: {message}")
     return 0
 
