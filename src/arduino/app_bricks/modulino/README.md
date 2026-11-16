@@ -43,7 +43,7 @@ buzzer.noTone()         # stop the current tone
 
 ## Modulino Distance
 
-`Modulino_Distance` is a time-of-flight sensor at the fixed I2C address 0x29. `getDistance()` returns the last measure in millimeters, or NaN when it is not valid (for example nothing in range):
+`Modulino_Distance` is a time-of-flight sensor at the fixed I2C address 0x29. `getDistance()` returns the last measure in millimeters, or NaN when it is not valid (for example nothing in range). `start()` waits up to 50 ms for the first measure, so the first `getDistance()` is already valid:
 
 ```python
 from arduino.app_bricks.modulino import Modulino_Distance
@@ -69,7 +69,7 @@ def on_proximity(state, distance_mm):
 distance.setThresholdCallback(150, on_proximity)   # stop below 15 cm, restart above 17 cm
 ```
 
-The sensor measures every 20 ms. By default a new state is notified after the next measure confirms it. Use `setDebounce(ms)` to require a longer stable time. `removeThresholdCallback()` stops the notifications.
+The sensor measures every 20 ms. By default a new state is notified after the next measure confirms it: a single measure below `threshold_mm` followed by one at or above it does not raise `NEAR`. Calling `setThresholdCallback` again restarts from `FAR`, so an object already near is notified again. Use `setDebounce(ms)` to require a longer stable time. `removeThresholdCallback()` stops the notifications.
 
 The notification goes from the board through the Linux side to your app, so it can arrive late or not at all if the app is busy or stuck. Don't use it as a safety-rated emergency stop.
 

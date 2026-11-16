@@ -439,7 +439,10 @@ class Modulino_Distance(Modulino):
 
     @override
     def start(self) -> None:
-        """Start the Modulino_Distance."""
+        """Start the Modulino_Distance.
+
+        Waits up to 50 ms for the first measure, so the first `getDistance()` is already valid.
+        """
         try:
             ok = Bridge.call(f"{self.name}:begin")
         except:
@@ -472,7 +475,10 @@ class Modulino_Distance(Modulino):
         The state becomes `NEAR` when the distance goes below `threshold_mm` and goes back
         to `FAR` only when it rises above `threshold_mm + hysteresis_mm`, so an object standing
         on the threshold does not flood the callback. The callback is called only on state changes.
+        A new state must be confirmed by the following measures: `NEAR` only if they are still below
+        `threshold_mm`, `FAR` only if they are still above `threshold_mm + hysteresis_mm`.
         An invalid measure (e.g. nothing in range) counts as `FAR`.
+        Calling this again restarts from `FAR`, so an object already near is notified as `NEAR` again.
 
         This runs through the Linux side and is not a safety-rated emergency stop.
 
