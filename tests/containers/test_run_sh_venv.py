@@ -261,3 +261,19 @@ def test_prepare_fails_when_third_party_brick_requirements_cannot_be_installed(t
     brick = _third_party_brick(tmp_path, "a1b2c3", "camera", "no-such-package==9.9.9\n")
     _run(app, tmp_path, command="prepare", uv_fails_on=f"-r {brick}/requirements.txt", expect_failure=True)
     assert not (app / ".cache" / "third-party-bricks" / "camera" / "installed_requirements.txt").exists()
+
+
+def test_the_conflict_check_runs_before_the_app_only_when_a_third_party_brick_is_mounted(tmp_path: Path):
+    app = _app(tmp_path)
+    assert not any("check_brick_conflicts" in c for c in _run(app, tmp_path)), "no brick mounted, no extra start of the interpreter"
+    _third_party_brick(tmp_path, "a1b2c3", "camera")
+    calls = _run(app, tmp_path)
+    third_party = _third_party_dir(tmp_path)
+    assert calls[-2] == f"python -I /check_brick_conflicts.py {app}/python {third_party} VIRTUAL_ENV=none"
+    assert calls[-1] == f"python {app}/python/main.py VIRTUAL_ENV=none"
+
+
+def test_the_conflict_check_does_not_run_at_prepare(tmp_path: Path):
+    app = _app(tmp_path)
+    _third_party_brick(tmp_path, "a1b2c3", "camera")
+    assert not any("check_brick_conflicts" in c for c in _run(app, tmp_path, command="prepare"))

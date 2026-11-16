@@ -13,7 +13,7 @@ ENV BRICKS_RELEASE_VERSION=${BASE_IMAGE_VERSION}
 # Copy the Streamlit configuration file with customized settings in home app shared directory
 COPY ./streamlit/config.toml /home/app/.streamlit/config.toml
 
-COPY ./scripts/*.sh /
+COPY ./scripts/*.sh ./scripts/check_brick_conflicts.py /
 # The wheel and the lock it was built from, from the bake context filled by `task build:bricks`
 COPY --from=wheel arduino*.whl pyproject.toml uv.lock /app/
 COPY ./patches/ /tmp/patches/

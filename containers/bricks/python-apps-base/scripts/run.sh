@@ -30,6 +30,9 @@ INSTALLED_REQUIREMENTS_FILE="$CACHE_DIR/installed_requirements.txt"
 # brick. Adding /opt/third-party-bricks/<random_string> to PYTHONPATH lets the
 # app write `from <brick_name> import ...`, as for the bricks in /app/bricks.
 THIRD_PARTY_BRICKS_DIR="/opt/third-party-bricks"
+# Reports the third-party bricks whose module name is also the name of something
+# else the app can import: see the script.
+BRICK_CONFLICTS_CHECK="/check_brick_conflicts.py"
 
 # Set when a dependency install fails: only `prepare` acts on it, starting the
 # app stays best-effort as before.
@@ -220,6 +223,19 @@ if [ -d "$THIRD_PARTY_BRICKS_DIR" ]; then
     done
 fi
 
+# Warn about the third-party bricks that Python does not load by their name, or
+# that hide something else. It costs one start of the interpreter, so it runs
+# only when a brick is mounted. It never stops the app: -I keeps a brick named
+# like a standard module from breaking the check itself.
+check_brick_conflicts() {
+  for brick_dir in "$THIRD_PARTY_BRICKS_DIR"/*/*; do
+    if [ -d "$brick_dir" ]; then
+      python -I "$BRICK_CONFLICTS_CHECK" "$BASE_DIR/python" "$THIRD_PARTY_BRICKS_DIR" || true
+      return 0
+    fi
+  done
+}
+
 install_streamlit() {
   if check_streamlit_ui && ! uv pip show streamlit > /dev/null 2>&1; then
     echo "streamlit not found, installing..."
@@ -250,6 +266,7 @@ case "$1" in
     ;;
   *)
     install_streamlit
+    check_brick_conflicts
     if check_streamlit_ui; then
       exec streamlit run --server.port 7000 "$PYTHON_SCRIPT"
     fi
