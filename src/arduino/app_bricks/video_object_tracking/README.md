@@ -168,7 +168,7 @@ The constructor also accepts the parameters of the tracker inside the model, eac
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `keep_grace` | `3` | Frames an object is kept after it disappears, before its ID is dropped. |
+| `keep_grace` | `3` | Frames an object is kept after it disappears, before its ID is dropped. When they last longer than a second, the counts and the area wait that long before they let the object go. |
 | `min_detections` | `3` | Detections an object needs before it is reported as tracked. |
 | `iou_threshold` | `0.1` | How much two boxes must overlap between frames to be the same object. For bounding-box models such as YOLO. |
 | `euclidean_distance_threshold` | `50` | How far an object may move between frames, in pixels, to be the same object. For centroid models such as FOMO. |

@@ -79,6 +79,11 @@ def _wait_for(condition, timeout: float = TIMEOUT) -> bool:
     return condition()
 
 
+def _delivered(tracker: VideoObjectTracking) -> None:
+    """Wait until every event submitted so far has run; the brick submits no more afterwards."""
+    tracker._executor.shutdown(wait=True)
+
+
 @pytest.fixture(autouse=True)
 def configured_model(monkeypatch):
     """The app configured the fake model for the brick, as the CLI does through the model variable."""
@@ -106,6 +111,21 @@ def tracker(service, camera):
     brick = VideoObjectTracking(camera=camera, stream_port=0)
     yield brick
     brick.stop()
+
+
+@pytest.fixture
+def tracker_with(service, camera):
+    """Bricks built against the service with the given options and not started: the tests feed them results directly."""
+    built = []
+
+    def build(**options):
+        brick = VideoObjectTracking(camera=camera, stream_port=0, **options)
+        built.append(brick)
+        return brick
+
+    yield build
+    for brick in built:
+        brick.stop()
 
 
 @pytest.fixture
@@ -386,7 +406,16 @@ def test_an_id_not_reported_for_a_second_is_forgotten(tracker):
 
     _replay(tracker, [[]], start=51.0)
 
-    assert tracker._recent_objects == {} and tracker._last_seen == {}
+    assert tracker._recent_objects == {} and tracker._memory.last_seen(499) is None
+
+
+def test_a_crossing_during_a_gap_longer_than_a_second_within_keep_grace_is_counted(tracker_with):
+    tracker = tracker_with(keep_grace=50)
+    tracker.set_vertical_crossing_line(320)
+
+    _replay(tracker, [[_track(object_id=1, x=260, y=140)]] + [[]] * 15 + [[_track(object_id=1, x=300, y=140)]])
+
+    assert tracker.get_line_crossing_counts() == {"person": {"right": 1, "all": 1}}, "the tracker kept the track through 1.5 s unseen"
 
 
 # ---------------------------------------------------------------- area
@@ -436,6 +465,34 @@ def test_an_object_disappearing_inside_exits_after_a_second_unseen(tracker):
     assert tracker.get_area_counts() == {"person": {"entered": 1, "exited": 1}}
 
 
+def test_an_object_back_inside_after_more_than_a_second_within_keep_grace_does_not_enter_again(tracker_with):
+    tracker = tracker_with(keep_grace=50)
+    tracker.set_rectangular_area(*AREA)
+
+    _replay(tracker, [[_at(300, 300)]] + [[]] * 15 + [[_at(300, 300)]])
+
+    assert tracker.get_area_counts() == {"person": {"entered": 1}}, "the tracker kept the track through 1.5 s unseen"
+    assert tracker.get_objects_in_area() == {"person": 1}
+
+
+def test_an_object_disappearing_inside_exits_once_past_keep_grace_frames_too(tracker_with):
+    tracker = tracker_with(keep_grace=20)
+    exited = []
+    tracker.on_area_exit(lambda event: exited.append(event))
+    tracker.set_rectangular_area(*AREA)
+
+    _replay(tracker, [[_at(300, 300)]] + [[]] * 20)
+
+    assert tracker.get_objects_in_area() == {"person": 1}, "2 s unseen, 20 frames: the tracker may still bring it back"
+
+    _replay(tracker, [[]], start=2.1)
+    _delivered(tracker)
+
+    assert tracker.get_objects_in_area() == {}
+    assert tracker.get_area_counts() == {"person": {"entered": 1, "exited": 1}}
+    assert exited == [{"label": "person", "object_id": 1}]
+
+
 def test_a_centre_wobbling_on_the_border_enters_only_once(tracker):
     tracker.set_rectangular_area(*AREA)
 
@@ -456,14 +513,18 @@ def test_setting_the_area_again_counts_the_objects_inside_from_their_next_appear
     assert tracker.get_area_counts() == {"person": {"entered": 2}}
 
 
-def test_a_new_tracker_run_empties_the_area_without_exits(tracker):
+def test_a_new_tracker_run_makes_every_object_inside_exit_the_area(tracker):
+    exited = []
+    tracker.on_area_exit(lambda event: exited.append(event))
     tracker.set_rectangular_area(*AREA)
-    _replay(tracker, [[_at(300, 300)]])
+    _replay(tracker, [[_at(300, 300), _at(100, 100, object_id=2)]])
 
     tracker._forget_tracks()
+    _delivered(tracker)
 
     assert tracker.get_objects_in_area() == {}
-    assert tracker.get_area_counts() == {"person": {"entered": 1}}
+    assert tracker.get_area_counts() == {"person": {"entered": 1, "exited": 1}}
+    assert exited == [{"label": "person", "object_id": 1}], "the object outside the area does not exit it"
 
 
 def test_reset_counters_clears_the_entries_and_exits_but_not_the_objects_inside(tracker):
@@ -683,6 +744,14 @@ def test_the_same_object_coming_back_with_a_new_id_is_counted_again(tracker):
     assert tracker.get_unique_objects_count() == {"person": 2}
 
 
+def test_the_same_id_back_after_more_than_a_second_is_counted_once(tracker_with):
+    tracker = tracker_with(keep_grace=50)
+
+    _replay(tracker, [[_track(object_id=1)]] * 5 + [[]] * 15 + [[_track(object_id=1)]] * 5)
+
+    assert tracker.get_unique_objects_count() == {"person": 1}, "the tracker kept the track through 1.6 s unseen"
+
+
 def test_vertical_line_is_crossed_by_the_box_centre(tracker):
     tracker.set_vertical_crossing_line(320)
 
@@ -865,6 +934,14 @@ def test_an_object_out_of_sight_for_more_than_a_second_comes_back_as_a_new_one(t
     _replay(tracker, [[_box("bottle", 3)]], start=2.0)
 
     assert tracker.get_unique_objects_count() == {"bottle": 2}, "track 2 continued the bottle, track 3 came too late"
+
+
+def test_a_track_that_continued_an_object_is_still_it_when_back_after_more_than_a_second_within_keep_grace(tracker_with):
+    tracker = tracker_with(keep_grace=50)
+
+    _replay(tracker, [[_box("bottle", 1)], [], [_box("vase", 2)]] + [[]] * 15 + [[_box("vase", 2)]])
+
+    assert tracker.get_unique_objects_count() == {"bottle": 1}, "track 2 stays the bottle through 1.5 s unseen"
 
 
 def test_recorded_tie_is_eight_objects_for_thirteen_tracks(service, camera):
