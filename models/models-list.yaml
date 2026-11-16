@@ -2553,6 +2553,12 @@ models:
               model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/mmproj-vllm-d3-edge-BF16.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/vllm-d3-edge-GGUF"
+        - unoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/vllm-d3-edge-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/mmproj-vllm-d3-edge-BF16.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/vllm-d3-edge-GGUF"
     metadata:
       model_size_mb: 967
       source: "huggingface"

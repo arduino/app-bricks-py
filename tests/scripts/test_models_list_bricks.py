@@ -68,6 +68,30 @@ def _required_services(config: dict, model_id: str) -> set[str]:
     return services
 
 
+def _catalog_boards() -> set[str]:
+    """Every board the catalog names, in a ``supported_boards`` list or as a deployment platform."""
+    boards: set[str] = set()
+    for model in _catalog().values():
+        boards.update(model.get("supported_boards") or [])
+        boards.update(board for platform in (model.get("deployment") or {}).get("platforms") or [] for board in platform)
+    return boards
+
+
+def _downloadable_models() -> list[str]:
+    return sorted(model_id for model_id, model in _catalog().items() if (model.get("deployment") or {}).get("platforms"))
+
+
+@pytest.mark.parametrize("model_id", _downloadable_models())
+def test_a_model_has_download_variables_for_every_board_it_is_offered_on(model_id: str):
+    """App Lab offers a model on the boards of its ``supported_boards``, or on every board without the list, and the
+    CLI downloads it with the variables of that board's platform: a board without them gets a download with no URL."""
+    model = _catalog()[model_id]
+    platforms = {board: config for platform in model["deployment"]["platforms"] for board, config in platform.items()}
+    for board in sorted(model.get("supported_boards") or _catalog_boards()):
+        variables = (platforms.get(board) or {}).get("variables") or {}
+        assert variables, f"{model_id} is offered on {board} but has no deployment variables for it"
+
+
 @pytest.mark.parametrize(("model_id", "brick_id"), _runner_models_and_bricks())
 def test_a_brick_can_run_every_runner_model_listed_under_it(model_id: str, brick_id: str):
     framework = model_id.split(":", 1)[0]
