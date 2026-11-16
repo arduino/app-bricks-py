@@ -33,7 +33,7 @@ from arduino.version import __version__
 
 from . import child, dependencies, protocol
 from .child import Launch, Runner
-from .protocol import ErrorCode, LauncherError, Request, Start, Status, Stop
+from .protocol import ErrorCode, Events, LauncherError, Request, Start, Status, Stop
 
 logger = logging.getLogger("arduino.app_tools.app_launcher")
 
@@ -56,6 +56,8 @@ REQUEST_TIMEOUT_S = 5.0
 HANDLED_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGCHLD)
 PRELOAD_GRACE_S = 0.5
 """How long the preload waits once the socket is open: the start a fresh container is brought up for comes first."""
+MAX_EVENTS_BACKLOG_BYTES = 64 * 1024
+"""How much a subscriber may leave unread before it is dropped: an event is a few hundred bytes."""
 STRAY_SWEEPS = 5
 """How many times a sweep lists and kills what a stopped app left behind, for a leftover forking in between."""
 _HOST_PID_NAMESPACE = 0xEFFFFFFC
@@ -134,6 +136,7 @@ class Launcher:
         self._child: Child | None = None
         self._last: dict[str, Any] | None = None
         self._control: asyncio.Server | None = None
+        self._subscribers: set[asyncio.StreamWriter] = set()
         self._fork_request: _ForkRequest | None = None
         self._owns_container = _owns_container()
         self._exiting = False
@@ -280,6 +283,9 @@ class Launcher:
         except (OSError, TimeoutError):
             writer.close()
             return
+        if isinstance(request, Events):
+            await self._serve_events(reader, writer)
+            return
         try:
             response = await self._handle(request)
         except LauncherError as e:
@@ -298,7 +304,35 @@ class Launcher:
         finally:
             writer.close()
 
-    async def _handle(self, request: Request) -> dict[str, Any]:
+    async def _serve_events(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """Sends the state of the app as it is now, then at each change, until the subscriber leaves."""
+        self._subscribers.add(writer)
+        try:
+            writer.write(protocol.encode(protocol.ok(**self._app_state())))
+            # A subscriber sends nothing more: the read ends when it leaves
+            while await reader.read(1024):
+                pass
+        except OSError:
+            pass
+        finally:
+            self._subscribers.discard(writer)
+            writer.close()
+
+    def _publish(self) -> None:
+        """Tells the subscribers the state of the app, which just changed."""
+        # A launcher on its way out takes its container with it: the state of the container tells the rest
+        if self._exiting:
+            return
+        event = protocol.encode(protocol.ok(**self._app_state()))
+        for writer in tuple(self._subscribers):
+            if writer.transport.get_write_buffer_size() > MAX_EVENTS_BACKLOG_BYTES:
+                # Dropped, not left behind: it gets the state of the app again when it subscribes anew
+                self._subscribers.discard(writer)
+                writer.transport.abort()
+            else:
+                writer.write(event)
+
+    async def _handle(self, request: Start | Stop | Status) -> dict[str, Any]:
         match request:
             case Status():
                 return protocol.ok(**self._status())
@@ -316,10 +350,13 @@ class Launcher:
         if self._exiting:
             raise LauncherError(ErrorCode.BUSY, "the launcher is shutting down")
 
+    def _app_state(self) -> dict[str, Any]:
+        """The app that runs and how the previous one ended, what an event carries."""
+        return {"child": None if self._child is None else self._child.describe(), "last": self._last}
+
     def _status(self) -> dict[str, Any]:
         return {
-            "child": None if self._child is None else self._child.describe(),
-            "last": self._last,
+            **self._app_state(),
             "venv": sys.prefix if _in_a_venv() else None,
             "preload": {"modules": list(self._config.preload), "loaded": list(self._preloaded), "failed": list(self._preload_failed)},
             "version": __version__,
@@ -388,6 +425,8 @@ class Launcher:
         # Registered before the loop runs again, so the reaper always finds it
         self._child = Child(app=launch.app, pid=pid, runner=launch.runner, started_at=datetime.now(UTC), exited=self._loop.create_future())
         logger.info(f"Started {launch.app} as pid {pid}")
+        # Queued for the next run of the loop: nothing is written between two of its runs
+        self._loop.call_soon(self._publish)
         return self._child
 
     def _become_child(self) -> None:
@@ -430,6 +469,7 @@ class Launcher:
                 how = f"was killed by signal {fields['signal']}" if fields["signal"] is not None else f"exited with code {fields['exit_code']}"
                 logger.info(f"{reaped.app} (pid {pid}) {how}")
                 reaped.exited.set_result(status)
+                self._publish()
 
     def _kill_strays(self) -> None:
         """Kills every process of the container but PID 1 and the launcher, helpers in sessions of their own included.

@@ -117,6 +117,26 @@ def request(message, socket_path, timeout_s=10):
         return json.loads(sock.makefile("rb").readline())
 
 
+class Subscription:
+    """An events connection to the launcher, read one event at a time."""
+
+    def __init__(self, socket_path, timeout_s=10):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(timeout_s)
+        self.sock.connect(socket_path)
+        self.sock.sendall(b'{"cmd":"events"}\n')
+        self.lines = self.sock.makefile("rb")
+
+    def next(self):
+        """The next event, None once the launcher closed the connection."""
+        line = self.lines.readline()
+        return json.loads(line) if line else None
+
+    def close(self):
+        self.lines.close()
+        self.sock.close()
+
+
 class LauncherProcess:
     def __init__(self, preload="json", wrapper=(), extra_modules=None, served=None, interpreter=sys.executable):
         # AF_UNIX paths are limited to about 100 bytes
@@ -172,6 +192,9 @@ class LauncherProcess:
 
     def child(self):
         return self.request({"cmd": "status"})["child"]
+
+    def subscribe(self):
+        return Subscription(self.socket)
 
     def close(self):
         if self.process.poll() is None:
@@ -255,6 +278,61 @@ def test_an_app_dying_on_its_own_is_remembered_as_the_last_one(launcher):
     started = launcher.request({"cmd": "start", "app": str(app)})
     last = wait_until(lambda: launcher.request({"cmd": "status"})["last"] if launcher.child() is None else None)
     assert (last["app"], last["pid"], last["exit_code"], last["signal"]) == (str(app), started["pid"], 3, None)
+
+
+def test_a_subscriber_gets_the_state_of_the_app_now_and_at_each_change(launcher):
+    events = launcher.subscribe()
+    try:
+        status = launcher.request({"cmd": "status"})
+        assert events.next() == {"ok": True, "child": None, "last": status["last"]}, "the state as it is now comes first"
+
+        app = launcher.app("watched")
+        started = launcher.request({"cmd": "start", "app": str(app)})
+        running = events.next()
+        assert running["child"]["pid"] == started["pid"] and running["child"]["app"] == str(app)
+
+        os.kill(started["pid"], signal.SIGKILL)
+        ended = events.next()
+        assert ended["child"] is None
+        assert (ended["last"]["pid"], ended["last"]["exit_code"], ended["last"]["signal"]) == (started["pid"], None, signal.SIGKILL)
+        assert ended == {"ok": True, **{key: launcher.request({"cmd": "status"})[key] for key in ("child", "last")}}
+    finally:
+        events.close()
+
+
+def test_subscribers_come_and_go_without_holding_the_launcher(launcher):
+    early, late = launcher.subscribe(), None
+    try:
+        assert early.next()["ok"]
+        early.close()
+        late = launcher.subscribe()
+        assert late.next()["child"] is None
+
+        started = launcher.request({"cmd": "start", "app": str(launcher.app("unwatched"))})
+        assert started["ok"], "a start forks with a subscriber connected and after one left"
+        assert late.next()["child"]["pid"] == started["pid"]
+        assert launcher.request({"cmd": "stop"})["stopped"][0]["pid"] == started["pid"]
+        assert late.next()["last"]["pid"] == started["pid"]
+    finally:
+        early.close()
+        if late is not None:
+            late.close()
+
+
+def test_the_events_end_with_the_launcher_whose_last_stop_raises_none():
+    launcher = LauncherProcess().wait_ready()
+    try:
+        events = launcher.subscribe()
+        assert events.next()["child"] is None
+        started = launcher.request({"cmd": "start", "app": str(launcher.app("going"))})
+        assert events.next()["child"]["pid"] == started["pid"]
+
+        # The app holds none of the launcher connections: the stream ends although the app got them at the fork
+        assert launcher.close() == 128 + signal.SIGTERM
+        assert events.next() is None, "the container ends with its launcher: the state of the container tells the rest"
+        events.close()
+    finally:
+        launcher.remove()
 
 
 def test_a_stop_before_app_run_exits_the_app_cleanly():

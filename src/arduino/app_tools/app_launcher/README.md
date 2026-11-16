@@ -4,15 +4,16 @@ Runs inside the container of one app, started by `/run.sh serve` of `python-apps
 
 ## Control socket
 
-A Unix socket at `APP_LAUNCHER_SOCKET`, one JSON object per line, one request and one response per connection.
+A Unix socket at `APP_LAUNCHER_SOCKET`, one JSON object per line, one request per connection, answered by one response or, for `events`, by a stream.
 
 | Request | Response |
 |---|---|
 | `{"cmd":"start","app":"/app","env":{"K":"V"}}` | `{"ok":true,"pid":N,"started_at":"<iso>","runner":"python","timings":{"stop_ms":..,"fork_ms":..}}` |
 | `{"cmd":"stop"}` | `{"ok":true,"stopped":[{"app":..,"pid":..,"exit_code":..,"signal":..}]}` |
 | `{"cmd":"status"}` | `{"ok":true,"child":{..} or null,"last":{..} or null,"venv":..,"preload":{"modules","loaded","failed"},"version":..,"uptime_s":..}` |
+| `{"cmd":"events"}` | `{"ok":true,"child":{..} or null,"last":{..} or null}` now, then one such line each time the app starts or ends |
 
-A start while an app runs stops it first. `env` is laid over the container environment. Errors are `{"ok":false,"error":{"code":..,"message":..}}`, with `code` one of `bad_request`, `not_found`, `stale` (the dependencies changed since run.sh installed them: the daemon restarts the container), `busy` (shutting down) and `internal`.
+A start while an app runs stops it first. An `events` connection stays open until the client closes it or the launcher exits; the app the launcher stops on its way out raises no event, the container ends with it. `env` is laid over the container environment. Errors are `{"ok":false,"error":{"code":..,"message":..}}`, with `code` one of `bad_request`, `not_found`, `stale` (the dependencies changed since run.sh installed them: the daemon restarts the container), `busy` (shutting down) and `internal`.
 
 ## Behaviour
 
