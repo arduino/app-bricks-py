@@ -196,13 +196,14 @@ class BoxStabilizer:
         for box in boxes:
             if box.label != track.label:
                 continue
-            iou = _iou(track.box, (box.x, box.y, box.x + box.w, box.y + box.h))
-            if iou >= best_iou:
-                best, best_iou = box, iou
+            overlap = iou(track.box, (box.x, box.y, box.x + box.w, box.y + box.h))
+            if overlap >= best_iou:
+                best, best_iou = box, overlap
         return best
 
 
-def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+def iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    """The intersection over union of two boxes given as (x1, y1, x2, y2): 0 when they do not overlap, 1 when they coincide."""
     inter_w = min(a[2], b[2]) - max(a[0], b[0])
     inter_h = min(a[3], b[3]) - max(a[1], b[1])
     if inter_w <= 0 or inter_h <= 0:

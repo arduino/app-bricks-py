@@ -21,7 +21,7 @@ from arduino.app_peripherals.camera import BaseCamera
 from arduino.app_utils import AppError, Logger, brick
 
 from .drawing import DASH_COLOR, EDGE_COLOR, draw_area, draw_crossing_line
-from .identities import OVERLAP, SIZE_RATIO, ObjectIdentities
+from .identities import MIN_IOU, ObjectIdentities
 
 logger = Logger("VideoObjectTracking")
 
@@ -108,7 +108,7 @@ class VideoObjectTracking(VideoInference):
         self._boxes = BoxStabilizer()  # what the video shows: the tracked boxes, steadied across results
         self._labels_to_track = labels_to_track
         self._labels_to_ignore = labels_to_ignore
-        self._identities = ObjectIdentities(OBJECT_MEMORY_SEC, OVERLAP, SIZE_RATIO) if keep_identities else None
+        self._identities = ObjectIdentities(OBJECT_MEMORY_SEC, MIN_IOU) if keep_identities else None
         # The knobs of the tracking block as the model names them: keep_grace is max_age, min_detections is min_hits,
         # iou_threshold matches the boxes of a detection model and threshold the centroids of a FOMO one
         self._tracker: dict[str, float] = {

@@ -7,12 +7,12 @@
 from dataclasses import dataclass
 
 from arduino.app_internal.edge_impulse.client import Box
+from arduino.app_internal.edge_impulse.video_stream import iou
 from arduino.app_utils import Logger
 
 logger = Logger("VideoObjectTracking")
 
-OVERLAP = 0.5  # share of the smaller box that a new track must cover of the last box of an object to continue it
-SIZE_RATIO = 0.5  # smaller area over larger area: boxes further apart in size belong to different objects
+MIN_IOU = 0.35  # intersection over union a new track must have with the last box of an object to continue it
 
 
 @dataclass
@@ -29,15 +29,14 @@ class ObjectIdentities:
     `memory_sec` is the memory the brick keeps of an object missing from the results, the same one that keeps it
     in the area and in the counts: within it a new track can continue the object, after it the object is forgotten
     with its tracks and a track of it that comes back is a new object. A new track continues an object that no
-    track represents in the result when its box covers the last box of the object by at least `overlap` of the
-    smaller box and the two boxes are within `size_ratio` in area; among several such objects, the most covered
-    one. Of two live tracks of one object, the one that appeared last represents it.
+    track represents in the result when the intersection over union of its box and the last box of the object is
+    at least `min_iou`; among several such objects, the one it overlaps the most. Of two live tracks of one
+    object, the one that appeared last represents it.
     """
 
-    def __init__(self, memory_sec: float, overlap: float, size_ratio: float) -> None:
+    def __init__(self, memory_sec: float, min_iou: float) -> None:
         self._memory_sec = memory_sec
-        self._overlap = overlap
-        self._size_ratio = size_ratio
+        self._min_iou = min_iou
         self._objects: dict[int, _Object] = {}  # by number, the id of their first track
         self._object_of: dict[int, int] = {}  # track id -> number of its object
         self._appearance: dict[int, int] = {}  # track id -> rank of its first appearance
@@ -90,15 +89,11 @@ class ObjectIdentities:
     def _continued(self, track: Box, candidates: dict[int, _Object]) -> int | None:
         """The number of the candidate object the new track continues, None for a new object."""
         box = _xyxy(track)
-        area = _area(box)
-        best, best_covered = None, 0.0
+        best, best_overlap = None, 0.0
         for number, known in candidates.items():
-            smaller, larger = sorted((area, _area(known.box)))
-            if smaller < self._size_ratio * larger or smaller <= 0:
-                continue
-            covered = _intersection(box, known.box) / smaller
-            if covered >= self._overlap and covered > best_covered:
-                best, best_covered = number, covered
+            overlap = iou(box, known.box)
+            if overlap >= self._min_iou and overlap > best_overlap:
+                best, best_overlap = number, overlap
         return best
 
     def _prune(self, now: float) -> None:
@@ -112,13 +107,3 @@ class ObjectIdentities:
 
 def _xyxy(track: Box) -> tuple[float, float, float, float]:
     return (track.x, track.y, track.x + track.w, track.y + track.h)
-
-
-def _area(box: tuple[float, float, float, float]) -> float:
-    return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
-
-
-def _intersection(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
-    width = min(a[2], b[2]) - max(a[0], b[0])
-    height = min(a[3], b[3]) - max(a[1], b[1])
-    return max(0.0, width) * max(0.0, height)

@@ -5,7 +5,7 @@
 import json
 from pathlib import Path
 
-from arduino.app_bricks.video_object_tracking.identities import OVERLAP, SIZE_RATIO, ObjectIdentities
+from arduino.app_bricks.video_object_tracking.identities import MIN_IOU, ObjectIdentities
 from arduino.app_internal.edge_impulse.client import Box
 
 RECORDED_TIE = Path(__file__).parent / "data" / "tie_640x480.json"
@@ -16,7 +16,7 @@ def _box(object_id: int, label: str = "cup", x: float = 100.0, y: float = 100.0,
 
 
 def _identities() -> ObjectIdentities:
-    return ObjectIdentities(memory_sec=1.0, overlap=OVERLAP, size_ratio=SIZE_RATIO)
+    return ObjectIdentities(memory_sec=1.0, min_iou=MIN_IOU)
 
 
 def _numbers(resolved: list[tuple[int, str, Box]]) -> list[tuple[int, str, int | None]]:
@@ -55,22 +55,22 @@ def test_the_same_id_back_after_the_memory_is_a_new_object():
     assert _numbers(identities.resolve([_box(1, label="vase")], 1.5)) == [(1, "vase", 1)], "the object was forgotten with its track"
 
 
-def test_a_box_of_another_size_or_covering_less_than_half_does_not_continue():
+def test_a_box_overlapping_too_little_does_not_continue():
     identities = _identities()
     identities.resolve([_box(1)], 0.0)
-    assert _numbers(identities.resolve([_box(2, w=40.0, h=40.0)], 0.1)) == [(2, "cup", 2)], "1600 against 3600 pixels: below half"
+    assert _numbers(identities.resolve([_box(2, w=30.0, h=30.0)], 0.1)) == [(2, "cup", 2)], "900 of 3600 pixels shared: 0.25"
 
     identities = _identities()
     identities.resolve([_box(1)], 0.0)
-    assert _numbers(identities.resolve([_box(2, x=135.0)], 0.1)) == [(2, "cup", 2)], "25 of 60 columns covered: below half"
+    assert _numbers(identities.resolve([_box(2, x=135.0)], 0.1)) == [(2, "cup", 2)], "25 of 95 columns shared: 0.26"
 
 
-def test_the_most_covered_object_wins():
+def test_the_most_overlapped_object_wins():
     identities = _identities()
     identities.resolve([_box(1, x=100.0), _box(2, x=140.0)], 0.0)
     identities.resolve([], 0.1)
 
-    assert _numbers(identities.resolve([_box(3, x=125.0)], 0.2)) == [(2, "cup", 3)], "35 columns of the first, 45 of the second"
+    assert _numbers(identities.resolve([_box(3, x=125.0)], 0.2)) == [(2, "cup", 3)], "0.41 with the first, 0.60 with the second"
 
 
 def test_of_two_live_tracks_the_latest_represents_the_object():
