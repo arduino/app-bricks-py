@@ -601,7 +601,7 @@ class Modulino_Pixels(Modulino):
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
-    def set(self, idx, r, g, b, brightness = 5) -> None:
+    def set(self, idx, r, g, b, brightness = 25) -> None:
         """Set the color and brightness of one LED.
 
         Args:
