@@ -23,18 +23,15 @@ RUN set -ex; \
     uv pip install --system --no-cache-dir --no-deps /app/*.whl; \
     rm /app/*.whl /app/pyproject.toml /app/uv.lock; \
     # Every patch in patches/ (see its README), in name order: one that no longer applies exactly fails the build.
-    # Applied before compileall, which compiles the patched sources. GNU patch comes in through dpkg: apt-get
-    # install refuses to run on the packages python-base removes with --force-depends, dpkg checks only the
-    # dependencies of patch
+    # Applied before compileall, which compiles the patched sources. GNU patch is installed for this step only
     set -- /tmp/patches/*.patch; \
     if [ -e "$1" ]; then \
         apt-get update -y; \
-        (cd /tmp && apt-get download patch); \
-        dpkg -i /tmp/patch_*.deb; \
+        apt-get install -y --no-install-recommends --no-install-suggests patch; \
         for p in "$@"; do patch -p1 --forward --fuzz=0 --no-backup-if-mismatch -d /usr/local/lib/python3.13/site-packages -i "$p"; done; \
-        dpkg --purge patch; \
+        apt-get purge -y --auto-remove patch; \
         apt-get dist-clean; \
-        rm -rf /var/lib/apt/lists/* /var/lib/dpkg/*-old /tmp/patch_*.deb; \
+        rm -rf /var/lib/apt/lists/* /var/lib/dpkg/*-old; \
     fi; \
     rm -rf /tmp/patches; \
     # ALSA dsnoop/dmix wrappers: the file is static, generate it once here instead of at every app start
