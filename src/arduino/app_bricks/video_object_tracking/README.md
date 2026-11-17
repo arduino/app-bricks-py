@@ -147,6 +147,8 @@ tracker.on_area_enter(on_enter)
 tracker.on_area_exit(on_exit)
 ```
 
+The area and line callbacks run on a separate executor, so that no event is lost when several happen at the same time. An `on_detect` call that finds its callback still running is skipped without harm, because the next frame reports the object again. A crossing, an entry or an exit happens once, and a skipped one could not be recovered. On their executor the events wait in a queue and reach the callbacks one at a time, in the order they happened.
+
 The outline of the area is drawn on the video stream in white dashes unless it is set with `visible=False`. `set_area_coordinates()` raises `ValueError` for a polygon whose border crosses itself.
 
 To know how many objects are in view, watch an area as large as the frame and keep it off the video with `tracker.set_rectangular_area(0, 0, 1, 1, relative=True, visible=False)`. `get_objects_in_area()` then goes back to zero when the last object is gone.

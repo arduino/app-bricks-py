@@ -8,6 +8,7 @@ import threading
 import time
 from collections import Counter
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any
 
@@ -148,6 +149,7 @@ class VideoObjectTracking(VideoInference):
         self._area_counts: dict[str, Counter[str]] = {}  # entries and exits of the area, per label
         self._area_enter_handler: AreaCallback | None = None
         self._area_exit_handler: AreaCallback | None = None
+        self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"{type(self).__name__}Event")
 
         self._require_object_tracking()
 
@@ -174,6 +176,11 @@ class VideoObjectTracking(VideoInference):
                 "This model has no object tracking block, so it can never report a tracked object.",
                 hint="Enable object tracking in the Edge Impulse project and export the model again, or pick a model that already has the block.",
             )
+
+    def stop(self) -> None:
+        """Stop the brick and release its resources; the events not delivered yet are dropped."""
+        super().stop()
+        self._event_executor.shutdown(wait=False, cancel_futures=True)
 
     def _configure(self, client: InferenceClient) -> None:
         """Set the tracker knobs on the model every time it is opened; the identifiers seen so far are forgotten,
@@ -302,9 +309,10 @@ class VideoObjectTracking(VideoInference):
                 self._submit_event(handler, {"label": label, "object_id": object_id})
 
     def _submit_event(self, handler: Callable[[dict[str, Any]], None], event: dict[str, Any]) -> None:
-        """Run an event handler on the executor, so it never delays the processing of the results."""
+        """Queue an event for its handler. The events run on a thread of their own, one at a time and in the order
+        they were queued, so a handler never delays the processing of the results and two handlers never run together."""
         try:
-            self._executor.submit(handler, event)
+            self._event_executor.submit(handler, event)
         except RuntimeError:  # the executor was shut down before the task could be submitted
             pass
 
@@ -589,6 +597,8 @@ class VideoObjectTracking(VideoInference):
     def on_line_crossing(self, callback: LineCrossingCallback) -> None:
         """Register a callback invoked **every time a tracked object crosses the line**.
 
+        The line and area events reach their callbacks one at a time, in the order they happened.
+
         Args:
             callback (LineCrossingCallback): A plain function taking one dict argument,
                 `{"label": str, "object_id": int, "direction": str}`, where `direction` is the screen direction of
@@ -605,6 +615,8 @@ class VideoObjectTracking(VideoInference):
     def on_area_enter(self, callback: AreaCallback) -> None:
         """Register a callback invoked **every time a tracked object enters the area**.
 
+        The line and area events reach their callbacks one at a time, in the order they happened.
+
         Args:
             callback (AreaCallback): A plain function taking one dict argument, `{"label": str, "object_id": int}`.
 
@@ -618,6 +630,8 @@ class VideoObjectTracking(VideoInference):
 
     def on_area_exit(self, callback: AreaCallback) -> None:
         """Register a callback invoked **every time a tracked object leaves the area**, or disappears inside it.
+
+        The line and area events reach their callbacks one at a time, in the order they happened.
 
         Args:
             callback (AreaCallback): A plain function taking one dict argument, `{"label": str, "object_id": int}`.
