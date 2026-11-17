@@ -73,8 +73,9 @@ def hf_repo_id(model_url):
         marker = next((i for i, segment in enumerate(segments) if segment in _HF_FILE_MARKERS), len(segments))
         return "/".join(segments[:marker]) if 1 <= marker <= 2 else None
     fields = model_url.split(":")
-    # One or two fields start with the repository; three or four start with model_type.
-    repo_id = fields[0] if len(fields) <= 2 else fields[1]
+    # One or two fields start with the repository, and so do three whose first holds a
+    # slash, which a model_type never does; anything else starts with model_type.
+    repo_id = fields[0] if len(fields) <= 2 or (len(fields) == 3 and "/" in fields[0]) else fields[1]
     return repo_id or None
 
 

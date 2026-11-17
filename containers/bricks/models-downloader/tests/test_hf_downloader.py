@@ -33,10 +33,12 @@ from common.model_metadata import METADATA_NAME, metadata_records, read_metadata
 from hugging_face import hf_downloader
 from hugging_face.hf_downloader import (
     unfinished_files,
+    BOARD_MMPROJ_QUANTIZATIONS,
     BOARD_QUANTIZATIONS,
     DEFAULT_MMPROJ_QUANTIZATIONS,
     DEFAULT_QUANTIZATIONS,
     JsonProgress,
+    default_mmproj_quantizations,
     default_quantizations,
     parameter_count_b,
     delete_matched_files,
@@ -47,6 +49,7 @@ from hugging_face.hf_downloader import (
     generate_models_ini,
     gguf_pattern,
     has_model_content,
+    identify_download,
     interrupted_patterns,
     is_hf_url,
     is_installed,
@@ -285,6 +288,8 @@ def test_matches_pattern(path, pattern, expected):
         ("unsloth/gemma-4-E2B-it-GGUF:Q4_0", ("", "unsloth/gemma-4-E2B-it-GGUF", "Q4_0", None)),
         # Three fields: the historical form, still accepted.
         ("llamacpp:Qwen/Qwen3-8B-GGUF:Q8_0", ("llamacpp", "Qwen/Qwen3-8B-GGUF", "Q8_0", None)),
+        # Three fields starting with a repository: a model_type never holds a slash.
+        ("unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16", ("", "unsloth/gemma-4-E4B-it-GGUF", "Q4_0", "BF16")),
         # Four fields: with an mmproj quantization.
         ("llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16", ("llamacpp", "unsloth/gemma-4-E4B-it-GGUF", "Q4_0", "BF16")),
         # A trailing empty mmproj field means "no mmproj".
@@ -882,6 +887,71 @@ def test_fallback_model_id_matches_what_the_listing_derives(tmp_path):
     assert fallback_model_id("", [second], str(models_dir)) == listed[second]
 
 
+def _gemma_catalog(tmp_path):
+    """A catalog declaring gemma-4-E4B as models-list.yaml does: the text model, and the multimodal one pinning its projector."""
+    variables = {"models_repository": "llamacpp", "model_directory": GEMMA_REPO, "model_url": GEMMA_TEXT_URL}
+    entries = {GEMMA_TEXT_ID: variables, GEMMA_MULTIMODAL_ID: {**variables, "model_mmproj_url": GEMMA_MMPROJ_URL}}
+    catalog = tmp_path / "models-list.yaml"
+    catalog.write_text(
+        yaml.safe_dump({
+            "models": [
+                {model_id: {"deployment": {"handler": "hf-handler", "platforms": [{"ventunoq": {"variables": declared}}]}}}
+                for model_id, declared in entries.items()
+            ]
+        })
+    )
+    return str(catalog), variables
+
+
+def test_a_catalog_gguf_declared_multimodal_is_the_multimodal_entry_of_the_catalog(tmp_path):
+    """The text entry's variables all match, but the request is for the model with its projector."""
+    import list_models
+
+    models_dir = tmp_path / "llamacpp"
+    files = [_place_gguf(models_dir, f"{GEMMA_REPO}/{name}") for name in (GEMMA_TEXT_FILE, GEMMA_MMPROJ_FILE)]
+    catalog, variables = _gemma_catalog(tmp_path)
+    source = resolve_model_source(GEMMA_TEXT_URL, multimodal=True)
+
+    identity = identify_download({**variables, "model_multimodal": "true"}, source, files, str(models_dir), catalog)
+
+    assert identity == {"model_id": GEMMA_MULTIMODAL_ID, "model_origin": "built_in"}
+    # The id the host is told is the one the listing gives the same files, over the text model too.
+    _record_install(models_dir, GEMMA_REPO, "built_in", [GEMMA_TEXT_FILE], GEMMA_TEXT_ID)
+    _record_install(models_dir, GEMMA_REPO, "built_in", [GEMMA_TEXT_FILE, GEMMA_MMPROJ_FILE], identity["model_id"])
+    listed = {entry["id"]: entry["installed"] for entry in list_models.find_llamacpp_models(str(tmp_path))}
+    assert listed == {GEMMA_TEXT_ID: True, GEMMA_MULTIMODAL_ID: True}
+
+
+def test_a_catalog_gguf_is_identified_by_its_own_entry_when_the_variables_name_it(tmp_path):
+    models_dir = tmp_path / "llamacpp"
+    text = _place_gguf(models_dir, f"{GEMMA_REPO}/{GEMMA_TEXT_FILE}")
+    projector = _place_gguf(models_dir, f"{GEMMA_REPO}/{GEMMA_MMPROJ_FILE}")
+    catalog, variables = _gemma_catalog(tmp_path)
+
+    alone = identify_download(variables, resolve_model_source(GEMMA_TEXT_URL), [text], str(models_dir), catalog)
+    pinned = identify_download(
+        {**variables, "model_mmproj_url": GEMMA_MMPROJ_URL},
+        resolve_model_source(GEMMA_TEXT_URL, GEMMA_MMPROJ_URL),
+        [text, projector],
+        str(models_dir),
+        catalog,
+    )
+
+    assert alone["model_id"] == GEMMA_TEXT_ID
+    assert pinned["model_id"] == GEMMA_MULTIMODAL_ID
+
+
+def test_a_gguf_the_catalog_does_not_declare_keeps_its_fallback_id(tmp_path):
+    models_dir = tmp_path / "llamacpp"
+    files = [_place_gguf(models_dir, f"org/repo/{name}") for name in ("model-Q4_0.gguf", "mmproj-F16.gguf")]
+    catalog, _variables = _gemma_catalog(tmp_path)
+    env = {"models_repository": "llamacpp", "model_directory": "org/repo", "model_url": "org/repo:Q4_0", "model_multimodal": "true"}
+
+    identity = identify_download(env, resolve_model_source("org/repo:Q4_0", multimodal=True), files, str(models_dir), catalog)
+
+    assert identity == {"model_id": "llamacpp:org/repo/model-Q4_0-multimodal", "model_origin": "user"}
+
+
 # --------------------------------------------------------------------------- #
 # generate_models_ini
 # --------------------------------------------------------------------------- #
@@ -1285,6 +1355,16 @@ def test_is_installed_requires_the_mmproj_file_too(tmp_path):
     assert is_installed(str(repo), patterns) is False
     (repo / "mmproj-BF16.gguf").write_bytes(b"\0")
     assert is_installed(str(repo), patterns) is True
+
+
+def test_a_model_pattern_never_selects_the_projector_of_the_same_quantization(tmp_path):
+    """'*Q8_0*.gguf' matches 'mmproj-m-Q8_0.gguf' too, which is not the model it asks for."""
+    _models_dir, repo = _qwen_repo(tmp_path, "mmproj-m-Q8_0.gguf")
+    assert is_installed(str(repo), ["*Q8_0*.gguf"]) is False
+
+    (repo / "m-Q8_0.gguf").write_bytes(b"\0")
+    assert [p.name for p in matching_files(str(repo), ["*Q8_0*.gguf"])] == ["m-Q8_0.gguf"]
+    assert [p.name for p in matching_files(str(repo), ["*Q8_0*.gguf", "*mmproj*Q8_0*.gguf"])] == ["m-Q8_0.gguf", "mmproj-m-Q8_0.gguf"]
 
 
 def test_source_patterns_covers_the_model_and_its_mmproj():
@@ -2431,7 +2511,27 @@ GEMMA_FILES = (
 
 
 def test_the_mmproj_fallback_order():
-    assert DEFAULT_MMPROJ_QUANTIZATIONS == ("F16", "BF16")
+    """Pinned deliberately: the order decides which projector a multimodal model gets."""
+    assert DEFAULT_MMPROJ_QUANTIZATIONS == ("F16", "BF16", "Q8_0")
+
+
+def test_the_unoq_mmproj_order_puts_q8_0_first():
+    """Pinned deliberately: its CPU has no half-precision arithmetic, where Q8_0 is several times faster."""
+    assert BOARD_MMPROJ_QUANTIZATIONS["unoq"] == ("Q8_0", "F16", "BF16")
+
+
+@pytest.mark.parametrize(
+    ("board", "expected"),
+    [
+        ("unoq", ("Q8_0", "F16", "BF16")),
+        ("UnoQ", ("Q8_0", "F16", "BF16")),
+        ("ventunoq", DEFAULT_MMPROJ_QUANTIZATIONS),
+        ("", DEFAULT_MMPROJ_QUANTIZATIONS),
+    ],
+)
+def test_the_mmproj_order_follows_the_board(monkeypatch, board, expected):
+    monkeypatch.setenv("BOARD_NAME", board)
+    assert default_mmproj_quantizations() == expected
 
 
 @pytest.mark.parametrize(
@@ -2452,11 +2552,18 @@ def test_parse_mmproj_key_rejects_what_it_cannot_read(key):
         parse_mmproj_key(key)
 
 
-def test_a_bare_mmproj_key_defaults_to_f16_with_bf16_behind_it():
+def test_a_bare_mmproj_key_defaults_to_f16_with_its_fallbacks_behind_it():
     source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", GEMMA)
     assert source["mmproj_quantization"] == "F16"
-    assert source["mmproj_quantization_fallbacks"] == ["BF16"]
+    assert source["mmproj_quantization_fallbacks"] == ["BF16", "Q8_0"]
     assert source["mmproj_allow_pattern"] == "*mmproj*F16*.gguf"
+
+
+def test_a_bare_mmproj_key_defaults_to_the_order_of_the_board(monkeypatch):
+    monkeypatch.setenv("BOARD_NAME", "unoq")
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", GEMMA)
+    assert source["mmproj_quantization"] == "Q8_0"
+    assert source["mmproj_quantization_fallbacks"] == ["F16", "BF16"]
 
 
 def test_an_mmproj_key_naming_its_quantization_does_not_fall_back():
@@ -2477,7 +2584,7 @@ def test_an_mmproj_key_is_honoured_next_to_a_model_url():
     """The projector is its own variable: pinning the model does not have to pin it too."""
     source = resolve_model_source(f"https://huggingface.co/{GEMMA}/blob/main/gemma-3-4b-it-Q4_0.gguf", GEMMA)
     assert source["mmproj_quantization"] == "F16"
-    assert source["mmproj_quantization_fallbacks"] == ["BF16"]
+    assert source["mmproj_quantization_fallbacks"] == ["BF16", "Q8_0"]
 
 
 def test_an_mmproj_from_another_repository_is_refused():
@@ -2554,7 +2661,11 @@ def test_a_repository_with_no_projector_at_all_says_so(monkeypatch):
 
     with pytest.raises(FileNotFoundError) as excinfo:
         narrow_to_published(source)
-    assert "No file matching any of '*mmproj*F16*.gguf', '*mmproj*BF16*.gguf'" in str(excinfo.value)
+    assert "publishes no multimodal projector" in str(excinfo.value)
+    # What to do about it, not the list of model files: none of them is a projector.
+    assert "Install it as a text model instead" in str(excinfo.value)
+    assert "m-Q4_0.gguf" not in str(excinfo.value)
+    assert excinfo.value.code == "no_compatible_file"
 
 
 def test_an_installed_projector_settles_a_defaulted_one(tmp_path, monkeypatch, capsys):
@@ -2669,6 +2780,255 @@ def test_delete_takes_only_the_projector_that_was_asked_for(tmp_path, monkeypatc
 
 
 # --------------------------------------------------------------------------- #
+# A model declared multimodal finds its own projector
+#
+# --multimodal names no projector: the downloader looks for one in the model's
+# repository, in the board's preference order, then takes the only one there is. A
+# projector the caller did name always wins, and a repository without one is an error.
+# --------------------------------------------------------------------------- #
+def test_a_model_declared_multimodal_asks_for_the_defaulted_projector():
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", multimodal=True)
+    assert source["mmproj_quantization"] == "F16"
+    assert source["mmproj_quantization_fallbacks"] == ["BF16", "Q8_0"]
+    assert source_patterns(source) == ["*Q4_0*.gguf", "*mmproj*F16*.gguf"]
+
+
+def test_a_model_not_declared_multimodal_asks_for_no_projector():
+    assert resolve_model_source(f"llamacpp:{GEMMA}:Q4_0")["mmproj_allow_pattern"] is None
+
+
+def test_a_model_declared_multimodal_on_unoq_asks_for_q8_0_first(monkeypatch):
+    monkeypatch.setenv("BOARD_NAME", "unoq")
+    source = resolve_model_source(f"https://huggingface.co/{GEMMA}/blob/main/gemma-3-4b-it-Q4_0.gguf", multimodal=True)
+    assert source["mmproj_quantization"] == "Q8_0"
+    assert source["mmproj_quantization_fallbacks"] == ["F16", "BF16"]
+
+
+@pytest.mark.parametrize("key", [f"llamacpp:{GEMMA}:Q4_0:F32", f"{GEMMA}:Q4_0:F32"])
+def test_the_projector_named_in_the_key_wins_over_the_declaration(key):
+    source = resolve_model_source(key, multimodal=True)
+    assert source["mmproj_quantization"] == "F32"
+    assert source["mmproj_quantization_fallbacks"] == []
+    assert source["mmproj_allow_pattern"] == "*mmproj*F32*.gguf"
+
+
+def test_the_mmproj_url_wins_over_the_declaration():
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", f"https://huggingface.co/{GEMMA}/blob/main/mmproj-BF16.gguf", multimodal=True)
+    assert source["mmproj_url_filename"] == "mmproj-BF16.gguf"
+    assert source["mmproj_quantization_fallbacks"] == []
+
+
+def test_a_projector_naming_no_quantization_is_found_when_it_is_the_only_one(monkeypatch, capsys):
+    """Google's repositories publish one projector, with no quantization in its name."""
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding(GEMMA_TEXT_FILE, GEMMA_MMPROJ_FILE))
+    source = resolve_model_source(GEMMA_TEXT_URL, multimodal=True)
+
+    narrow_to_published(source)
+
+    assert source["mmproj_allow_pattern"] == GEMMA_MMPROJ_FILE
+    assert source["mmproj_quantization_fallbacks"] == []
+    assert f"publishes one mmproj, using {GEMMA_MMPROJ_FILE}" in read_events(capsys)[0]["description"]
+
+
+def test_the_board_order_chooses_among_the_projectors_a_repository_publishes(monkeypatch):
+    monkeypatch.setenv("BOARD_NAME", "unoq")
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("m-Q8_0.gguf", "mmproj-m-f16.gguf", "mmproj-m-Q8_0.gguf"))
+    source = resolve_model_source("org/m-GGUF:Q8_0", multimodal=True)
+
+    narrow_to_published(source)
+
+    assert source["mmproj_allow_pattern"] == "mmproj-m-Q8_0.gguf"
+
+
+def test_several_projectors_with_no_candidate_among_them_are_not_guessed_between(monkeypatch):
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("m-Q4_0.gguf", "mmproj-F32.gguf", "mmproj-Q4_K_M.gguf"))
+    source = resolve_model_source("org/m-GGUF:Q4_0", multimodal=True)
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        narrow_to_published(source)
+    assert "several multimodal projectors, none of them F16, BF16, Q8_0: mmproj-F32.gguf, mmproj-Q4_K_M.gguf" in str(excinfo.value)
+    assert "org/m-GGUF:<quantization>:<mmproj_quantization>" in str(excinfo.value)
+    assert excinfo.value.code == "model_not_found"
+
+
+def test_an_installed_projector_naming_no_quantization_settles_the_declaration(tmp_path, monkeypatch, capsys):
+    """Offline parity: --check and --delete must find on disk what the Hub settled on."""
+    _models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf", "Qwen3-0.6B-mmproj.gguf")
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _unreachable_hub)
+    source = resolve_model_source("unsloth/Qwen3-0.6B-GGUF:Q4_0", multimodal=True)
+
+    assert narrow_to_installed(source, str(repo), mmproj=True) == "Qwen3-0.6B-mmproj.gguf"
+    assert source["mmproj_allow_pattern"] == "Qwen3-0.6B-mmproj.gguf"
+    assert source["mmproj_quantization_fallbacks"] == []
+    assert "using the Qwen3-0.6B-mmproj.gguf already installed" in read_events(capsys)[0]["description"]
+
+
+def test_two_installed_projectors_with_no_candidate_among_them_settle_nothing(tmp_path):
+    _models_dir, repo = _qwen_repo(tmp_path, "mmproj-F32.gguf", "mmproj-Q4_K_M.gguf")
+    source = resolve_model_source("unsloth/Qwen3-0.6B-GGUF:Q4_0", multimodal=True)
+
+    assert narrow_to_installed(source, str(repo), mmproj=True) is None
+    assert source["mmproj_quantization"] == "F16"
+
+
+@pytest.fixture
+def stub_gemma_hub(monkeypatch):
+    """Stub the Hub out for a pinned model and a looked-up projector; record what each call fetched."""
+    fetched: list[tuple[str, str]] = []
+
+    def _hub_download(*, repo_id, filename, local_dir, revision=None, tqdm_class=None):
+        fetched.append(("url", filename))
+        Path(local_dir, filename).write_bytes(b"\0")
+
+    def _download(_repo_id, allow_pattern, output_dir, _tqdm_class, ignore_pattern=None, verbose=False):
+        fetched.append(("pattern", allow_pattern))
+        Path(output_dir, allow_pattern).write_bytes(b"\0")
+
+    monkeypatch.setattr(hf_downloader, "validate_hub_source", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hf_downloader, "hf_hub_download", _hub_download)
+    monkeypatch.setattr(hf_downloader, "download_matched_files", _download)
+    monkeypatch.setattr(hf_downloader, "expected_size_bytes", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding(GEMMA_TEXT_FILE, GEMMA_MMPROJ_FILE))
+    return fetched
+
+
+def _declared_multimodal(monkeypatch, models_dir, *action):
+    """Run an action the way the handler scripts do for a model declared multimodal."""
+    monkeypatch.setenv("model_url", GEMMA_TEXT_URL)
+    monkeypatch.setenv("model_multimodal", "true")
+    _run_main(monkeypatch, *action, "--model-url", GEMMA_TEXT_URL, "--multimodal", "--output-dir", str(models_dir))
+
+
+def test_a_pinned_model_declared_multimodal_downloads_its_file_then_the_projector(tmp_path, monkeypatch, stub_gemma_hub, capsys):
+    """The model keeps the commit its URL pins; the projector is the one the repository publishes."""
+    models_dir = tmp_path / "models"
+
+    _declared_multimodal(monkeypatch, models_dir)
+
+    assert stub_gemma_hub == [("url", GEMMA_TEXT_FILE), ("pattern", GEMMA_MMPROJ_FILE)]
+    repo = models_dir / GEMMA_REPO
+    record = metadata_records(read_metadata(str(repo)))[0]
+    assert record["files"] == sorted([GEMMA_TEXT_FILE, GEMMA_MMPROJ_FILE])
+    # No catalog here, so the model is named after its files: the multimodal model of its GGUF.
+    assert record["model_id"] == f"llamacpp:{GEMMA_REPO}/{GEMMA_TEXT_FILE.removesuffix('.gguf')}-multimodal"
+    # The declaration is what a later check, delete or re-download is run with.
+    assert record["inputs"]["model_multimodal"] == "true"
+    assert "model_mmproj_url" not in record["inputs"]
+    assert read_events(capsys)[-1]["model_id"] == record["model_id"]
+
+
+def test_a_model_declared_multimodal_is_checked_and_deleted_offline(tmp_path, monkeypatch, stub_gemma_hub, capsys):
+    models_dir = tmp_path / "models"
+    _declared_multimodal(monkeypatch, models_dir)
+    repo = models_dir / GEMMA_REPO
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _unreachable_hub)
+    capsys.readouterr()
+
+    _declared_multimodal(monkeypatch, models_dir, "--check")
+    assert read_events(capsys)[-1]["description"].startswith("Model exists:")
+
+    _declared_multimodal(monkeypatch, models_dir, "--delete")
+    assert not (repo / GEMMA_TEXT_FILE).exists()
+    assert not (repo / GEMMA_MMPROJ_FILE).exists()
+
+
+def test_a_model_declared_multimodal_is_not_installed_by_its_text_model(tmp_path, monkeypatch, capsys):
+    models_dir = tmp_path / "models"
+    repo = models_dir / GEMMA_REPO
+    repo.mkdir(parents=True)
+    (repo / GEMMA_TEXT_FILE).write_bytes(b"\0")
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _unreachable_hub)
+
+    with pytest.raises(SystemExit):
+        _declared_multimodal(monkeypatch, models_dir, "--check")
+    assert read_events(capsys)[-1]["event"] == "error"
+
+
+def test_a_model_declared_multimodal_fetches_only_the_projector_over_its_text_model(tmp_path, monkeypatch, stub_gemma_hub):
+    models_dir = tmp_path / "models"
+    monkeypatch.setenv("model_url", GEMMA_TEXT_URL)
+    _run_main(monkeypatch, "--model-url", GEMMA_TEXT_URL, "--output-dir", str(models_dir))
+
+    _declared_multimodal(monkeypatch, models_dir)
+
+    assert stub_gemma_hub == [("url", GEMMA_TEXT_FILE), ("pattern", GEMMA_MMPROJ_FILE)]
+    records = metadata_records(read_metadata(str(models_dir / GEMMA_REPO)))
+    assert [sorted(r["files"]) for r in records] == [[GEMMA_TEXT_FILE], sorted([GEMMA_TEXT_FILE, GEMMA_MMPROJ_FILE])]
+
+
+def test_a_model_declared_multimodal_fails_before_writing_when_there_is_no_projector(tmp_path, monkeypatch, stub_gemma_hub, capsys):
+    """Never installed as its text model alone: the declaration is what the caller asked for."""
+    models_dir = tmp_path / "models"
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding(GEMMA_TEXT_FILE))
+
+    with pytest.raises(SystemExit):
+        _declared_multimodal(monkeypatch, models_dir)
+
+    assert stub_gemma_hub == []
+    assert not (models_dir / GEMMA_REPO).exists()
+    error = read_events(capsys)[-1]
+    assert error["event"] == "error"
+    assert error["code"] == "no_compatible_file"
+    assert "publishes no multimodal projector" in error["description"]
+
+
+def test_the_size_of_a_model_declared_multimodal_counts_its_projector(tmp_path, monkeypatch, capsys):
+    """The host checks the free space against this size before it downloads anything."""
+    sizes = {GEMMA_TEXT_FILE: 300, GEMMA_MMPROJ_FILE: 100}
+
+    def _listing(_repo_id, patterns, ignore_pattern=None, **_kwargs):
+        return [_SizedRepoFile(path, size) for path, size in sizes.items() if any(matches_pattern(path, p) for p in patterns)]
+
+    monkeypatch.setattr(hf_downloader, "validate_hub_source", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _listing)
+
+    _declared_multimodal(monkeypatch, tmp_path / "models", "--info")
+
+    stat = read_events(capsys)[-1]
+    assert stat["event"] == "stat"
+    assert stat["size_bytes"] == 400
+    assert [f["file"] for f in stat["files"]] == [GEMMA_TEXT_FILE, GEMMA_MMPROJ_FILE]
+
+
+def test_the_size_leaves_out_a_projector_only_the_model_pattern_matches(tmp_path, monkeypatch, capsys):
+    """Seen on ggml-org's repositories: a Q8_0 model next to both an f16 and a Q8_0 projector."""
+    sizes = {"m-Q8_0.gguf": 300, "mmproj-m-Q8_0.gguf": 50, "mmproj-m-f16.gguf": 100}
+
+    def _listing(_repo_id, patterns, ignore_pattern=None, **_kwargs):
+        return [_SizedRepoFile(path, size) for path, size in sizes.items() if any(matches_pattern(path, p) for p in patterns)]
+
+    monkeypatch.setattr(hf_downloader, "validate_hub_source", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _listing)
+
+    _run_main(monkeypatch, "--info", "--model-url", "org/m-GGUF:Q8_0", "--multimodal", "--output-dir", str(tmp_path / "models"))
+
+    stat = read_events(capsys)[-1]
+    assert [f["file"] for f in stat["files"]] == ["m-Q8_0.gguf", "mmproj-m-f16.gguf"]
+    assert stat["size_bytes"] == 400
+    assert hf_downloader.expected_size_bytes("org/m-GGUF", ["*Q8_0*.gguf", "mmproj-m-f16.gguf"]) == 400
+
+
+HF_HANDLER_SCRIPTS = ["hf_model_downloader.sh", "hf_model_info.sh", "hf_model_checker.sh", "hf_model_remover.sh"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the handler scripts run in the Linux container")
+@pytest.mark.parametrize("script", HF_HANDLER_SCRIPTS)
+@pytest.mark.parametrize("value", ["true", "True"])
+def test_a_model_declared_multimodal_reaches_every_action(tmp_path, script, value):
+    """Check, info, download and delete run with the same variables, and must agree on the files."""
+    assert "--multimodal" in _run_hf_script(tmp_path, script, model_multimodal=value)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the handler scripts run in the Linux container")
+@pytest.mark.parametrize("script", HF_HANDLER_SCRIPTS)
+@pytest.mark.parametrize("value", [None, "", "false"], ids=["unset", "empty", "false"])
+def test_a_model_not_declared_multimodal_runs_every_action_without_the_flag(tmp_path, script, value):
+    env = {} if value is None else {"model_multimodal": value}
+
+    assert "--multimodal" not in _run_hf_script(tmp_path, script, **env)
+
+
+# --------------------------------------------------------------------------- #
 # The address of a repository is the key for that repository
 # --------------------------------------------------------------------------- #
 SMOLLM = "unsloth/SmolLM2-135M-Instruct-GGUF"
@@ -2738,7 +3098,7 @@ def test_a_subtree_url_is_refused_and_says_what_is_accepted():
 def test_a_repository_url_names_the_projector_too():
     source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", f"https://huggingface.co/{GEMMA}")
     assert source["mmproj_quantization"] == "F16"
-    assert source["mmproj_quantization_fallbacks"] == ["BF16"]
+    assert source["mmproj_quantization_fallbacks"] == ["BF16", "Q8_0"]
     assert source["mmproj_url_filename"] is None
 
 

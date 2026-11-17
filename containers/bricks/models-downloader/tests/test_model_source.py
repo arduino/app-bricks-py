@@ -34,6 +34,7 @@ def test_model_runtime(handler, expected):
         ("Qwen/Qwen3-8B-GGUF:Q8_0", "Qwen/Qwen3-8B-GGUF"),
         ("llamacpp:Qwen/Qwen3-8B-GGUF:Q8_0", "Qwen/Qwen3-8B-GGUF"),
         ("llamacpp:Qwen/Qwen3-VL-GGUF:Q4_0:F16", "Qwen/Qwen3-VL-GGUF"),
+        ("Qwen/Qwen3-VL-GGUF:Q4_0:F16", "Qwen/Qwen3-VL-GGUF"),
         ("", None),
     ],
 )

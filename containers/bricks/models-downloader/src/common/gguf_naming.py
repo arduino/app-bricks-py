@@ -27,7 +27,8 @@ would all act on whichever file happened to win.
 A GGUF with a multimodal projector (``*mmproj*.gguf``) in its directory is two models:
 the text model ``<name>``, loaded alone, and ``<name>-multimodal``
 (``multimodal_model_name``), loaded with the projector. The catalog declares them as
-two entries on the same file, the second one with a ``model_mmproj_url``.
+two entries on the same file, the second one with a ``model_mmproj_url`` naming the
+projector, or with ``model_multimodal: "true"`` leaving the downloader to find it.
 
 The same rule must name a model everywhere it appears: the listing id
 (``llamacpp:<name>``), the models.ini section (``<name>``) and the fallback metadata
@@ -97,7 +98,8 @@ def declared_gguf_files(models):
         directory = (variables.get("model_directory") or "").strip("/")
         if not directory:
             continue
-        declaration = GgufDeclaration(directory, gguf_basename(variables.get("model_url", "")), model_id, bool(variables.get("model_mmproj_url")))
+        multimodal = bool(variables.get("model_mmproj_url")) or str(variables.get("model_multimodal", "")).lower() == "true"
+        declaration = GgufDeclaration(directory, gguf_basename(variables.get("model_url", "")), model_id, multimodal)
         if declaration not in declarations:
             declarations.append(declaration)
     return declarations
