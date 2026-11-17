@@ -35,19 +35,18 @@ model came in::
     hf_downloader --model-url <model> --model-mmproj-url https://huggingface.co/<org>/<repo>/blob/<revision>/mmproj-<q>.gguf
     hf_downloader --model-url <model> --model-mmproj-url [<model_type>:]<repo_id>[:<quantization>]
 
-Or it is not named at all: ``--multimodal`` declares that the model is wanted with its
-projector, and the downloader looks for one in the model's own repository::
+Or it is not named at all: ``auto`` in the projector's variable asks for the model with
+its projector, and the downloader looks for one in the model's own repository::
 
-    hf_downloader --model-url [<model_type>:]<repo_id>[:<quantization>] --multimodal
-    hf_downloader --model-url https://huggingface.co/<org>/<repo>/blob/<revision>/<file>.gguf --multimodal
+    hf_downloader --model-url [<model_type>:]<repo_id>[:<quantization>] --model-mmproj-url auto
+    hf_downloader --model-url https://huggingface.co/<org>/<repo>/blob/<revision>/<file>.gguf --model-mmproj-url auto
 
-A projector asked for without a quantization — by ``--multimodal``, or by an mmproj key
-naming only the repository — is the first the repository publishes of F16, BF16 and Q8_0
+A projector asked for without a quantization — by ``auto``, or by an mmproj key naming
+only the repository — is the first the repository publishes of F16, BF16 and Q8_0
 (Q8_0, F16, BF16 on UnoQ, see BOARD_MMPROJ_QUANTIZATIONS), or else the only projector
 there is, whatever its name. A repository with no projector fails the request: a model
-declared multimodal is never installed as its text model alone. A projector that is
-named, by ``--model-mmproj-url`` or by the key's ``<mmproj_quantization>``, always wins
-over the declaration.
+asked for with its projector is never installed as its text model alone. A projector the
+model key names, with its ``<mmproj_quantization>``, wins over ``auto``.
 
 A leading ``<scheme>://`` selects form 1; anything else is parsed as a key. A URL that
 names only a repository — the address of the page the file would be copied from — says
@@ -261,6 +260,11 @@ DEFAULT_MMPROJ_QUANTIZATIONS = ("F16", "BF16", "Q8_0")
 BOARD_MMPROJ_QUANTIZATIONS = {
     "unoq": ("Q8_0", "F16", "BF16"),
 }
+
+
+# The projector spec that names no projector: the model is wanted with the one its own
+# repository publishes, found in the order above. Case is ignored.
+MMPROJ_AUTO = "auto"
 
 
 def default_mmproj_quantizations(board: str | None = None) -> tuple[str, ...]:
@@ -934,7 +938,7 @@ def gguf_pattern(spec: str, mmproj: bool = False) -> str:
     return f"*mmproj*{spec}*.gguf" if mmproj else f"*{spec}*.gguf"
 
 
-def resolve_model_source(model_url: str, model_mmproj_url: str | None = None, multimodal: bool = False) -> dict:
+def resolve_model_source(model_url: str, model_mmproj_url: str | None = None) -> dict:
     """Resolve *model_url* into everything needed to fetch, check or delete the model.
 
     Two syntaxes are accepted, so a single variable covers every case:
@@ -951,12 +955,10 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None, mu
     *model_mmproj_url* names the multimodal projector, and takes either syntax too,
     independently of the one the model came in: a URL pins the file, a key
     ``[<model_type>:]<repo_id>[:<quantization>]`` asks the repository for it and falls back
-    through ``default_mmproj_quantizations()`` when no quantization is given.
-
-    *multimodal* declares that the model is wanted with its projector without naming
-    one: the projector is then looked for in the model's own repository, in the same
-    preference order. A projector named anywhere else — the key's fourth field, or
-    *model_mmproj_url* — is a choice the caller made, and wins over the declaration.
+    through ``default_mmproj_quantizations()`` when no quantization is given. ``auto``
+    (``MMPROJ_AUTO``) names none: the projector is then looked for in the model's own
+    repository, in the same preference order, unless the model key already names its
+    quantization — a choice the caller made, which ``auto`` does not contradict.
 
     Returns:
         A dict with ``repo_id``, ``allow_pattern`` and ``mmproj_allow_pattern`` (used by
@@ -976,6 +978,11 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None, mu
             f"([<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]], e.g. {EXAMPLE_REPO_ID} "
             f"which defaults to {default_quantization(EXAMPLE_REPO_ID)}, or Qwen/Qwen3-8B-GGUF:Q8_0)"
         )
+
+    # "auto" names no projector, so it is not a second name for the one a key may give.
+    find_projector = (model_mmproj_url or "").strip().lower() == MMPROJ_AUTO
+    if find_projector:
+        model_mmproj_url = None
 
     source = {
         "repo_id": "",
@@ -1028,7 +1035,7 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None, mu
 
     if model_mmproj_url:
         apply_mmproj_spec(source, model_mmproj_url)
-    elif multimodal and not source["mmproj_allow_pattern"]:
+    elif find_projector and not source["mmproj_allow_pattern"]:
         apply_mmproj_quantization(source)
     return source
 
@@ -1475,8 +1482,8 @@ def identify_download(env: Mapping[str, str], source: dict, files: list[str], mo
     """``identify_model`` for the *files* a request names, as the model the request asked for.
 
     The catalog is matched on the download variables, and a text entry's are all there
-    when its GGUF is asked for with a projector the entry does not name — one found by
-    declaration, or pinned at another commit. That request is the multimodal entry the
+    when its GGUF is asked for with a projector the entry does not name — ``auto``, or
+    one pinned at another commit. That request is the multimodal entry the
     catalog declares on the same file, which is what the listing calls these files.
     """
     identity = identify_model(env, models_list_path, fallback_model_id(source["model_type"], files, models_dir))
@@ -1862,15 +1869,10 @@ def main():
         "[<model_type>:]<repo_id>[:<quantization>] naming the model's own repository "
         f"(e.g. unsloth/gemma-3-4b-it-GGUF, which tries {', '.join(default_mmproj_quantizations())} in that order; "
         "unsloth/gemma-3-4b-it-GGUF:BF16). Works with either form of --model-url, and is the only way to ask for "
-        "a projector by repository; the model key's fourth field names its quantization explicitly.",
-    )
-    parser.add_argument(
-        "--multimodal",
-        action="store_true",
-        help="Download the model with its multimodal projector, found in the model's own repository "
-        f"(tries {', '.join(default_mmproj_quantizations())} in that order — the order depends on the board — "
-        "then the only projector the repository publishes). A projector named by --model-mmproj-url or by the "
-        "model key's fourth field wins. Fails when the repository publishes no projector.",
+        "a projector by repository; the model key's fourth field names its quantization explicitly. "
+        f"'{MMPROJ_AUTO}' names no projector and finds the one the model's repository publishes: the same order, "
+        "which depends on the board, then the only projector there is. The model key's fourth field wins over it, "
+        "and a repository with no projector fails the request.",
     )
     parser.add_argument(
         "--output-dir",
@@ -1910,7 +1912,7 @@ def main():
     args = parser.parse_args()
 
     try:
-        source = resolve_model_source(args.model_url, args.model_mmproj_url, args.multimodal)
+        source = resolve_model_source(args.model_url, args.model_mmproj_url)
     except ValueError as exc:
         # Parsing reads only the arguments, so whatever it rejects is the model URL or key.
         emit_json_error(str(exc), code=error_code(exc, ERR_INVALID_MODEL_URL))

@@ -12,9 +12,6 @@ args=(
 if [ -n "${model_mmproj_url}" ]; then
     args+=(--model-mmproj-url "${model_mmproj_url}")
 fi
-if [ "${model_multimodal,,}" = "true" ]; then
-    args+=(--multimodal)
-fi
 
 python /app/hugging_face/hf_downloader.py "${args[@]}"
 exit_code=$?

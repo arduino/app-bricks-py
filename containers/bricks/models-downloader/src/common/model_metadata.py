@@ -117,11 +117,9 @@ INPUT_VARIABLES = (
     "ei_impulse_id",
     "history_id",
     "target",
-    # hugging face — model_url carries either a file URL or a compact model key, and
-    # model_multimodal ("true") asks for its projector without naming one
+    # hugging face — model_url carries either a file URL or a compact model key
     "model_url",
     "model_mmproj_url",
-    "model_multimodal",
 )
 
 # Credentials are never persisted, whatever the environment holds.
