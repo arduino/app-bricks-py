@@ -622,7 +622,7 @@ class Modulino_Pixels(Modulino):
             r (int): Red, 0-255.
             g (int): Green, 0-255.
             b (int): Blue, 0-255.
-            brightness (int, optional): Brightness in percent, 0-100. Defaults to 5.
+            brightness (int, optional): Brightness in percent, 0-100. Defaults to 25.
         """
         try:
             ok = Bridge.call(f"{self.name}:set", idx, r, g, b, brightness)
@@ -741,3 +741,67 @@ class Modulino_Light(Modulino):
         # The MCU packs the color as 0x00RRGGBB
         packed = self._read("getColor", "color")
         return ModulinoColor((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF)
+
+class Modulino_LatchRelay(Modulino):
+    """Class to handle a Modulino Latch Relay.
+
+    The relay keeps its position (on or off) when the power is removed.
+    """
+    UNKNOWN = -1
+    """Relay status: unknown, until the first `set()` or `reset()` after the power on."""
+    OFF = 0
+    """Relay status: off (open circuit)."""
+    ON = 1
+    """Relay status: on (closed circuit)."""
+
+    def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
+        """Initialize the Modulino_LatchRelay with the given I2C address.
+
+        Args:
+            i2c_address (int, optional): The I2C address of the latch relay modulino. Defaults it will autoscan for the address.
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
+        """
+        super().__init__("latch_relay", i2c_address, hub_port)
+
+    @override
+    def start(self) -> None:
+        """Start the latch relay modulino."""
+        try:
+            ok = Bridge.call(f"{self.name}:begin")
+        except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+
+    @override
+    def stop(self) -> None:
+        """Stop the latch relay modulino."""
+        try:
+            Bridge.call("delete_modulino", self.name)
+        except:
+            raise ModulinoError(f"cannot delete modulino {self.name}")
+
+    def set(self) -> None:
+        """Turn the relay on (close the circuit)."""
+        try:
+            Bridge.call(f"{self.name}:set")
+        except:
+            raise ModulinoError(f"cannot set modulino {self.name}")
+
+    def reset(self) -> None:
+        """Turn the relay off (open the circuit)."""
+        try:
+            Bridge.call(f"{self.name}:reset")
+        except:
+            raise ModulinoError(f"cannot reset modulino {self.name}")
+
+    def getStatus(self) -> int:
+        """Get the relay status.
+
+        Returns:
+            int: `ON`, `OFF` or `UNKNOWN` (until the first `set()` or `reset()` after the power on).
+        """
+        try:
+            return Bridge.call(f"{self.name}:getStatus")
+        except:
+            raise ModulinoError(f"cannot get status from modulino {self.name}")

@@ -75,7 +75,7 @@ The notification goes from the board through the Linux side to your app, so it c
 
 ## Modulino Pixels
 
-`Modulino_Pixels` drives 8 RGB LEDs (index 0-7). `set(idx, r, g, b, brightness=5)` sets the color (0-255 per channel) and the brightness (0-100 %) of one LED, `clear(idx)` turns one off and `clearAll()` turns all of them off. Each call updates the LEDs right away.
+`Modulino_Pixels` drives 8 RGB LEDs (index 0-7). `set(idx, r, g, b, brightness=25)` sets the color (0-255 per channel) and the brightness (0-100 %) of one LED, `clear(idx)` turns one off and `clearAll()` turns all of them off. Each call updates the LEDs right away.
 
 ```python
 from arduino.app_bricks.modulino import Modulino_Pixels
@@ -84,7 +84,7 @@ pixels = Modulino_Pixels()   # autoscan for the address
 pixels.start()
 
 pixels.set(0, 255, 0, 0, 20)   # LED 0 red at 20 %
-pixels.set(7, 0, 0, 255)       # LED 7 blue at the default 5 %
+pixels.set(7, 0, 0, 255)       # LED 7 blue at the default 25 %
 
 pixels.clearAll()              # all LEDs off
 ```
@@ -121,3 +121,20 @@ pixels.setColor(0, color)        # show the color seen by the sensor
 `ModulinoColor` is a tuple `(r, g, b)`, so it can be unpacked (`r, g, b = color`) and passed to libraries that take an RGB tuple, such as Pillow (`Image.new("RGB", size, color)`). OpenCV takes colors in BGR order: pass `color[::-1]`.
 
 A failed measure raises `ModulinoError`.
+
+## Modulino Latch Relay
+
+`Modulino_LatchRelay` drives a latching relay, which keeps its position (on or off) when the power is removed. `set()` turns it on, `reset()` turns it off and `getStatus()` returns `Modulino_LatchRelay.ON`, `Modulino_LatchRelay.OFF` or `Modulino_LatchRelay.UNKNOWN`:
+
+```python
+from arduino.app_bricks.modulino import Modulino_LatchRelay
+
+relay = Modulino_LatchRelay()   # autoscan for the address
+relay.start()
+
+relay.set()                     # relay on
+print(relay.getStatus() == Modulino_LatchRelay.ON)
+relay.reset()                   # relay off
+```
+
+After a power on the status is `UNKNOWN` until the first `set()` or `reset()`: the relay keeps its previous position, but the module doesn't know it. If reading the status fails, `getStatus()` returns the last status it read.
