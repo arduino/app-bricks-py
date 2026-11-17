@@ -45,7 +45,7 @@ To use this Brick you should have a USB/CSI camera connected to your board.
 from arduino.app_utils import App
 from arduino.app_bricks.video_object_tracking import VideoObjectTracking
 
-# Track only people, with a 1.5s debounce between repeated callbacks
+# Track only people
 tracker = VideoObjectTracking(confidence=0.4, labels_to_track=["person"])
 
 
@@ -149,11 +149,23 @@ tracker.on_area_exit(on_exit)
 
 The outline of the area is drawn on the video stream in white dashes unless it is set with `visible=False`. `set_area_coordinates()` raises `ValueError` for a polygon whose border crosses itself.
 
+To know how many objects are in view, watch an area as large as the frame and keep it off the video with `tracker.set_rectangular_area(0, 0, 1, 1, relative=True, visible=False)`. `get_objects_in_area()` then goes back to zero when the last object is gone.
+
 ## Tracking movement direction
 
 `get_objects_directions()` returns `{object_id: [direction, ...]}`, the directions each object has moved in, in order, with repeats collapsed: a straight walk gives a single entry and the last one is the current direction. The names are the same as for the line crossings, as seen on the screen.
 
 `min_movement_threshold` (default `10` px) is the smallest displacement that counts as a movement, so a box wobbling in place does not produce directions.
+
+## Leaving out short-lived objects
+
+In a crowd the tracker often loses an object and finds it again under a new ID, so the counts grow faster than the objects do. Most of these extra IDs last only a few frames. `min_detections_to_count` leaves them out, because an object counts only after the tracker has reported it in that many frames, consecutive or not.
+
+```python
+tracker = VideoObjectTracking(labels_to_track=["person"], min_detections_to_count=40)
+```
+
+Until an object counts it is not among the distinct objects, does not enter the area and does not cross the line. The `on_detect` and `on_detect_all` callbacks and the video show it from its first frame. The default is `0`, so an object counts as soon as it is reported. `override_min_detections_to_count()` changes the value while the app runs.
 
 ## Choosing what to track
 
@@ -168,7 +180,7 @@ The constructor also accepts the parameters of the tracker inside the model, eac
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `keep_grace` | `3` | Frames an object is kept after it disappears, before its ID is dropped. |
+| `keep_grace` | `3` | Frames an object is kept after it disappears, before its ID is dropped. When they last longer than a second, the counts and the area wait that long before they let the object go. |
 | `min_detections` | `3` | Detections an object needs before it is reported as tracked. |
 | `iou_threshold` | `0.1` | How much two boxes must overlap between frames to be the same object. For bounding-box models such as YOLO. |
 | `euclidean_distance_threshold` | `50` | How far an object may move between frames, in pixels, to be the same object. For centroid models such as FOMO. |
