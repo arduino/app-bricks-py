@@ -83,6 +83,8 @@ ENV PIP_CONSTRAINT=/etc/uv-constraints.txt
 ENV UV_FIND_LINKS=/opt/wheels
 ENV PIP_FIND_LINKS=/opt/wheels
 
+COPY conf/dpkg-no-mesa /etc/dpkg/dpkg.cfg.d/no-mesa
+
 RUN set -ex; \
     # The Qualcomm FastRPC libraries live in contrib, and for trixie only in
     # backports: enable just that component, for this build only.
@@ -126,7 +128,6 @@ RUN set -ex; \
     for so in /usr/lib/aarch64-linux-gnu/lib*dsp*.so.1; do ln -sf "${so##*/}" "${so%.so.1}.so"; done; \
     apt-get autoclean -y; \
     apt-get autoremove -y; \
-    dpkg -r --force-depends libegl-mesa0 mesa-libgallium libllvm19; \
     apt-get dist-clean; \
     # cleanup unnecessary files to reduce image size
     rm -rf /tmp/* /var/tmp/*; \

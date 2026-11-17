@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+# libcamera and qtiqmmfsrc pull in Mesa through libEGL and libgbm, but nothing in the image renders on the GPU.
+# dpkg installs the packages without their largest libraries: Mesa's GPU drivers and the LLVM and Z3 they link.
+path-exclude /usr/lib/*/libgallium-*.so
+path-exclude /usr/lib/*/libLLVM*
+path-exclude /usr/lib/*/libz3.so*
