@@ -6,16 +6,13 @@ import json
 
 import pytest
 
-from arduino.app_tools.app_launcher.protocol import ErrorCode, Events, LauncherError, Start, Status, Stop, decode_request, encode, error, ok
+from arduino.app_tools.app_launcher.protocol import ErrorCode, LauncherError, Start, Status, decode_request, encode, error, ok
 
 
 def test_decodes_every_request():
     assert decode_request(b'{"cmd":"start","app":"/app/"}\n') == Start(app="/app")
     assert decode_request(b'{"cmd":"start","app":"/app","env":{"K":"V","EMPTY":""}}') == Start(app="/app", env={"K": "V", "EMPTY": ""})
-    assert decode_request(b'{"cmd":"stop"}') == Stop()
-    assert decode_request(b'{"cmd":"stop","app":"/app"}') == Stop(), "one app per container, the name is ignored"
     assert decode_request(b'{"cmd":"status"}') == Status()
-    assert decode_request(b'{"cmd":"events"}') == Events()
 
 
 @pytest.mark.parametrize(
@@ -26,6 +23,7 @@ def test_decodes_every_request():
         b"[1, 2]",
         b'{"app":"/apps/a"}',
         b'{"cmd":"reboot"}',
+        b'{"cmd":"stop"}',
         b'{"cmd":"start"}',
         b'{"cmd":"start","app":"apps/a"}',
         b'{"cmd":"start","app":"/apps/a","env":["K=V"]}',

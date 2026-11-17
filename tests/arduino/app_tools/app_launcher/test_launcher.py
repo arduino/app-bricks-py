@@ -117,26 +117,6 @@ def request(message, socket_path, timeout_s=10):
         return json.loads(sock.makefile("rb").readline())
 
 
-class Subscription:
-    """An events connection to the launcher, read one event at a time."""
-
-    def __init__(self, socket_path, timeout_s=10):
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.settimeout(timeout_s)
-        self.sock.connect(socket_path)
-        self.sock.sendall(b'{"cmd":"events"}\n')
-        self.lines = self.sock.makefile("rb")
-
-    def next(self):
-        """The next event, None once the launcher closed the connection."""
-        line = self.lines.readline()
-        return json.loads(line) if line else None
-
-    def close(self):
-        self.lines.close()
-        self.sock.close()
-
-
 class LauncherProcess:
     def __init__(self, preload="json", wrapper=(), extra_modules=None, served=None, interpreter=sys.executable, run_app=False):
         # AF_UNIX paths are limited to about 100 bytes
@@ -196,9 +176,6 @@ class LauncherProcess:
     def child(self):
         return self.request({"cmd": "status"})["child"]
 
-    def subscribe(self):
-        return Subscription(self.socket)
-
     def close(self):
         if self.process.poll() is None:
             os.kill(self.launcher_pid(), signal.SIGTERM)
@@ -222,7 +199,7 @@ def launcher():
     launcher.remove()
 
 
-def test_runs_an_app_until_stopped(launcher):
+def test_runs_an_app_until_a_start_replaces_it(launcher):
     app = launcher.app("hello")
     started = launcher.request({"cmd": "start", "app": str(app)})
     assert started["ok"] and started["runner"] == "python"
@@ -240,11 +217,10 @@ def test_runs_an_app_until_stopped(launcher):
     assert f"warning from {app}/python/main.py\n" in launcher.output("stderr", until=f"warning from {app}")
     assert "app-launcher: Ready on" in launcher.output("stderr")
 
-    stopped = launcher.request({"cmd": "stop"})
-    assert stopped == {"ok": True, "stopped": [{"app": str(app), "pid": started["pid"], "exit_code": None, "signal": signal.SIGTERM}]}
-    assert gone(started["pid"])
+    replaced = launcher.request({"cmd": "start", "app": str(launcher.app("next"))})
+    assert replaced["ok"] and gone(started["pid"])
     status = launcher.request({"cmd": "status"})
-    assert status["child"] is None
+    assert status["child"]["pid"] == replaced["pid"]
     assert status["last"] == {
         "app": str(app),
         "pid": started["pid"],
@@ -252,7 +228,6 @@ def test_runs_an_app_until_stopped(launcher):
         "signal": signal.SIGTERM,
         "ended_at": status["last"]["ended_at"],
     }
-    assert launcher.request({"cmd": "stop"}) == {"ok": True, "stopped": []}
 
 
 def test_the_request_env_is_laid_over_the_container_one(launcher):
@@ -260,7 +235,6 @@ def test_the_request_env_is_laid_over_the_container_one(launcher):
     started = launcher.request({"cmd": "start", "app": str(app), "env": {"GREETING": "hi"}})
     assert started["ok"]
     assert f"hello from __main__ {app}/python/main.py hi yes\n" in launcher.output(until=f"{app}/python/main.py")
-    launcher.request({"cmd": "stop"})
 
 
 def test_a_start_stops_the_running_app_first(launcher):
@@ -273,7 +247,7 @@ def test_a_start_stops_the_running_app_first(launcher):
 
     third = launcher.request({"cmd": "start", "app": str(launcher.app("other"))})
     assert third["ok"] and gone(second["pid"])
-    assert launcher.request({"cmd": "stop"})["stopped"][0]["pid"] == third["pid"]
+    assert launcher.child()["pid"] == third["pid"]
 
 
 def test_an_app_dying_on_its_own_is_remembered_as_the_last_one(launcher):
@@ -283,62 +257,7 @@ def test_an_app_dying_on_its_own_is_remembered_as_the_last_one(launcher):
     assert (last["app"], last["pid"], last["exit_code"], last["signal"]) == (str(app), started["pid"], 3, None)
 
 
-def test_a_subscriber_gets_the_state_of_the_app_now_and_at_each_change(launcher):
-    events = launcher.subscribe()
-    try:
-        status = launcher.request({"cmd": "status"})
-        assert events.next() == {"ok": True, "child": None, "last": status["last"]}, "the state as it is now comes first"
-
-        app = launcher.app("watched")
-        started = launcher.request({"cmd": "start", "app": str(app)})
-        running = events.next()
-        assert running["child"]["pid"] == started["pid"] and running["child"]["app"] == str(app)
-
-        os.kill(started["pid"], signal.SIGKILL)
-        ended = events.next()
-        assert ended["child"] is None
-        assert (ended["last"]["pid"], ended["last"]["exit_code"], ended["last"]["signal"]) == (started["pid"], None, signal.SIGKILL)
-        assert ended == {"ok": True, **{key: launcher.request({"cmd": "status"})[key] for key in ("child", "last")}}
-    finally:
-        events.close()
-
-
-def test_subscribers_come_and_go_without_holding_the_launcher(launcher):
-    early, late = launcher.subscribe(), None
-    try:
-        assert early.next()["ok"]
-        early.close()
-        late = launcher.subscribe()
-        assert late.next()["child"] is None
-
-        started = launcher.request({"cmd": "start", "app": str(launcher.app("unwatched"))})
-        assert started["ok"], "a start forks with a subscriber connected and after one left"
-        assert late.next()["child"]["pid"] == started["pid"]
-        assert launcher.request({"cmd": "stop"})["stopped"][0]["pid"] == started["pid"]
-        assert late.next()["last"]["pid"] == started["pid"]
-    finally:
-        early.close()
-        if late is not None:
-            late.close()
-
-
-def test_the_events_end_with_the_launcher_whose_last_stop_raises_none():
-    launcher = LauncherProcess().wait_ready()
-    try:
-        events = launcher.subscribe()
-        assert events.next()["child"] is None
-        started = launcher.request({"cmd": "start", "app": str(launcher.app("going"))})
-        assert events.next()["child"]["pid"] == started["pid"]
-
-        # The app holds none of the launcher connections: the stream ends although the app got them at the fork
-        assert launcher.close() == 128 + signal.SIGTERM
-        assert events.next() is None, "the container ends with its launcher: the state of the container tells the rest"
-        events.close()
-    finally:
-        launcher.remove()
-
-
-def test_a_stop_before_app_run_exits_the_app_cleanly():
+def test_an_app_stopped_before_app_run_exits_cleanly():
     # The library installs its startup SIGTERM handler when imported: a warm interpreter imported it already
     launcher = LauncherProcess(preload="arduino.app_utils").wait_ready()
     try:
@@ -347,14 +266,15 @@ def test_a_stop_before_app_run_exits_the_app_cleanly():
         started = launcher.request({"cmd": "start", "app": str(app)})
         assert started["ok"], started
         launcher.output(until="building")
-        stopped = launcher.request({"cmd": "stop"})
-        assert stopped["stopped"] == [{"app": str(app), "pid": started["pid"], "exit_code": 143, "signal": None}]
+        assert launcher.request({"cmd": "start", "app": str(launcher.app("next"))})["ok"]
+        last = launcher.request({"cmd": "status"})["last"]
+        assert (last["app"], last["pid"], last["exit_code"], last["signal"]) == (str(app), started["pid"], 143, None)
     finally:
         launcher.remove()
 
 
 @pytest.mark.skipif(not can_unshare(), reason="needs Linux and unprivileged user and pid namespaces")
-def test_a_stop_kills_what_the_app_left_behind():
+def test_what_a_stopped_app_left_behind_is_killed():
     contained = LauncherProcess(wrapper=UNSHARE).wait_ready()
     try:
         marker = f"lingering-{contained.root.name}"
@@ -363,8 +283,8 @@ def test_a_stop_kills_what_the_app_left_behind():
         contained.output(until=f"helper started {marker}")
         assert tagged(marker), "the helper runs"
 
-        stopped = contained.request({"cmd": "stop"})
-        assert stopped["stopped"][0]["pid"] == started["pid"]
+        assert contained.request({"cmd": "start", "app": str(contained.app("next"))})["ok"]
+        assert gone(started["pid"])
         assert wait_until(lambda: not tagged(marker)), "the helper, in a session of its own, outlived the app"
         assert "Killed what was left behind" in contained.output("stderr")
         assert contained.answers(), "the launcher survives its own sweep"
@@ -379,7 +299,8 @@ def test_serves_streamlit_apps_through_streamlit_on_port_7000(launcher):
     main_py = app / "python" / "main.py"
     assert f"streamlit serves {main_py} False [] {app}\n" in launcher.output(until="streamlit serves")
     assert "streamlit options [('server.port', 7000)]" in launcher.output()
-    assert launcher.request({"cmd": "stop"})["stopped"][0]["signal"] == signal.SIGTERM
+    assert launcher.request({"cmd": "start", "app": str(launcher.app("next"))})["ok"]
+    assert launcher.request({"cmd": "status"})["last"]["signal"] == signal.SIGTERM
 
 
 def test_a_served_folder_whose_dependencies_changed_is_stale():
@@ -399,7 +320,6 @@ def test_a_served_folder_whose_dependencies_changed_is_stale():
 
         (served / "python" / "requirements.txt").write_text("requests\n")
         assert launcher.request({"cmd": "start", "app": str(served)})["ok"]
-        assert launcher.request({"cmd": "stop"})["ok"]
     finally:
         launcher.remove()
         shutil.rmtree(served)
@@ -413,7 +333,7 @@ signal.pause()
 
 
 def test_a_served_app_with_a_venv_runs_in_it_with_its_streamlit():
-    # As run.sh serve starts the launcher for an app with dependencies: on the interpreter of the app venv
+    # As run.sh starts the launcher for an app with dependencies: on the interpreter of the app venv
     served = write_app(Path(tempfile.mkdtemp(prefix="served", dir="/tmp")).resolve(), main=VENV_MAIN, requirements="requests\n")
     venv_dir = served / ".cache" / ".venv"
     venv.EnvBuilder(system_site_packages=True, symlinks=True).create(venv_dir)
@@ -425,7 +345,6 @@ def test_a_served_app_with_a_venv_runs_in_it_with_its_streamlit():
         assert started["ok"], started
         assert f"prefix {venv_dir} venv {venv_dir}\n" in launcher.output(until="prefix")
         wait_until(lambda: launcher.request({"cmd": "status"})["preload"]["loaded"] == ["json", "streamlit.web.bootstrap"])
-        assert launcher.request({"cmd": "stop"})["ok"]
     finally:
         launcher.remove()
         shutil.rmtree(served)
@@ -436,17 +355,17 @@ def test_without_a_served_folder_the_first_start_fixes_the_dependencies(launcher
     assert launcher.request({"cmd": "start", "app": str(app)})["ok"]
     (app / "python" / "requirements.txt").write_text("requests==2.32.0\n")
     assert launcher.request({"cmd": "start", "app": str(app)})["error"]["code"] == "stale"
-    assert launcher.request({"cmd": "stop"})["ok"]
 
 
 def test_refuses_what_is_not_an_app(launcher):
+    running = launcher.child()
     assert launcher.request({"cmd": "start", "app": "relative/app"})["error"]["code"] == "bad_request"
     assert launcher.request({"cmd": "start", "app": str(launcher.apps / "missing")})["error"]["code"] == "not_found"
     (launcher.apps / "empty").mkdir()
     assert launcher.request({"cmd": "start", "app": str(launcher.apps / "empty")})["error"]["code"] == "not_found"
     refused = launcher.request({"cmd": "start", "app": str(launcher.app("bad-env")), "env": {"GREETING": 1}})
     assert refused["error"]["code"] == "bad_request"
-    assert launcher.child() is None
+    assert launcher.child() == running, "a refused start changes nothing"
 
 
 # Last: it stops the shared launcher
@@ -458,7 +377,7 @@ def test_exits_on_sigterm_stopping_its_app(launcher):
 
 
 def launcher_running(main=FAKE_MAIN):
-    """A launcher told to run the app of its folder, as `run.sh launch` starts it."""
+    """A launcher told to run the app of its folder, as run.sh starts it."""
     served = write_app(Path(tempfile.mkdtemp(prefix="served", dir="/tmp")).resolve(), main=main)
     return LauncherProcess(served=served, run_app=True), served
 
@@ -497,18 +416,6 @@ def test_told_to_run_the_app_it_stays_when_a_start_replaces_the_app():
         assert second["ok"] and second["pid"] != first["pid"] and gone(first["pid"])
         assert launcher.child()["pid"] == second["pid"]
         assert launcher.process.poll() is None
-    finally:
-        launcher.remove()
-        shutil.rmtree(served)
-
-
-def test_told_to_run_the_app_a_stop_ends_it_as_stopped():
-    launcher, served = launcher_running()
-    try:
-        running = wait_until(lambda: launcher.wait_ready().child())
-        stopped = launcher.request({"cmd": "stop"})
-        assert stopped["ok"] and stopped["stopped"][0]["pid"] == running["pid"]
-        assert launcher.process.wait(10) == 128 + signal.SIGTERM, "no launcher stays up without its app"
     finally:
         launcher.remove()
         shutil.rmtree(served)

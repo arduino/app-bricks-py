@@ -264,32 +264,28 @@ def test_prepare_fails_when_third_party_brick_requirements_cannot_be_installed(t
 
 
 LAUNCHER = "python -m arduino.app_tools.app_launcher"
+# The launcher is told to run the app at once and end with it
+RUNS_THE_APP = "APP_LAUNCHER_RUN_APP=1"
 
 
-def test_serve_runs_the_launcher_on_the_system_interpreter_when_the_app_adds_nothing(tmp_path: Path):
-    app = _app(tmp_path)
-    calls = _run(app, tmp_path, "serve")
-    assert not any(c.startswith("uv") for c in calls), calls
-    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV=none"
-
-
-def test_launch_tells_the_launcher_to_run_the_app(tmp_path: Path):
+def test_launch_runs_the_launcher_on_the_system_interpreter_when_the_app_adds_nothing(tmp_path: Path):
     app = _app(tmp_path)
     calls = _run(app, tmp_path, "launch")
-    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV=none APP_LAUNCHER_RUN_APP=1", "serve leaves the app to a start request"
+    assert not any(c.startswith("uv") for c in calls), calls
+    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV=none {RUNS_THE_APP}"
 
 
-def test_serve_installs_the_requirements_and_runs_the_launcher_in_the_app_venv(tmp_path: Path):
+def test_launch_installs_the_requirements_and_runs_the_launcher_in_the_app_venv(tmp_path: Path):
     app = _app(tmp_path, {"python/requirements.txt": "requests\n"})
-    calls = _run(app, tmp_path, "serve")
+    calls = _run(app, tmp_path, "launch")
     assert _venv_created(app, calls), calls
     assert any(c.startswith("uv pip install") and c.endswith("python/requirements.txt") for c in calls), calls
-    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV={app}/.cache/.venv", "the launcher forks the app from the interpreter of its venv"
+    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV={app}/.cache/.venv {RUNS_THE_APP}", "the launcher forks the app from the interpreter of its venv"
 
 
-def test_serve_installs_streamlit_and_leaves_running_it_to_the_launcher(tmp_path: Path):
+def test_launch_installs_streamlit_and_leaves_running_it_to_the_launcher(tmp_path: Path):
     app = _app(tmp_path, app_yaml=STREAMLIT_APP_YAML)
-    calls = _run(app, tmp_path, "serve")
+    calls = _run(app, tmp_path, "launch")
     assert any("uv pip install" in c and "streamlit" in c for c in calls), calls
     assert not any(c.startswith("streamlit run") for c in calls), calls
-    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV={app}/.cache/.venv"
+    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV={app}/.cache/.venv {RUNS_THE_APP}"

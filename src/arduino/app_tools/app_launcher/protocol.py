@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Control socket protocol: one JSON object per line, one request per connection, answered by one response or by the events of the app."""
+"""Control socket protocol: one JSON object per line, one request and one response per connection."""
 
 import json
 import os
@@ -41,21 +41,11 @@ class Start:
 
 
 @dataclass(frozen=True)
-class Stop:
-    pass
-
-
-@dataclass(frozen=True)
 class Status:
     pass
 
 
-@dataclass(frozen=True)
-class Events:
-    """Asks for the state of the app as it is now, then at each change, on a connection the client keeps open."""
-
-
-Request = Start | Stop | Status | Events
+Request = Start | Status
 
 
 def encode(message: dict[str, Any]) -> bytes:
@@ -86,13 +76,8 @@ def decode_request(line: bytes) -> Request:
     match message:
         case {"cmd": "start"}:
             return Start(app=_app(message.get("app")), env=_env(message.get("env", {})))
-        case {"cmd": "stop"}:
-            # One app per container: an app named in the request is ignored
-            return Stop()
         case {"cmd": "status"}:
             return Status()
-        case {"cmd": "events"}:
-            return Events()
         case {"cmd": cmd}:
             raise LauncherError(ErrorCode.BAD_REQUEST, f"unknown cmd: {cmd!r}")
         case _:
