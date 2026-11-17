@@ -260,7 +260,7 @@ case "$1" in
     # The launcher runs the app at once and ends with it: the container lives as long as its app.
     # On the interpreter the app runs on, the venv one once activated: a console script
     # would run the system interpreter whatever PATH says
-    APP_DIR="$BASE_DIR" APP_LAUNCHER_RUN_APP=1 exec python -m arduino.app_tools.app_launcher
+    APP_DIR="$BASE_DIR" exec python -m arduino.app_tools.app_launcher
     ;;
   *)
     install_streamlit

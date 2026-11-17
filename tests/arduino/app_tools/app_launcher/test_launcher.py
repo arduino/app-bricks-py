@@ -103,7 +103,10 @@ def write_app(app, app_yaml="", main=FAKE_MAIN, requirements=None):
     """Writes an app folder; without a main, one the launcher cannot start."""
     (app / "python").mkdir(parents=True, exist_ok=True)
     if main is not None:
-        (app / "python" / "main.py").write_text(main)
+        # In one step: an app that is starting reads the old file or the new one, never half of it
+        staged = app / "python" / "main.py.new"
+        staged.write_text(main)
+        staged.replace(app / "python" / "main.py")
     (app / "app.yaml").write_text(app_yaml)
     if requirements is not None:
         (app / "python" / "requirements.txt").write_text(requirements)
@@ -122,7 +125,7 @@ def request(message, socket_path, timeout_s=10):
 class LauncherProcess:
     """A launcher serving the app folder it creates, as run.sh starts one for /app."""
 
-    def __init__(self, preload="json", wrapper=(), extra_modules=None, in_venv=False, run_app=False, **app):
+    def __init__(self, preload="json", wrapper=(), extra_modules=None, in_venv=False, env=None, **app):
         # AF_UNIX paths are limited to about 100 bytes
         self.root = Path(tempfile.mkdtemp(prefix="launcher", dir="/tmp")).resolve()
         self.socket = str(self.root / "launcher.sock")
@@ -142,7 +145,7 @@ class LauncherProcess:
             (modules / name).write_text(source)
         # A venv of the test, unlike one of the board, does not see the library through its base interpreter
         library = str(Path(launcher_module.__file__).resolve().parents[3]) if in_venv else None
-        env = {
+        launcher_env = {
             **os.environ,
             "PYTHONPATH": os.pathsep.join(filter(None, [str(modules), library, os.environ.get("PYTHONPATH")])),
             "APP_DIR": str(self.served),
@@ -152,13 +155,13 @@ class LauncherProcess:
             "APP_LAUNCHER_LOG_LEVEL": "info",
             "GREETING": "from the container",
             "INHERITED": "yes",
+            **(env or {}),
         }
-        env.pop("APP_LAUNCHER_RUN_APP", None)
-        if run_app:
-            env["APP_LAUNCHER_RUN_APP"] = "1"
         self.wrapped = bool(wrapper)
         with open(self.root / "stdout.log", "wb") as stdout, open(self.root / "stderr.log", "wb") as stderr:
-            self.process = subprocess.Popen([*wrapper, interpreter, "-m", "arduino.app_tools.app_launcher"], env=env, stdout=stdout, stderr=stderr)
+            self.process = subprocess.Popen(
+                [*wrapper, interpreter, "-m", "arduino.app_tools.app_launcher"], env=launcher_env, stdout=stdout, stderr=stderr
+            )
 
     def wait_ready(self):
         wait_until(self.answers, details=lambda: (self.root / "stderr.log").read_text())
@@ -174,7 +177,7 @@ class LauncherProcess:
         return request(message, self.socket)
 
     def start(self, **fields):
-        """Asks the launcher to start its app."""
+        """Asks the launcher to run its app again."""
         return self.request({"cmd": "start", **fields})
 
     def output(self, stream="stdout", until=""):
@@ -188,6 +191,10 @@ class LauncherProcess:
 
     def child(self):
         return self.request({"cmd": "status"})["child"]
+
+    def running(self):
+        """Waits for the launcher to answer and returns the app it runs."""
+        return wait_until(self.wait_ready().child, details=lambda: (self.root / "stderr.log").read_text())
 
     def close(self):
         if self.process.poll() is None:
@@ -212,12 +219,9 @@ def launcher():
     launcher.remove()
 
 
-def test_runs_its_app_until_a_start_replaces_it(launcher):
-    app = launcher.app()
-    started = launcher.start()
-    assert started["ok"] and started["runner"] == "python"
-    assert set(started["timings"]) == {"stop_ms", "fork_ms"}
-
+def test_runs_its_app_at_once_until_a_start_replaces_it(launcher):
+    app = launcher.served
+    started = launcher.running()
     status = launcher.request({"cmd": "status"})
     assert status["child"] == {"app": str(app), "pid": started["pid"], "runner": "python", "started_at": started["started_at"], "stopping": False}
     assert status["preload"]["modules"] == ["json"] and status["preload"]["failed"] == []
@@ -231,10 +235,12 @@ def test_runs_its_app_until_a_start_replaces_it(launcher):
     assert "app-launcher: Ready on" in launcher.output("stderr")
 
     replaced = launcher.start()
-    assert replaced["ok"] and replaced["pid"] != started["pid"] and replaced["timings"]["stop_ms"] > 0
+    assert replaced["ok"] and replaced["runner"] == "python" and replaced["pid"] != started["pid"]
+    assert replaced["timings"]["stop_ms"] > 0 and set(replaced["timings"]) == {"stop_ms", "fork_ms"}
     assert gone(started["pid"])
     status = launcher.request({"cmd": "status"})
-    assert status["child"]["pid"] == replaced["pid"]
+    assert status["child"]["pid"] == replaced["pid"] and status["child"]["started_at"] == replaced["started_at"]
+    assert launcher.process.poll() is None, "the launcher stays when it replaces its app"
     assert status["last"] == {
         "app": str(app),
         "pid": started["pid"],
@@ -258,21 +264,15 @@ def test_the_request_env_is_laid_over_the_container_one(launcher):
     assert f"hello from __main__ {app}/python/main.py hi yes\n" in launcher.output(until="main.py hi yes")
 
 
-def test_an_app_dying_on_its_own_is_remembered_as_the_last_one(launcher):
-    app = launcher.app(main="raise SystemExit(3)\n")
-    started = launcher.start()
-    last = wait_until(lambda: launcher.request({"cmd": "status"})["last"] if launcher.child() is None else None)
-    assert (last["app"], last["pid"], last["exit_code"], last["signal"]) == (str(app), started["pid"], 3, None)
-
-
 def test_an_app_stopped_before_app_run_exits_cleanly():
     # The library installs its startup SIGTERM handler when imported: a warm interpreter imported it already
     launcher = LauncherProcess(preload="arduino.app_utils", main=BUILDING_MAIN).wait_ready()
     try:
         wait_until(lambda: launcher.request({"cmd": "status"})["preload"]["loaded"] == ["arduino.app_utils"], timeout=30)
+        # The app the launcher started at once imported the library itself: this one inherits it
         started = launcher.start()
         assert started["ok"], started
-        launcher.output(until="building")
+        wait_until(lambda: launcher.output().count("building") == 2)
         assert launcher.start()["ok"]
         last = launcher.request({"cmd": "status"})["last"]
         assert (last["pid"], last["exit_code"], last["signal"]) == (started["pid"], 143, None)
@@ -282,10 +282,10 @@ def test_an_app_stopped_before_app_run_exits_cleanly():
 
 @pytest.mark.skipif(not can_unshare(), reason="needs Linux and unprivileged user and pid namespaces")
 def test_what_a_stopped_app_left_behind_is_killed():
-    contained = LauncherProcess(wrapper=UNSHARE, main=LINGERING_MAIN).wait_ready()
+    marker = f"lingering-{os.getpid()}-{time.monotonic_ns()}"
+    contained = LauncherProcess(wrapper=UNSHARE, main=LINGERING_MAIN, env={"MARKER": marker})
     try:
-        marker = f"lingering-{contained.root.name}"
-        started = contained.start(env={"MARKER": marker})
+        started = contained.running()
         contained.output(until=f"helper started {marker}")
         assert tagged(marker), "the helper runs"
 
@@ -300,10 +300,9 @@ def test_what_a_stopped_app_left_behind_is_killed():
 
 
 def test_serves_a_streamlit_app_through_streamlit_on_port_7000():
-    launcher = LauncherProcess(app_yaml="bricks:\n  - arduino:streamlit_ui: {}\n").wait_ready()
+    launcher = LauncherProcess(app_yaml="bricks:\n  - arduino:streamlit_ui: {}\n")
     try:
-        started = launcher.start()
-        assert started["runner"] == "streamlit"
+        assert launcher.running()["runner"] == "streamlit"
         main_py = launcher.served / "python" / "main.py"
         assert f"streamlit serves {main_py} False [] {launcher.served}\n" in launcher.output(until="streamlit serves")
         assert "streamlit options [('server.port', 7000)]" in launcher.output()
@@ -314,10 +313,9 @@ def test_serves_a_streamlit_app_through_streamlit_on_port_7000():
 
 
 def test_an_app_whose_dependencies_changed_is_stale():
-    launcher = LauncherProcess(requirements="requests\n").wait_ready()
+    launcher = LauncherProcess(requirements="requests\n")
     try:
-        started = launcher.start()
-        assert started["ok"], started
+        started = launcher.running()
 
         # Dependencies run.sh did not install at the container start: the app needs a fresh container
         requirements = launcher.served / "python" / "requirements.txt"
@@ -344,8 +342,6 @@ def test_an_app_with_a_venv_runs_in_it_with_its_streamlit():
     try:
         status = launcher.request({"cmd": "status"})
         assert status["venv"] == str(launcher.venv)
-        started = launcher.start()
-        assert started["ok"], started
         assert f"prefix {launcher.venv} venv {launcher.venv}\n" in launcher.output(until="prefix")
         wait_until(lambda: launcher.request({"cmd": "status"})["preload"]["loaded"] == ["json", "streamlit.web.bootstrap"])
     finally:
@@ -354,7 +350,9 @@ def test_an_app_with_a_venv_runs_in_it_with_its_streamlit():
 
 def test_refuses_what_it_cannot_start(launcher):
     launcher.app()
-    running = launcher.start()["pid"]
+    running = launcher.start(env={"GREETING": "refusals"})["pid"]
+    # Loaded before its file goes: an app that cannot read its main.py ends, and its launcher with it
+    launcher.output(until="main.py refusals yes")
     assert launcher.start(env={"GREETING": 1})["error"]["code"] == "bad_request"
     (launcher.served / "python" / "main.py").unlink()
     assert launcher.start()["error"]["code"] == "not_found"
@@ -377,23 +375,13 @@ def test_without_an_app_folder_it_refuses_to_run():
     assert "APP_DIR" in refused.stderr
 
 
-def test_told_to_run_the_app_it_starts_it_at_once():
-    launcher = LauncherProcess(run_app=True)
-    try:
-        launcher.output(until="hello from __main__")
-        assert launcher.child()["app"] == str(launcher.served)
-        assert launcher.close() == 128 + signal.SIGTERM, "stopped, it ends as an app stopped by a signal does"
-    finally:
-        launcher.remove()
-
-
 @pytest.mark.parametrize(
     ("main", "exit_code"),
     [("raise SystemExit(3)\n", 3), ("", 0), ("import os, signal\nos.kill(os.getpid(), signal.SIGKILL)\n", 128 + signal.SIGKILL)],
     ids=["failed", "returned", "killed"],
 )
-def test_told_to_run_the_app_it_ends_as_the_app_did(main, exit_code):
-    launcher = LauncherProcess(run_app=True, main=main)
+def test_ends_as_its_app_did(main, exit_code):
+    launcher = LauncherProcess(main=main)
     try:
         assert launcher.process.wait(10) == exit_code, "the container tells how its app ended, as one that ran the app alone"
         assert not os.path.exists(launcher.socket)
@@ -401,24 +389,12 @@ def test_told_to_run_the_app_it_ends_as_the_app_did(main, exit_code):
         launcher.remove()
 
 
-def test_told_to_run_the_app_it_stays_when_a_start_replaces_the_app():
-    launcher = LauncherProcess(run_app=True)
-    try:
-        first = wait_until(lambda: launcher.wait_ready().child())
-        second = launcher.start()
-        assert second["ok"] and second["pid"] != first["pid"] and gone(first["pid"])
-        assert launcher.child()["pid"] == second["pid"]
-        assert launcher.process.poll() is None
-    finally:
-        launcher.remove()
-
-
-def test_told_to_run_the_app_it_ends_as_failed_when_a_start_leaves_no_app_running():
+def test_ends_as_failed_when_a_start_leaves_no_app_running():
     # A thread the preload leaves alive makes the launcher refuse to fork
     threaded = "import threading, time\nthreading.Thread(target=time.sleep, args=(60,), daemon=True).start()\n"
-    launcher = LauncherProcess(preload="threaded", extra_modules={"threaded.py": threaded}, run_app=True)
+    launcher = LauncherProcess(preload="threaded", extra_modules={"threaded.py": threaded})
     try:
-        wait_until(lambda: launcher.wait_ready().child())
+        launcher.running()
         wait_until(lambda: launcher.request({"cmd": "status"})["preload"]["loaded"] == ["threaded"])
         refused = launcher.start()
         assert refused["error"]["code"] == "internal", "the running app was stopped, the new one could not be forked"
@@ -427,8 +403,8 @@ def test_told_to_run_the_app_it_ends_as_failed_when_a_start_leaves_no_app_runnin
         launcher.remove()
 
 
-def test_told_to_run_an_app_it_cannot_start_it_ends_as_failed():
-    launcher = LauncherProcess(run_app=True, main=None)
+def test_ends_as_failed_when_it_cannot_start_its_app():
+    launcher = LauncherProcess(main=None)
     try:
         assert launcher.process.wait(10) == 1
         assert "Cannot start" in (launcher.root / "stderr.log").read_text()
@@ -436,19 +412,28 @@ def test_told_to_run_an_app_it_cannot_start_it_ends_as_failed():
         launcher.remove()
 
 
-def test_a_start_does_not_wait_for_the_preload():
-    launcher = LauncherProcess(preload="slow", extra_modules={"slow.py": "import time\ntime.sleep(30)\n"}).wait_ready()
+# An app that ends once its launcher is gone: in a container it dies with the launcher, here nothing else ends it
+ORPHANED_MAIN = """
+import os, time
+launcher = os.getppid()
+print("running", flush=True)
+while os.getppid() == launcher:
+    time.sleep(0.05)
+"""
+SLOW_PRELOAD = {"slow.py": "import time\nprint('importing', flush=True)\ntime.sleep(30)\n"}
+
+
+def test_the_app_does_not_wait_for_the_preload():
+    launcher = LauncherProcess(preload="slow", extra_modules=SLOW_PRELOAD, main=ORPHANED_MAIN)
     try:
-        started = launcher.start()
-        assert started["ok"], started
-        assert launcher.request({"cmd": "status"})["preload"]["loaded"] == []
-        launcher.output(until="hello from __main__")
+        launcher.output(until="running")
+        assert "importing" not in launcher.output(), "the app starts before the preload"
     finally:
         launcher.remove()
 
 
 def test_exits_on_sigterm_during_the_preload():
-    launcher = LauncherProcess(preload="slow", extra_modules={"slow.py": "import time\nprint('importing', flush=True)\ntime.sleep(30)\n"})
+    launcher = LauncherProcess(preload="slow", extra_modules=SLOW_PRELOAD, main=ORPHANED_MAIN)
     try:
         launcher.output(until="importing")
         launcher.process.send_signal(signal.SIGTERM)

@@ -31,7 +31,7 @@ case "$*" in *"$FAKE_UV_FAILS_ON"*) [ -n "$FAKE_UV_FAILS_ON" ] && exit 1 ;; esac
 exit 0
 """,
     "python": """#!/bin/sh
-echo "python $* VIRTUAL_ENV=${VIRTUAL_ENV:-none}${APP_LAUNCHER_RUN_APP:+ APP_LAUNCHER_RUN_APP=$APP_LAUNCHER_RUN_APP}" >> "$FAKE_LOG"
+echo "python $* VIRTUAL_ENV=${VIRTUAL_ENV:-none}${APP_DIR:+ APP_DIR=$APP_DIR}" >> "$FAKE_LOG"
 printf '%s' "${PYTHONPATH:-}" > "$FAKE_LOG.pythonpath"
 """,
     "streamlit": """#!/bin/sh
@@ -264,15 +264,13 @@ def test_prepare_fails_when_third_party_brick_requirements_cannot_be_installed(t
 
 
 LAUNCHER = "python -m arduino.app_tools.app_launcher"
-# The launcher is told to run the app at once and end with it
-RUNS_THE_APP = "APP_LAUNCHER_RUN_APP=1"
 
 
 def test_launch_runs_the_launcher_on_the_system_interpreter_when_the_app_adds_nothing(tmp_path: Path):
     app = _app(tmp_path)
     calls = _run(app, tmp_path, "launch")
     assert not any(c.startswith("uv") for c in calls), calls
-    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV=none {RUNS_THE_APP}"
+    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV=none APP_DIR={app}", "the launcher serves the app folder"
 
 
 def test_launch_installs_the_requirements_and_runs_the_launcher_in_the_app_venv(tmp_path: Path):
@@ -280,7 +278,7 @@ def test_launch_installs_the_requirements_and_runs_the_launcher_in_the_app_venv(
     calls = _run(app, tmp_path, "launch")
     assert _venv_created(app, calls), calls
     assert any(c.startswith("uv pip install") and c.endswith("python/requirements.txt") for c in calls), calls
-    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV={app}/.cache/.venv {RUNS_THE_APP}", "the launcher forks the app from the interpreter of its venv"
+    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV={app}/.cache/.venv APP_DIR={app}", "the launcher forks the app from the interpreter of its venv"
 
 
 def test_launch_installs_streamlit_and_leaves_running_it_to_the_launcher(tmp_path: Path):
@@ -288,4 +286,4 @@ def test_launch_installs_streamlit_and_leaves_running_it_to_the_launcher(tmp_pat
     calls = _run(app, tmp_path, "launch")
     assert any("uv pip install" in c and "streamlit" in c for c in calls), calls
     assert not any(c.startswith("streamlit run") for c in calls), calls
-    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV={app}/.cache/.venv {RUNS_THE_APP}"
+    assert calls[-1] == f"{LAUNCHER} VIRTUAL_ENV={app}/.cache/.venv APP_DIR={app}"

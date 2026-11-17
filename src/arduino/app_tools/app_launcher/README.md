@@ -26,7 +26,6 @@ A start runs the app again: the running one is stopped first. A start that leave
 | Variable | Default | |
 |---|---|---|
 | `APP_DIR` | required | The app folder run.sh prepared, the one served: `/app` in the container |
-| `APP_LAUNCHER_RUN_APP` | unset | `1`, as run.sh sets it: start the app of `APP_DIR` at once and end with it; unset, the launcher waits for a start request and stays up when the app ends |
 | `APP_LAUNCHER_PRELOAD` | `arduino.app_utils`, the camera, microphone and speaker backends, `arduino.app_bricks.web_ui` | Modules imported when idle; in an app venv `streamlit.web.bootstrap` is added when the venv has it |
 | `APP_LAUNCHER_SOCKET` | `/run/arduino-app-cli/app-launcher.sock` | Control socket |
 | `APP_LAUNCHER_STOP_TIMEOUT_S` | `5` | Grace period between SIGTERM and SIGKILL |
