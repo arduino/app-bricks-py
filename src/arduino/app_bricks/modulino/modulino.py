@@ -1,10 +1,23 @@
-from typing import override
+from typing import NamedTuple, override
 
 from arduino.app_utils import brick, Logger, Bridge
 
 logger = Logger("Modulino")
 class ModulinoError(Exception):
     """Raised when a Modulino fails."""
+
+class ModulinoColor(NamedTuple):
+    """An RGB color, 0-255 per channel.
+
+    It is a tuple `(r, g, b)`, so it can be unpacked (`r, g, b = color`) and passed to libraries
+    that take an RGB tuple, such as Pillow. OpenCV takes colors in BGR order: pass `color[::-1]`.
+    """
+    r: int
+    """Red, 0-255."""
+    g: int
+    """Green, 0-255."""
+    b: int
+    """Blue, 0-255."""
 
 HUB_PORT_COUNT = 8
 
@@ -618,6 +631,20 @@ class Modulino_Pixels(Modulino):
         if not ok:
             raise ModulinoError(f"cannot set LED {idx} on modulino {self.name}: invalid arguments")
 
+    def setColor(self, idx, color, brightness = 25) -> None:
+        """Set the color and brightness of one LED.
+
+        Args:
+            idx (int): The LED index, 0-7.
+            color (ModulinoColor): The color, or any `(r, g, b)` tuple with 0-255 per channel.
+            brightness (int, optional): Brightness in percent, 0-100. Defaults to 25.
+        """
+        try:
+            r, g, b = color
+        except (TypeError, ValueError):
+            raise ModulinoError(f"cannot set LED {idx} on modulino {self.name}: the color must be (r, g, b)")
+        self.set(idx, r, g, b, brightness)
+
     def clear(self, idx) -> None:
         """Turn off one LED.
 
@@ -637,3 +664,80 @@ class Modulino_Pixels(Modulino):
             Bridge.call(f"{self.name}:clearAll")
         except:
             raise ModulinoError(f"cannot clear LEDs on modulino {self.name}")
+
+class Modulino_Light(Modulino):
+    """Class to handle a Modulino Light (color and ambient light sensor, I2C address 0x53).
+
+    Every getter takes a new measure of all the sensors, so it can take up to 200 ms.
+    """
+    I2C_ADDRESS = 0x53
+
+    def __init__(self, hub_port = None) -> None:
+        """Initialize the Modulino_Light.
+
+        Args:
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
+        """
+        super().__init__("light", self.I2C_ADDRESS, hub_port)
+
+    @override
+    def start(self) -> None:
+        """Start the Modulino_Light."""
+        try:
+            ok = Bridge.call(f"{self.name}:begin")
+        except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+
+    @override
+    def stop(self) -> None:
+        """Stop the Modulino_Light."""
+        try:
+            Bridge.call("delete_modulino", self.name)
+        except:
+            raise ModulinoError(f"cannot delete modulino {self.name}")
+
+    def _read(self, method, what) -> int:
+        # The MCU returns -1 when the measure fails
+        try:
+            value = Bridge.call(f"{self.name}:{method}")
+        except:
+            raise ModulinoError(f"cannot get {what} from modulino {self.name}")
+        if value < 0:
+            raise ModulinoError(f"cannot get {what} from modulino {self.name}: measure failed")
+        return value
+
+    def getLux(self) -> int:
+        """Get the illuminance.
+
+        Returns:
+            int: The illuminance in lux.
+        """
+        return self._read("getLux", "lux")
+
+    def getAmbientLight(self) -> int:
+        """Get the raw ambient light.
+
+        Returns:
+            int: The raw ambient light measure of the sensor (not converted to lux).
+        """
+        return self._read("getAmbientLight", "ambient light")
+
+    def getIR(self) -> int:
+        """Get the raw infrared light.
+
+        Returns:
+            int: The raw infrared measure of the sensor.
+        """
+        return self._read("getIR", "infrared light")
+
+    def getColor(self) -> ModulinoColor:
+        """Get the color seen by the sensor.
+
+        Returns:
+            ModulinoColor: The color, 0-255 per channel.
+        """
+        # The MCU packs the color as 0x00RRGGBB
+        packed = self._read("getColor", "color")
+        return ModulinoColor((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF)

@@ -90,3 +90,34 @@ pixels.clearAll()              # all LEDs off
 ```
 
 Out-of-range values raise `ModulinoError`.
+
+To use a color, pass a `ModulinoColor` (or any `(r, g, b)` tuple) to `setColor(idx, color, brightness=25)`:
+
+```python
+from arduino.app_bricks.modulino import ModulinoColor
+
+orange = ModulinoColor(255, 136, 0)
+pixels.setColor(1, orange, 20)   # LED 1 orange at 20 %
+```
+
+## Modulino Light
+
+`Modulino_Light` measures the color and the ambient light. `getLux()` returns the illuminance in lux, `getAmbientLight()` and `getIR()` the raw ambient and infrared measures, and `getColor()` the color as a `ModulinoColor`. Every call takes a new measure, which can take up to 200 ms.
+
+```python
+from arduino.app_bricks.modulino import Modulino_Light, Modulino_Pixels
+
+light = Modulino_Light()
+light.start()
+pixels = Modulino_Pixels()
+pixels.start()
+
+print(light.getLux(), "lux")
+color = light.getColor()
+print(color.r, color.g, color.b)
+pixels.setColor(0, color)        # show the color seen by the sensor
+```
+
+`ModulinoColor` is a tuple `(r, g, b)`, so it can be unpacked (`r, g, b = color`) and passed to libraries that take an RGB tuple, such as Pillow (`Image.new("RGB", size, color)`). OpenCV takes colors in BGR order: pass `color[::-1]`.
+
+A failed measure raises `ModulinoError`.
