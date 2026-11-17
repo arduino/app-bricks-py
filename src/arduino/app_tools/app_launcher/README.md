@@ -8,10 +8,10 @@ A Unix socket at `APP_LAUNCHER_SOCKET`, one JSON object per line, one request an
 
 | Request | Response |
 |---|---|
-| `{"cmd":"start","app":"/app","env":{"K":"V"}}` | `{"ok":true,"pid":N,"started_at":"<iso>","runner":"python","timings":{"stop_ms":..,"fork_ms":..}}` |
+| `{"cmd":"start","env":{"K":"V"}}` | `{"ok":true,"pid":N,"started_at":"<iso>","runner":"python","timings":{"stop_ms":..,"fork_ms":..}}` |
 | `{"cmd":"status"}` | `{"ok":true,"child":{..} or null,"last":{..} or null,"venv":..,"preload":{"modules","loaded","failed"},"version":..,"uptime_s":..}` |
 
-A start while an app runs stops it first. A start that leaves no app running ends the launcher: it never stays up without its app. `env` is laid over the container environment. Errors are `{"ok":false,"error":{"code":..,"message":..}}`, with `code` one of `bad_request`, `not_found`, `stale` (the dependencies changed since run.sh installed them: the app needs a fresh container), `busy` (shutting down) and `internal`.
+A start runs the app again: the running one is stopped first. A start that leaves no app running ends the launcher: it never stays up without its app. `env` is laid over the container environment. Errors are `{"ok":false,"error":{"code":..,"message":..}}`, with `code` one of `bad_request`, `not_found`, `stale` (the dependencies changed since run.sh installed them: the app needs a fresh container), `busy` (shutting down) and `internal`.
 
 ## Behaviour
 

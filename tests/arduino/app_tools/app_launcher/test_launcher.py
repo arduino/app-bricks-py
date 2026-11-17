@@ -175,7 +175,7 @@ class LauncherProcess:
 
     def start(self, **fields):
         """Asks the launcher to start its app."""
-        return self.request({"cmd": "start", "app": str(self.served), **fields})
+        return self.request({"cmd": "start", **fields})
 
     def output(self, stream="stdout", until=""):
         """Waits for what the launcher and its apps wrote to the stream to hold `until` and returns it."""
@@ -355,8 +355,6 @@ def test_an_app_with_a_venv_runs_in_it_with_its_streamlit():
 def test_refuses_what_it_cannot_start(launcher):
     launcher.app()
     running = launcher.start()["pid"]
-    assert launcher.request({"cmd": "start", "app": "relative/app"})["error"]["code"] == "bad_request"
-    assert launcher.request({"cmd": "start", "app": str(launcher.root / "other")})["error"]["code"] == "bad_request", "it serves one folder"
     assert launcher.start(env={"GREETING": 1})["error"]["code"] == "bad_request"
     (launcher.served / "python" / "main.py").unlink()
     assert launcher.start()["error"]["code"] == "not_found"

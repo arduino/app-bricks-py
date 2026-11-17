@@ -5,7 +5,6 @@
 """Control socket protocol: one JSON object per line, one request and one response per connection."""
 
 import json
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -35,7 +34,8 @@ class LauncherError(Exception):
 
 @dataclass(frozen=True)
 class Start:
-    app: str
+    """Runs the app again: the running one is stopped first."""
+
     env: Mapping[str, str] = field(default_factory=dict[str, str])
     """The app environment, laid over the container one."""
 
@@ -75,21 +75,13 @@ def decode_request(line: bytes) -> Request:
         raise LauncherError(ErrorCode.BAD_REQUEST, f"invalid JSON: {e}") from None
     match message:
         case {"cmd": "start"}:
-            return Start(app=_app(message.get("app")), env=_env(message.get("env", {})))
+            return Start(env=_env(message.get("env", {})))
         case {"cmd": "status"}:
             return Status()
         case {"cmd": cmd}:
             raise LauncherError(ErrorCode.BAD_REQUEST, f"unknown cmd: {cmd!r}")
         case _:
             raise LauncherError(ErrorCode.BAD_REQUEST, "a request must be a JSON object with a cmd")
-
-
-def _app(value: object) -> str:
-    match value:
-        case str() if os.path.isabs(value):
-            return os.path.normpath(value)
-        case _:
-            raise LauncherError(ErrorCode.BAD_REQUEST, "app must be the absolute path of the app folder")
 
 
 def _env(value: object) -> dict[str, str]:

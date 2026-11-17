@@ -289,7 +289,7 @@ class Launcher:
         try:
             async with self._lifecycle:
                 if not self._exiting:
-                    await self._start(Start(app=app))
+                    await self._start(Start())
         except LauncherError as e:
             logger.error(f"Cannot start {app}: {e.message}")
         except Exception:
@@ -361,9 +361,7 @@ class Launcher:
     # Lifecycle
 
     async def _start(self, request: Start) -> dict[str, Any]:
-        app = request.app
-        if app != self._config.app_dir:
-            raise LauncherError(ErrorCode.BAD_REQUEST, f"this launcher serves {self._config.app_dir} only")
+        app = self._config.app_dir
         if not os.path.isdir(app):
             raise LauncherError(ErrorCode.NOT_FOUND, f"no app folder at {app}")
         if not os.path.isfile(os.path.join(app, "python", "main.py")):

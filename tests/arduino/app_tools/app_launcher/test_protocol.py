@@ -10,8 +10,9 @@ from arduino.app_tools.app_launcher.protocol import ErrorCode, LauncherError, St
 
 
 def test_decodes_every_request():
-    assert decode_request(b'{"cmd":"start","app":"/app/"}\n') == Start(app="/app")
-    assert decode_request(b'{"cmd":"start","app":"/app","env":{"K":"V","EMPTY":""}}') == Start(app="/app", env={"K": "V", "EMPTY": ""})
+    assert decode_request(b'{"cmd":"start"}\n') == Start()
+    assert decode_request(b'{"cmd":"start","env":{"K":"V","EMPTY":""}}') == Start(env={"K": "V", "EMPTY": ""})
+    assert decode_request(b'{"cmd":"start","app":"/other"}') == Start(), "a field the launcher does not know is ignored: it runs its own app"
     assert decode_request(b'{"cmd":"status"}') == Status()
 
 
@@ -24,13 +25,11 @@ def test_decodes_every_request():
         b'{"app":"/apps/a"}',
         b'{"cmd":"reboot"}',
         b'{"cmd":"stop"}',
-        b'{"cmd":"start"}',
-        b'{"cmd":"start","app":"apps/a"}',
-        b'{"cmd":"start","app":"/apps/a","env":["K=V"]}',
-        b'{"cmd":"start","app":"/apps/a","env":{"K":1}}',
-        b'{"cmd":"start","app":"/apps/a","env":{"K=X":"V"}}',
-        b'{"cmd":"start","app":"/apps/a","env":{"":"V"}}',
-        b'{"cmd":"start","app":"/apps/a","env":{"K":"V\\u0000"}}',
+        b'{"cmd":"start","env":["K=V"]}',
+        b'{"cmd":"start","env":{"K":1}}',
+        b'{"cmd":"start","env":{"K=X":"V"}}',
+        b'{"cmd":"start","env":{"":"V"}}',
+        b'{"cmd":"start","env":{"K":"V\\u0000"}}',
     ],
 )
 def test_rejects_malformed_requests(line):
