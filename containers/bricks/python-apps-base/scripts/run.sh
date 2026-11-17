@@ -253,10 +253,15 @@ case "$1" in
       PYTHONPYCACHEPREFIX="$PYCHECK_DIR" python -m compileall -q "$BASE_DIR/python"
     fi
     ;;
-  serve)
+  serve|launch)
     install_streamlit
     echo "======== App launcher is starting ==================="
     cd "$BASE_DIR"
+    # launch: the launcher runs the app at once and ends with it, the container lives as long as its app
+    # serve: the launcher waits for a start request and stays up when the app ends
+    if [ "$1" = launch ]; then
+      export APP_LAUNCHER_RUN_APP=1
+    fi
     # On the interpreter the app runs on, the venv one once activated: a console script
     # would run the system interpreter whatever PATH says
     APP_DIR="$BASE_DIR" exec python -m arduino.app_tools.app_launcher

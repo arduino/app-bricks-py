@@ -138,7 +138,7 @@ class Subscription:
 
 
 class LauncherProcess:
-    def __init__(self, preload="json", wrapper=(), extra_modules=None, served=None, interpreter=sys.executable):
+    def __init__(self, preload="json", wrapper=(), extra_modules=None, served=None, interpreter=sys.executable, run_app=False):
         # AF_UNIX paths are limited to about 100 bytes
         self.root = Path(tempfile.mkdtemp(prefix="launcher", dir="/tmp")).resolve()
         self.socket = str(self.root / "launcher.sock")
@@ -163,8 +163,11 @@ class LauncherProcess:
             "INHERITED": "yes",
         }
         env.pop("APP_DIR", None)
+        env.pop("APP_LAUNCHER_RUN_APP", None)
         if served is not None:
             env["APP_DIR"] = str(served)
+        if run_app:
+            env["APP_LAUNCHER_RUN_APP"] = "1"
         self.wrapped = bool(wrapper)
         with open(self.root / "stdout.log", "wb") as stdout, open(self.root / "stderr.log", "wb") as stderr:
             self.process = subprocess.Popen([*wrapper, interpreter, "-m", "arduino.app_tools.app_launcher"], env=env, stdout=stdout, stderr=stderr)
@@ -452,6 +455,101 @@ def test_exits_on_sigterm_stopping_its_app(launcher):
     assert launcher.close() == 128 + signal.SIGTERM, "the launcher ends as an app stopped by a signal does"
     assert gone(started["pid"])
     assert not os.path.exists(launcher.socket)
+
+
+def launcher_running(main=FAKE_MAIN):
+    """A launcher told to run the app of its folder, as `run.sh launch` starts it."""
+    served = write_app(Path(tempfile.mkdtemp(prefix="served", dir="/tmp")).resolve(), main=main)
+    return LauncherProcess(served=served, run_app=True), served
+
+
+def test_told_to_run_the_app_it_starts_it_at_once():
+    launcher, served = launcher_running()
+    try:
+        launcher.output(until="hello from __main__")
+        assert launcher.child()["app"] == str(served)
+        assert launcher.close() == 128 + signal.SIGTERM, "stopped, it ends as an app stopped by a signal does"
+    finally:
+        launcher.remove()
+        shutil.rmtree(served)
+
+
+@pytest.mark.parametrize(
+    ("main", "exit_code"),
+    [("raise SystemExit(3)\n", 3), ("", 0), ("import os, signal\nos.kill(os.getpid(), signal.SIGKILL)\n", 128 + signal.SIGKILL)],
+    ids=["failed", "returned", "killed"],
+)
+def test_told_to_run_the_app_it_ends_as_the_app_did(main, exit_code):
+    launcher, served = launcher_running(main)
+    try:
+        assert launcher.process.wait(10) == exit_code, "the container tells how its app ended, as one that ran the app alone"
+        assert not os.path.exists(launcher.socket)
+    finally:
+        launcher.remove()
+        shutil.rmtree(served)
+
+
+def test_told_to_run_the_app_it_stays_when_a_start_replaces_the_app():
+    launcher, served = launcher_running()
+    try:
+        first = wait_until(lambda: launcher.wait_ready().child())
+        second = launcher.request({"cmd": "start", "app": str(served)})
+        assert second["ok"] and second["pid"] != first["pid"] and gone(first["pid"])
+        assert launcher.child()["pid"] == second["pid"]
+        assert launcher.process.poll() is None
+    finally:
+        launcher.remove()
+        shutil.rmtree(served)
+
+
+def test_told_to_run_the_app_a_stop_ends_it_as_stopped():
+    launcher, served = launcher_running()
+    try:
+        running = wait_until(lambda: launcher.wait_ready().child())
+        stopped = launcher.request({"cmd": "stop"})
+        assert stopped["ok"] and stopped["stopped"][0]["pid"] == running["pid"]
+        assert launcher.process.wait(10) == 128 + signal.SIGTERM, "no launcher stays up without its app"
+    finally:
+        launcher.remove()
+        shutil.rmtree(served)
+
+
+def test_told_to_run_the_app_it_ends_as_failed_when_a_start_leaves_no_app_running():
+    served = write_app(Path(tempfile.mkdtemp(prefix="served", dir="/tmp")).resolve())
+    # A thread the preload leaves alive makes the launcher refuse to fork
+    threaded = "import threading, time\nthreading.Thread(target=time.sleep, args=(60,), daemon=True).start()\n"
+    launcher = LauncherProcess(preload="threaded", extra_modules={"threaded.py": threaded}, served=served, run_app=True)
+    try:
+        wait_until(lambda: launcher.wait_ready().child())
+        wait_until(lambda: launcher.request({"cmd": "status"})["preload"]["loaded"] == ["threaded"])
+        refused = launcher.request({"cmd": "start", "app": str(served)})
+        assert refused["error"]["code"] == "internal", "the running app was stopped, the new one could not be forked"
+        assert launcher.process.wait(10) == 1
+    finally:
+        launcher.remove()
+        shutil.rmtree(served)
+
+
+def test_told_to_run_an_app_it_cannot_start_it_ends_as_failed():
+    launcher, served = launcher_running()
+    launcher.remove()
+    (served / "python" / "main.py").unlink()
+    launcher = LauncherProcess(served=served, run_app=True)
+    try:
+        assert launcher.process.wait(10) == 1
+        assert "Cannot start" in (launcher.root / "stderr.log").read_text()
+    finally:
+        launcher.remove()
+        shutil.rmtree(served)
+
+
+def test_told_to_run_no_app_it_refuses_to_start():
+    launcher = LauncherProcess(run_app=True)
+    try:
+        assert launcher.process.wait(10) == 2
+        assert "APP_DIR" in (launcher.root / "stderr.log").read_text()
+    finally:
+        launcher.remove()
 
 
 def test_a_start_does_not_wait_for_the_preload():

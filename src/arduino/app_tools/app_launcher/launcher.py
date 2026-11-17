@@ -4,6 +4,9 @@
 
 """The app launcher: imports the libraries once, then forks the app of its container on each start request.
 
+Told to run the app, it starts it at once and ends when the app ends on its own, as the app did: the container
+lives as long as its app. Otherwise it waits for a start request and stays up when the app ends.
+
 The parent stays single-threaded: one asyncio loop, no executors, numeric addresses only. Forks happen
 between two runs of the loop, never inside a callback, so the child never unwinds through asyncio.
 """
@@ -77,6 +80,8 @@ class Config:
     stop_timeout_s: float
     app_dir: str | None
     """The app folder run.sh prepared before starting the launcher, the only one it serves; None serves any folder."""
+    run_app: bool = False
+    """Whether the launcher starts the served app at once and ends when that app ends on its own."""
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> "Config":
@@ -85,12 +90,16 @@ class Config:
         Raises:
             ValueError: when a value is malformed.
         """
-        return cls(
+        config = cls(
             preload=tuple(name.strip() for name in env.get("APP_LAUNCHER_PRELOAD", DEFAULT_PRELOAD).split(",") if name.strip()),
             socket_path=env.get("APP_LAUNCHER_SOCKET", protocol.DEFAULT_SOCKET),
             stop_timeout_s=float(env.get("APP_LAUNCHER_STOP_TIMEOUT_S", "5")),
             app_dir=os.path.normpath(env["APP_DIR"]) if env.get("APP_DIR") else None,
+            run_app=env.get("APP_LAUNCHER_RUN_APP") == "1",
         )
+        if config.run_app and config.app_dir is None:
+            raise ValueError("APP_LAUNCHER_RUN_APP needs APP_DIR, the app to run")
+        return config
 
 
 @dataclass(eq=False)
@@ -140,8 +149,9 @@ class Launcher:
         self._fork_request: _ForkRequest | None = None
         self._owns_container = _owns_container()
         self._exiting = False
-        self._exit_signal: int | None = None
+        self._exit_code = 0
         self._exit_task: asyncio.Task[None] | None = None
+        self._run_task: asyncio.Task[None] | None = None
         self._started = time.monotonic()
         # The dependencies each app folder was prepared with, the served one as run.sh left it, any other at its first start
         self._prepared: dict[str, str | None] = {}
@@ -151,7 +161,7 @@ class Launcher:
         self._app_bricks_pending = config.app_dir is not None
 
     def serve(self) -> Launch | None:
-        """Runs until SIGTERM or SIGINT.
+        """Runs until SIGTERM or SIGINT, or until the app it was told to run ends on its own.
 
         Returns:
             Launch | None: None in the launcher once it is done; in a forked child, the app it has to become.
@@ -161,6 +171,8 @@ class Launcher:
         self._loop.add_signal_handler(signal.SIGCHLD, self._reap)
         self._loop.run_until_complete(self._open())
         self._log_ready()
+        if self._config.run_app:
+            self._run_task = self._loop.create_task(self._run_app())
         # The socket is served first: a start arriving before the preload is done forks between two imports, the app
         # imports what it needs itself, and the remaining modules are imported afterwards, one between two turns of the loop
         self._loop.call_later(PRELOAD_GRACE_S, self._preload_step)
@@ -256,16 +268,42 @@ class Launcher:
 
     @property
     def exit_code(self) -> int:
-        """128 plus the signal that stopped the launcher, as an app stopped by it ends, 0 when none did."""
-        return 0 if self._exit_signal is None else 128 + self._exit_signal
+        """128 plus the signal that stopped the launcher, as an app stopped by it ends; the exit status of the app the
+        launcher ended with; 0 when nothing ended it."""
+        return self._exit_code
 
     def _request_exit(self, signum: int) -> None:
+        if not self._exiting:
+            logger.info(f"{signal.Signals(signum).name} received, stopping")
+        self._end(128 + signum)
+
+    def _end(self, exit_code: int) -> None:
+        """Ends the launcher with this exit code once its app, if one runs, is stopped; the first call decides."""
         if self._exiting:
             return
-        logger.info(f"{signal.Signals(signum).name} received, stopping")
         self._exiting = True
-        self._exit_signal = signum
+        self._exit_code = exit_code
         self._exit_task = self._loop.create_task(self._exit())
+
+    def _end_if_idle(self, exit_code: int) -> None:
+        """Ends the launcher told to run the app when no app runs: it never stays up without its app."""
+        if self._config.run_app and self._child is None:
+            self._end(exit_code)
+
+    async def _run_app(self) -> None:
+        """Starts the served app as soon as the launcher is up; a launcher that cannot start it ends as a failed app."""
+        if (app := self._config.app_dir) is None:
+            return
+        try:
+            async with self._lifecycle:
+                if not self._exiting:
+                    await self._start(Start(app=app))
+        except LauncherError as e:
+            logger.error(f"Cannot start {app}: {e.message}")
+        except Exception:
+            logger.exception(f"Cannot start {app}")
+        finally:
+            self._end_if_idle(1)
 
     async def _exit(self) -> None:
         async with self._lifecycle:
@@ -339,11 +377,17 @@ class Launcher:
             case Start():
                 async with self._lifecycle:
                     self._refuse_while_exiting()
-                    return await self._start(request)
+                    try:
+                        return await self._start(request)
+                    finally:
+                        # A start that stopped the app and could not fork the new one leaves none: a failure
+                        self._end_if_idle(1)
             case Stop():
                 async with self._lifecycle:
                     self._refuse_while_exiting()
                     stopped = await self._stop_child()
+                    # Left without its app, the launcher ends as an app stopped by a signal does
+                    self._end_if_idle(128 + signal.SIGTERM)
                     return protocol.ok(stopped=[] if stopped is None else [stopped])
 
     def _refuse_while_exiting(self) -> None:
@@ -470,6 +514,10 @@ class Launcher:
                 logger.info(f"{reaped.app} (pid {pid}) {how}")
                 reaped.exited.set_result(status)
                 self._publish()
+                if self._config.run_app and not reaped.stopping:
+                    # The app ended on its own: the launcher ends as it did, so the container tells it as one that ran the app alone
+                    ended = os.waitstatus_to_exitcode(status)
+                    self._end(ended if ended >= 0 else 128 - ended)
 
     def _kill_strays(self) -> None:
         """Kills every process of the container but PID 1 and the launcher, helpers in sessions of their own included.
