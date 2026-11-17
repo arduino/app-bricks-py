@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""The app launcher: imports the libraries once, then forks the app of its container on each start request.
+"""The app launcher: imports the libraries once, then forks the app of its folder on each start request.
 
 Told to run the app, as run.sh does, it starts it at once and ends when the app ends on its own, as the app did:
 the container lives as long as its app. Otherwise it waits for a start request and stays up when the app ends.
@@ -76,8 +76,8 @@ class Config:
     preload: tuple[str, ...]
     socket_path: str
     stop_timeout_s: float
-    app_dir: str | None
-    """The app folder run.sh prepared before starting the launcher, the only one it serves; None serves any folder."""
+    app_dir: str
+    """The app folder run.sh prepared before starting the launcher, the one it serves."""
     run_app: bool = False
     """Whether the launcher starts the served app at once and ends when that app ends on its own."""
 
@@ -86,18 +86,17 @@ class Config:
         """Reads the settings.
 
         Raises:
-            ValueError: when a value is malformed.
+            ValueError: when a value is malformed or APP_DIR is not set.
         """
-        config = cls(
+        if not env.get("APP_DIR"):
+            raise ValueError("APP_DIR is not set: the app folder to serve")
+        return cls(
             preload=tuple(name.strip() for name in env.get("APP_LAUNCHER_PRELOAD", DEFAULT_PRELOAD).split(",") if name.strip()),
             socket_path=env.get("APP_LAUNCHER_SOCKET", protocol.DEFAULT_SOCKET),
             stop_timeout_s=float(env.get("APP_LAUNCHER_STOP_TIMEOUT_S", "5")),
-            app_dir=os.path.normpath(env["APP_DIR"]) if env.get("APP_DIR") else None,
+            app_dir=os.path.normpath(env["APP_DIR"]),
             run_app=env.get("APP_LAUNCHER_RUN_APP") == "1",
         )
-        if config.run_app and config.app_dir is None:
-            raise ValueError("APP_LAUNCHER_RUN_APP needs APP_DIR, the app to run")
-        return config
 
 
 @dataclass(eq=False)
@@ -150,12 +149,10 @@ class Launcher:
         self._exit_task: asyncio.Task[None] | None = None
         self._run_task: asyncio.Task[None] | None = None
         self._started = time.monotonic()
-        # The dependencies each app folder was prepared with, the served one as run.sh left it, any other at its first start
-        self._prepared: dict[str, str | None] = {}
-        if config.app_dir is not None:
-            self._prepared[config.app_dir] = dependencies.fingerprint(config.app_dir)
-        # The bricks of the served app join the preload at its first step, off the path of a start
-        self._app_bricks_pending = config.app_dir is not None
+        # The dependencies of the app as run.sh left them
+        self._prepared = dependencies.fingerprint(config.app_dir)
+        # The bricks of the app join the preload at its first step, off the path of a start
+        self._app_bricks_pending = True
 
     def serve(self) -> Launch | None:
         """Runs until SIGTERM or SIGINT, or until the app it was told to run ends on its own.
@@ -218,8 +215,7 @@ class Launcher:
         native = f", {len(os.listdir('/proc/self/task'))} OS threads" if os.path.isdir("/proc/self/task") else ""
         sweep = "" if self._owns_container else ", not atop a container: a stop kills the app process group only"
         venv = f", in the venv {sys.prefix}" if _in_a_venv() else ""
-        served = f", serving {self._config.app_dir}" if self._config.app_dir else ""
-        logger.info(f"Ready on {self._config.socket_path}, {len(threads)} Python threads{native}{sweep}{venv}{served}")
+        logger.info(f"Ready on {self._config.socket_path}, {len(threads)} Python threads{native}{sweep}{venv}, serving {self._config.app_dir}")
         if self._in_app_venv():
             # The fork inherits the app's own packages too: Streamlit, when the venv has it
             self._pending_preload.extend(
@@ -227,12 +223,12 @@ class Launcher:
             )
 
     def _in_app_venv(self) -> bool:
-        """Whether run.sh started this launcher in the venv of the served app, the interpreter the app runs on."""
-        return self._config.app_dir is not None and child.in_venv(dependencies.venv_dir(self._config.app_dir))
+        """Whether run.sh started this launcher in the venv of the app, the interpreter the app runs on."""
+        return child.in_venv(dependencies.venv_dir(self._config.app_dir))
 
     def _preload_step(self) -> None:
         """Imports the next module of the preload, keeping any signal handler it installs for the app, not for the loop."""
-        if not self._pending_preload and self._app_bricks_pending and self._config.app_dir is not None:
+        if not self._pending_preload and self._app_bricks_pending:
             self._app_bricks_pending = False
             # Resolved once the library is preloaded, not at the launcher start: its yaml alone would delay every container
             # start by 0.1 s on the UNO Q
@@ -288,9 +284,8 @@ class Launcher:
             self._end(exit_code)
 
     async def _run_app(self) -> None:
-        """Starts the served app as soon as the launcher is up; a launcher that cannot start it ends as a failed app."""
-        if (app := self._config.app_dir) is None:
-            return
+        """Starts the app as soon as the launcher is up; a launcher that cannot start it ends as a failed app."""
+        app = self._config.app_dir
         try:
             async with self._lifecycle:
                 if not self._exiting:
@@ -367,15 +362,14 @@ class Launcher:
 
     async def _start(self, request: Start) -> dict[str, Any]:
         app = request.app
-        if self._config.app_dir is not None and app != self._config.app_dir:
+        if app != self._config.app_dir:
             raise LauncherError(ErrorCode.BAD_REQUEST, f"this launcher serves {self._config.app_dir} only")
         if not os.path.isdir(app):
             raise LauncherError(ErrorCode.NOT_FOUND, f"no app folder at {app}")
         if not os.path.isfile(os.path.join(app, "python", "main.py")):
             raise LauncherError(ErrorCode.NOT_FOUND, f"no python/main.py in {app}")
         # Refused before anything changes: the running app, if any, goes on until the daemon brings a fresh container
-        current = dependencies.fingerprint(app)
-        if current != self._prepared.setdefault(app, current):
+        if dependencies.fingerprint(app) != self._prepared:
             raise LauncherError(ErrorCode.STALE, f"the dependencies of {app} changed since this container prepared them, start it in a fresh one")
 
         started = time.monotonic()
