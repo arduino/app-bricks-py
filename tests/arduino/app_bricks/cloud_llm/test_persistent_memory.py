@@ -17,6 +17,8 @@ from arduino.app_bricks.cloud_llm.memory import (
     DEFAULT_THREAD_ID,
     SQLMessagePersistence,
     WindowedChatMessageHistory,
+    keep_latest_media,
+    without_media,
 )
 from arduino.app_bricks.dbstorage_sqlstore import SQLStore
 
@@ -358,3 +360,75 @@ def test_with_memory_persistence_false_is_treated_as_none():
     llm = _bare_llm()
     llm.with_memory(max_messages=5, persistence=False)
     assert llm._history._store is None
+
+
+# --- Media in the history ----------------------------------------------------------
+
+_IMAGE = {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,AAAA"}}
+_AUDIO = {"type": "input_audio", "input_audio": {"data": "UklGRg==", "format": "wav"}}
+
+
+def _media_turn(text: str, *parts: dict) -> HumanMessage:
+    return HumanMessage(content=[*parts, {"type": "text", "text": text}])
+
+
+def _part_types(message: BaseMessage) -> list[str]:
+    return [p["type"] if isinstance(p, dict) else "str" for p in message.content] if isinstance(message.content, list) else ["str"]
+
+
+def test_keep_latest_media_replaces_the_media_of_earlier_turns():
+    messages = [
+        _media_turn("what is it?", _IMAGE),
+        AIMessage(content="a plant"),
+        HumanMessage(content="what colour?"),
+        _media_turn("and now?", _IMAGE, _AUDIO),
+    ]
+
+    kept = keep_latest_media(messages)
+
+    assert kept[0].content == [{"type": "text", "text": "[image]"}, {"type": "text", "text": "what is it?"}]
+    assert kept[1:3] == messages[1:3]
+    assert kept[3] is messages[3]
+    assert messages[0].content[0] == _IMAGE  # the input is not modified
+
+
+def test_keep_latest_media_keeps_the_latest_media_across_text_turns():
+    messages = [_media_turn("what is it?", _AUDIO), AIMessage(content="a question"), HumanMessage(content="say it again")]
+    assert keep_latest_media(messages) == messages
+
+
+def test_without_media_leaves_text_and_assistant_messages_alone():
+    text, answer = HumanMessage(content="hi"), AIMessage(content=[{"type": "text", "text": "hello"}])
+    assert without_media(text) is text
+    assert without_media(answer) is answer
+
+
+def test_history_keeps_every_turns_media_by_default():
+    history = WindowedChatMessageHistory(k=10)
+    history.add_messages([_media_turn("one", _IMAGE), AIMessage(content="a"), _media_turn("two", _IMAGE)])
+
+    assert [_part_types(m) for m in history.get_messages()] == [["image_url", "text"], ["str"], ["image_url", "text"]]
+
+
+def test_history_with_latest_media_only_keeps_one_turn_of_media():
+    history = WindowedChatMessageHistory(k=10, latest_media_only=True)
+    history.add_messages([_media_turn("one", _IMAGE), AIMessage(content="a")])
+
+    assert [_part_types(m) for m in history.get_messages()] == [["image_url", "text"], ["str"]]
+
+    history.add_messages([_media_turn("two", _AUDIO), AIMessage(content="b")])
+
+    assert [_part_types(m) for m in history.get_messages()] == [["text", "text"], ["str"], ["input_audio", "text"], ["str"]]
+
+
+def test_history_with_latest_media_only_persists_the_placeholders(sql_store):
+    store = SQLMessagePersistence(sql_store=sql_store, thread_id="media")
+    history = WindowedChatMessageHistory(k=10, store=store, latest_media_only=True)
+    history.add_messages([_media_turn("what is it?", _IMAGE, _AUDIO), AIMessage(content="a plant")])
+
+    assert history.get_messages()[0].content[:2] == [_IMAGE, _AUDIO]
+    assert store.load()[0].content == [
+        {"type": "text", "text": "[image]"},
+        {"type": "text", "text": "[audio]"},
+        {"type": "text", "text": "what is it?"},
+    ]

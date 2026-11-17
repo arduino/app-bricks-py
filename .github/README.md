@@ -121,12 +121,14 @@ target "my-container" {
 
 Build arguments specific to the image, such as download URLs and digests, are `ARG` defaults in its
 Dockerfile, so `docker build` of the directory works on its own; the bake target only carries the
-common `REGISTRY` and `BASE_IMAGE_VERSION`.
+common `REGISTRY` and `BASE_IMAGE_VERSION`. A layer, an image `FROM scratch` other containers add with
+`COPY --link` (see [containers/README.md](../containers/README.md#anatomy-of-a-container-directory)),
+inherits `_layer` instead, with just its `context`: it is built in-graph and never published.
 
 3. If the image installs Python packages, declare them in a `pyproject.toml` locked by `task deps:lock`
    and register the container in the dependency license scan, see
    [scripts/licensed/README.md](../scripts/licensed/README.md).
-4. Run the release workflow — it builds and publishes every target of the `default` group.
+4. Run the release workflow — it builds every target of the `default` group and publishes all but the layers.
 
 Check the result with `docker buildx bake --print my-container` and `task show:containers`.
 
@@ -146,12 +148,11 @@ Variables the workflows set, all optional for local builds:
 
 Some targets take extra named contexts: `python-apps-base` installs the wheel from `wheel` (`dist/`,
 filled by `task build:bricks` with the wheel, `pyproject.toml` and `uv.lock`), `models-downloader` reads
-`models-list.yaml` from `models` (the repository's `models/` directory) and `edge-impulse-npu-runner`
-copies the inference server it shares with `edge-impulse-runner` from `server` (`containers/ai/edge-impulse-runner/`,
-see [Shared source](../containers/README.md#shared-source)).
-`aihub-litert-models-runner` and `aihub-onnx-models-runner` take no named context for the shared `aihub`
-framework: they add the layers of the `aihub-framework` image with `COPY --link`, linked with
-`parent_context("aihub-framework")` next to their parent.
+`models-list.yaml` from `models` (the repository's `models/` directory). The images sharing source take no
+named context: `aihub-litert-models-runner` and `aihub-onnx-models-runner` add the `aihub-framework` layer,
+`edge-impulse-runner` and `edge-impulse-npu-runner` the `edge-impulse-server` one, with `COPY --link`,
+linked with `parent_context("<layer>")` next to their parent (see
+[Shared source](../containers/README.md#shared-source)).
 
 ## SBOMs
 

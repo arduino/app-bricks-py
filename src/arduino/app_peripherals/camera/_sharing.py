@@ -89,7 +89,7 @@ class FrameHub:
             self._frame = None
             self._frame_cond.notify_all()
 
-    def capture(self, handle: BaseCamera) -> np.ndarray | None:
+    def capture(self, handle: BaseCamera, latest: bool = False) -> np.ndarray | None:
         """
         Capture the next frame for a handle.
 
@@ -99,6 +99,8 @@ class FrameHub:
 
         Args:
             handle (BaseCamera): The handle asking for a frame.
+            latest (bool): Read a new frame from the device, discarding what it buffered since the
+                last read, instead of handing out the frame another handle read.
 
         Returns:
             The frame with the handle's adjustments applied, or None if no frame is available.
@@ -109,15 +111,15 @@ class FrameHub:
             CameraTransformError: If the handle's adjustments fail.
             Exception: If the device fails to read a frame.
         """
-        latest = None
+        shared_frame = None
         with self._frame_cond:
             while True:
                 if not handle.is_started():
                     raise CameraReadError(f"Attempted to read from {handle.name} before starting it.")
 
-                if self._frame is not None and handle._shared_seq < self._frame_seq and self._is_fresh():  # pyright: ignore[reportPrivateUsage]
+                if not latest and self._frame is not None and handle._shared_seq < self._frame_seq and self._is_fresh():  # pyright: ignore[reportPrivateUsage]
                     handle._shared_seq = self._frame_seq  # pyright: ignore[reportPrivateUsage]
-                    latest = self._frame
+                    shared_frame = self._frame
                     break
                 if not self._producing:
                     self._producing = True
@@ -125,12 +127,12 @@ class FrameHub:
                 self._frame_cond.wait()
 
         # Adjustments are applied without holding the condition, not to hold up the other handles
-        if latest is not None:
-            return handle._apply_adjustments(latest)  # pyright: ignore[reportPrivateUsage]
+        if shared_frame is not None:
+            return handle._apply_adjustments(shared_frame)  # pyright: ignore[reportPrivateUsage]
 
         frame = None
         try:
-            frame = self.leader._capture_device(adjust=False)  # pyright: ignore[reportPrivateUsage]
+            frame = self.leader._capture_device(adjust=False, latest=latest)  # pyright: ignore[reportPrivateUsage]
         finally:
             with self._frame_cond:
                 self._producing = False

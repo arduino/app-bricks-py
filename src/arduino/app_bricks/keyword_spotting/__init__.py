@@ -38,6 +38,11 @@ class KeywordSpotting(AudioDetector):
     def on_detect(self, keyword: str, callback: Callable[[], None]) -> None:
         """Register a callback function to be invoked when a specific keyword is detected.
 
+        The callback runs in the detection thread, so detection pauses until it returns, and
+        the audio heard meanwhile is discarded. A callback may therefore handle the whole
+        request that follows the keyword (record it, answer it) without being triggered again
+        by that request.
+
         Args:
             keyword (str): The keyword to check for in the classification results.
                 Must match the keyword as defined in the model.

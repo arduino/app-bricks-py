@@ -1,5 +1,5 @@
 [project]
-name = "edge-impulse-runner"
+name = "edge-impulse-server"
 version = "0"
 requires-python = "==3.13.*"
 dependencies = [

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from .microphone import Microphone
 from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
 from .errors import *
-from .utils import PauseDetector, chunk_level
+from .utils import PauseDetector, SpeechSegmenter, chunk_level
 
 if TYPE_CHECKING:
     from .alsa_microphone import ALSAMicrophone
@@ -48,5 +48,6 @@ __all__ = [
     "MicrophoneOpenError",
     "MicrophoneReadError",
     "PauseDetector",
+    "SpeechSegmenter",
     "chunk_level",
 ]

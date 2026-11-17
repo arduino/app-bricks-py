@@ -9,6 +9,7 @@ import socket
 import socketserver
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Iterator
@@ -54,6 +55,13 @@ def server() -> Iterator[Server]:
                     self.wfile.write(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
                     self.wfile.flush()
                 self.wfile.write(b"0\r\n\r\n")
+                return
+            if path == "/truncated":  # One chunk, then the connection closes before the last chunk
+                self.send_response(200)
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                self.wfile.write(b"5\r\nfirst\r\n")
+                self.close_connection = True
                 return
             if path == "/slow":
                 time.sleep(0.5)  # The client gives up meanwhile: the answer below lands on a closed socket
@@ -246,6 +254,17 @@ def test_stream_returns_error_statuses_with_their_body(server: Server):
         assert response.json()["status"] == 500
 
 
+def test_stream_raises_connection_failed_when_the_body_is_cut_short(server: Server):
+    with http.stream("POST", f"{server.url}/truncated", json={}) as response:
+        chunks = response.iter_content(1024)
+        assert next(chunks) == b"first"
+        with pytest.raises(http.ConnectionFailed, match="POST .*/truncated"):
+            next(chunks)
+    with http.stream("POST", f"{server.url}/truncated", json={}) as response:
+        with pytest.raises(http.ConnectionFailed, match="POST .*/truncated"):
+            response.json()
+
+
 def test_stream_raises_connection_failed_without_a_response(closed_port: str):
     with pytest.raises(http.ConnectionFailed):
         with http.stream("POST", f"{closed_port}/stream", json={}):
@@ -253,7 +272,7 @@ def test_stream_raises_connection_failed_without_a_response(closed_port: str):
 
 
 @pytest.fixture
-def unix_server(tmp_path) -> Iterator[tuple[str, list[tuple[str, str, dict[str, str]]]]]:
+def unix_server() -> Iterator[tuple[str, list[tuple[str, str, dict[str, str]]]]]:
     """An HTTP server on a Unix domain socket, answering GET /scan with JSON; yields (socket path, received requests)."""
     if not hasattr(socket, "AF_UNIX"):
         pytest.skip("AF_UNIX not available on this platform")
@@ -275,12 +294,14 @@ def unix_server(tmp_path) -> Iterator[tuple[str, list[tuple[str, str, dict[str, 
     class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
         pass
 
-    path = str(tmp_path / "scanner with space.sock")
-    httpd = UnixHTTPServer(path, Handler)
-    threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
-    yield path, received
-    httpd.shutdown()
-    httpd.server_close()
+    # Not tmp_path: its nested folders can outgrow the 104 to 108 bytes a socket path may take
+    with tempfile.TemporaryDirectory() as tmp:
+        path = f"{tmp}/scanner with space.sock"
+        httpd = UnixHTTPServer(path, Handler)
+        threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+        yield path, received
+        httpd.shutdown()
+        httpd.server_close()
 
 
 def test_a_service_on_a_unix_socket_is_reached_through_its_http_unix_url(unix_server):

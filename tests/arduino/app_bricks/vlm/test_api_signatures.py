@@ -170,6 +170,19 @@ def test_vlm_public_signatures_are_stable(method_name):
     assert _signature_fingerprint(VisionLanguageModel, method_name) == EXPECTED_VLM_SIGNATURES[method_name]
 
 
+def test_vlm_default_temperature_is_greedy():
+    """The VLM default temperature must stay 0.0 (greedy decoding).
+
+    VLM bricks serve perception tasks (detection, counting, OCR, constrained
+    YES/NO answers) where reproducibility matters: at 0.7 the same counting
+    prompt on SmolVLM2-500M returned 15/3/3/15 across runs and a YES/NO
+    detection flipped 1 time out of 3. Chat-oriented bricks keep their own
+    higher default; this guards the VLM one from being 'aligned' back to it.
+    """
+    param = _param(VisionLanguageModel, "__init__", "temperature")
+    assert param.default == 0.0
+
+
 def test_vlm_inheritance_chain_is_intact():
     """VLM must remain a LargeLanguageModel/CloudLLM subclass for the tests above to be meaningful."""
     assert issubclass(VisionLanguageModel, LargeLanguageModel)

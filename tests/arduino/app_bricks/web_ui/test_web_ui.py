@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+import uvicorn
+from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
@@ -206,11 +208,15 @@ def test_expose_camera_passes_quality_to_compress():
 
 
 class _FakeServer:
-    """A stand-in for uvicorn.Server exposing just the two stop flags."""
+    """A stand-in for the server exposing the two stop flags and the wake-up."""
 
     def __init__(self):
         self.should_exit = False
         self.force_exit = False
+        self.woken = False
+
+    def wake(self):
+        self.woken = True
 
 
 def test_start_bounds_the_graceful_shutdown():
@@ -270,6 +276,7 @@ def test_stop_forces_the_server_to_exit_when_the_graceful_path_stalls(monkeypatc
     ui.stop()
 
     assert server.should_exit is True
+    assert _wait_for(lambda: server.woken), "the server loop was not woken up"
     assert _wait_for(lambda: server.force_exit), "the server was never forced to stop"
 
 
@@ -377,3 +384,35 @@ def test_stop_without_a_server_is_a_noop():
     ui.stop()  # must not raise
 
     assert ui._server is None
+
+
+def test_the_server_loop_ends_as_soon_as_it_is_asked_to():
+    """Uvicorn's own loop looks at should_exit every 100 ms: ours is woken up."""
+    server = web_ui._Server(uvicorn.Config(FastAPI(), port=0, log_level="warning"))
+
+    async def stop_and_time():
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.02, lambda: (setattr(server, "should_exit", True), server.wake()))
+        started = time.monotonic()
+        await server.main_loop()
+        return time.monotonic() - started
+
+    elapsed = asyncio.run(stop_and_time())
+    assert 0.02 <= elapsed < 0.09, f"the loop ended after {elapsed:.3f}s"
+
+
+def test_the_server_stops_within_a_few_milliseconds_once_asked():
+    """Uvicorn sleeps 100 ms in its shutdown and polls every 100 ms: ours waits only for what is open."""
+    server = web_ui._Server(uvicorn.Config(FastAPI(), port=0, log_level="warning"))
+
+    async def serve_then_stop():
+        serving = asyncio.create_task(server.serve())
+        while not server.started:
+            await asyncio.sleep(0.005)
+        started = time.monotonic()
+        server.should_exit = True
+        server.wake()
+        await serving
+        return time.monotonic() - started
+
+    assert asyncio.run(serve_then_stop()) < 0.06

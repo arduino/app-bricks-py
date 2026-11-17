@@ -1,6 +1,6 @@
-# Vision Language Model (VLM) Brick
+# Large Language Model - Vision Brick
 
-The Vision Language Model (VLM) Brick provides a simple Python® interface for asking a locally hosted multimodal AI model questions about images. It lets Arduino® App Lab applications send text prompts together with image file paths or image bytes, then receive generated text from the model running on the board.
+The Large Language Model - Vision Brick provides a simple Python® interface for asking a locally hosted multimodal AI model questions about images. It lets Arduino® App Lab applications send text prompts together with image file paths or image bytes, then receive generated text from the model running on the board.
 
 ## Overview
 
@@ -8,7 +8,10 @@ The VLM Brick is designed for applications that need visual understanding withou
 
 Use this Brick when your application needs to describe a camera frame, inspect a scene, extract visual details, or combine an image with a natural-language instruction. For example, the Smart Mirror example captures a USB camera frame, sends it to `VisionLanguageModel`, and displays a short styling response in a web UI.
 
-The Brick uses the model configured for `arduino:vlm` in Arduino App Lab.
+The Brick uses the model configured for `arduino:vlm` in Arduino App Lab. The model runs on one of two local runners, chosen by the prefix of its identifier:
+
+- `genie:` models, such as the default `genie:qwen3_vl_4b_instruct`, run on the Genie runner.
+- `llamacpp:` models, such as `llamacpp:gemma-4-E2B_q4_0-it-multimodal`, run on the llama.cpp runner. The model must include its vision encoder: in the model catalog these are the models whose identifier ends in `-multimodal`.
 
 ## Features
 
@@ -22,7 +25,7 @@ The Brick uses the model configured for `arduino:vlm` in Arduino App Lab.
 
 ## Prerequisites
 
-- A supported board with a local VLM model runner available. The current Brick configuration supports `ventunoq`.
+- A supported board with a local VLM model runner available. The current Brick configuration supports `unoq` and `ventunoq`.
 - A compatible VLM model downloaded and configured in Arduino App Lab.
 - The `arduino:vlm` Brick added to the application from App Lab.
 - Image input as a valid file path or bytes. Camera frames should be encoded as JPEG bytes before calling the Brick.
@@ -113,25 +116,38 @@ The Brick is initialized with the following parameters:
 | Parameter | Type | Default | Description |
 | :-- | :-- | :-- | :-- |
 | `system_prompt` | `str` | `""` | System-level instruction that defines the assistant behavior. |
-| `temperature` | `float` \| `None` | `0.7` | Controls randomness. Lower values are more deterministic; higher values are more varied. |
+| `temperature` | `float` \| `None` | `0.0` | Controls randomness. Defaults to greedy decoding for reproducible answers on perception tasks (detection, counting, OCR); raise it (e.g. `0.7`) for more varied image descriptions. |
 | `max_tokens` | `int` | `512` | Maximum number of tokens to generate in the response. |
 | `timeout` | `int` \| `None` | `None` | Maximum time in seconds to wait for a response. |
 | `tools` | `Sequence[ToolLike]` \| `None` | `None` | Optional tools the model can call: `BaseTool` objects declared with the `@tool` decorator exported by the Brick, or plain callables (auto-wrapped into tools). |
-| `model` | `str` \| `None` | App Lab configured model | Local model identifier configured for `arduino:vlm` in App Lab. |
+| `model` | `str` \| `None` | App Lab configured model | Local model identifier configured for `arduino:vlm` in App Lab, e.g. `genie:qwen3_vl_4b_instruct` or `llamacpp:gemma-4-E2B_q4_0-it-multimodal`. |
 | `**kwargs` | `dict` | `{}` | Additional keyword arguments passed to the underlying model constructor. |
 
-The Brick configuration declares that `arduino:vlm` requires a local model service and a compatible model:
+The Brick configuration declares which local model service each kind of model requires, and the default model of each board:
 
 ```yaml
 id: arduino:vlm
 name: Vision Language Model (VLM)
-requires_services: ["arduino:genie"]
-model: genie:qwen3_vl_4b_instruct
-supported_boards: ["ventunoq"]
+requires_services:
+  - id: arduino:genie
+    when:
+      model: "genie:*"
+  - id: arduino:llamacpp
+    when:
+      model: "llamacpp:*"
+model_by_boards:
+  - platform: ventunoq
+    model: genie:qwen3_vl_4b_instruct
+  - platform: unoq
+    model: llamacpp:Qwen3.5-0.8B-Q4_0-multimodal
+supported_boards: ["unoq", "ventunoq"]
 ```
+
+For a `llamacpp:` model, the `LLAMA_ARG_CTX_SIZE` variable sets the context size of the llama.cpp runner (default `16384`).
 
 ## Methods
 
+- **`init()`**: Optional warm-up call to pre-load the model before the first `chat()`. It sends a tiny black image generated in memory together with a YES/NO question, so the vision encoder is exercised as well. Raises `RuntimeError` if the model is misconfigured or the runner is not responsive.
 - **`chat(message, images=None, reasoning_effort=None)`**: Sends a prompt and optional images, then returns the complete generated response as a string. `reasoning_effort` optionally sets how much a reasoning model thinks before answering, as a discrete level or an integer token budget, when the local runner supports it.
 - **`chat_stream(message, images=None)`**: Sends a prompt and optional images, then yields generated text chunks as they arrive.
 - **`stop_stream()`**: Requests cancellation of the active streaming response.
@@ -165,7 +181,11 @@ In that example, the application continuously captures camera frames, keeps the 
 
 ### Model not found
 
-**Fix:** Verify that the selected VLM model is downloaded and available in App Lab. If you override the model, make sure the model identifier matches a model exposed by the local `genie` service.
+**Fix:** Verify that the selected VLM model is downloaded and available in App Lab. If you override the model, make sure the model identifier matches a model exposed by the local service its prefix names: `genie` for `genie:` models, `llamacpp` for `llamacpp:` models.
+
+### The model does not accept images
+
+**Fix:** A `llamacpp:` model can only read images when it is loaded with its vision encoder. Select the `-multimodal` version of the model, such as `llamacpp:gemma-4-E2B_q4_0-it-multimodal`.
 
 ### Empty or generic responses
 

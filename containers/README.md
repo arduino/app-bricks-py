@@ -11,7 +11,7 @@ containers/
 └── bricks/   the library itself and its supporting tooling
 ```
 
-The sub-folder only documents what a container is for: every release publishes every container (see
+The sub-folder only documents what a container is for: every release publishes every container but the layers (see
 [Release process](#release-process)).
 
 The group is not part of a container's identity. A container is always referred to by
@@ -25,11 +25,12 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 | Container | Group | Built `FROM` | Purpose |
 |---|---|---|---|
 | `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
-| `edge-impulse-runner` | ai | `python-slim` | Edge Impulse multi-model inference server: its source, and its CPU image |
-| `edge-impulse-npu-runner` | ai | `qairt-common-base` | Edge Impulse multi-model inference server, Hexagon NPU (QNN) image of the `edge-impulse-runner` source |
+| `edge-impulse-server` | base | `scratch` | Layer, never run or published: the Edge Impulse multi-model inference server and its locked packages, added by `edge-impulse-runner` and `edge-impulse-npu-runner` |
+| `edge-impulse-runner` | ai | `python-slim` | Edge Impulse inference server, CPU image of the `edge-impulse-server` layer |
+| `edge-impulse-npu-runner` | ai | `qairt-common-base` | Edge Impulse inference server, Hexagon NPU (QNN) image of the `edge-impulse-server` layer |
 | `python-base` | base | `python-slim` | System deps, non-root user, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages |
 | `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
-| `aihub-framework` | base | `scratch` | Layer, never run: the `aihub` runner framework and the app skeleton, copied by `aihub-litert-models-runner` and `aihub-onnx-models-runner` |
+| `aihub-framework` | base | `scratch` | Layer, never run or published: the `aihub` runner framework and the app skeleton, added by `aihub-litert-models-runner` and `aihub-onnx-models-runner` |
 | `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config, patches FastAPI to build its OpenAPI models on first use |
 | `models-downloader` | bricks | `python-slim` | Downloads models from AI Hub, Edge Impulse and Hugging Face per `models/models-list.yaml` |
 | `tps` | bricks | `python-slim` | Wi-Fi scan server of the TPS Location API brick, serves `iw` results to the app over a Unix socket |
@@ -59,24 +60,28 @@ graph LR
   fw -.-> aihubonnx
   slim --> edgeimpulserunner[edge-impulse-runner]
   qairt --> edgeimpulsenpurunner[edge-impulse-npu-runner]
+  eis[edge-impulse-server] -.-> edgeimpulserunner
+  eis -.-> edgeimpulsenpurunner
 ```
 
 `ei-models-runner` and `ei-qnn-models-runner` build on external Edge Impulse images and have no upstream
 inside this repo.
 
-Dashed edges add a layer (see below): `aihub-framework` is an image `FROM scratch` holding only the
-`aihub` package at `/opt/aihub/` and the app skeleton at `/app/`. Both runner bases add its layers, put
-`/opt` on `PYTHONPATH` so their runners `import aihub`, and install the framework's dependencies from
-their own `pyproject.toml`, since the layer has no Python.
+Dashed edges add a layer (see below): an image `FROM scratch` holding files only, never run and never
+published, that the images at the arrow end reproduce with `COPY --link`. `aihub-framework` holds the
+`aihub` package at `/opt/aihub/` and the app skeleton at `/app/`: both runner bases add it, put `/opt` on
+`PYTHONPATH` so their runners `import aihub`, and install the framework's dependencies from their own
+`pyproject.toml`, since the layer has no Python. `edge-impulse-server` holds the Edge Impulse inference
+server at `/app/` and its `pyproject.toml` and `uv.lock` at `/deps/`: `edge-impulse-runner` and
+`edge-impulse-npu-runner` add the server and mount `/deps` while installing its packages, so the CPU and
+the NPU image carry the same server blob and the same locked packages.
 
 ### Shared source
 
-`ai/edge-impulse-runner/` holds the inference server both `edge-impulse-runner` and `edge-impulse-npu-runner`
-package, once: its `src/`, `tests/`, `pyproject.toml`, `uv.lock` and the CPU builds of the bundled models,
-from which it builds the CPU image. `ai/edge-impulse-npu-runner/` keeps its `Dockerfile`, `README.md` and
-QNN models only: its `docker-bake.hcl` target links `ai/edge-impulse-runner/` as the `server` build context
-and its Dockerfile copies from it with `COPY --from=server`; a standalone build passes
-`--build-context server=../edge-impulse-runner`.
+`base/edge-impulse-server/` holds the inference server once: its `src/`, `tests/`, `pyproject.toml` and
+`uv.lock`, tested in the `.venv` of that directory. `ai/edge-impulse-runner/` and `ai/edge-impulse-npu-runner/`
+keep their `Dockerfile`, `README.md` and bundled models only. Likewise `base/aihub-framework/` holds the
+`aihub` framework the two runner bases add.
 
 ## Anatomy of a container directory
 
@@ -90,8 +95,8 @@ repository expects, see [Adding a New Container](../.github/README.md#adding-a-n
 | `patches/` | no | Source patches to the installed Python packages, in `git format-patch` format, applied by the Dockerfile with GNU `patch --fuzz=0` to the locked versions the image installs, every `*.patch` of the directory in name order (see its README), with a test in `tests/containers/` that applies them the same way. A patch that stops applying exactly, after a bump of its package or once upstream has merged it, fails the build and the test: regenerate it against the new version, or drop it |
 | `tests/` | no | Python tests run by `task test` in the container's `.venv`, with the packages of its `test` dependency group; shell tests exercise the built image |
 
-An image built from the code of another container keeps only its `Dockerfile`, `README.md` and what is its own in
-its directory, and copies the rest from that container's directory through a named build context.
+An image built from source shared with other images keeps only its `Dockerfile`, `README.md` and what is its
+own in its directory; the shared source is a layer of its own (see below).
 
 SBOMs are not kept in the tree: they are generated from the published images at release time (see
 [SBOMs](#sboms)) and by the dev workflow as run artifacts.
@@ -102,8 +107,9 @@ An image that derives from another container in this repo declares it once, in i
 in-graph first; `scripts/container.py` reads the `FROM` line for everything else (dev build
 selection, SBOM base image, `task show:containers`) and the release fails if the two disagree.
 
-An image that adds a **layer** of this repo, an image that is never run like `aihub-framework`, imports
-it the same way through a stage of its own, and links it next to its parent:
+An image that adds a **layer** of this repo, an image `FROM scratch` holding files only that is never run
+nor published like `aihub-framework`, imports it the same way through a stage of its own, and links it
+next to its parent:
 
 ```dockerfile
 ARG REGISTRY
@@ -126,12 +132,21 @@ contexts = merge(
 
 `--link` is what makes it the layer rather than a copy: BuildKit builds the `COPY` apart from what is
 below it, so it reproduces the layer image's own layer byte for byte, on any base, and the registry
-stores one blob for the layer image and every image adding it. A plain `COPY --from` copies the files
-into a new layer of each image instead. On a base where `/app` belongs to `arduino` (as in
-`python-slim`), the layer's root-owned `/app` takes over, which the runners, running as root, do not mind.
+stores one blob for every image adding it. A plain `COPY --from` copies the files into a new layer of
+each image instead. Files an image needs only while building, like the `uv.lock` of `edge-impulse-server`,
+are mounted from the stage instead (`RUN --mount=from=<alias>,source=/deps,target=/deps`), so they end up
+in no layer at all. On a base where `/app` belongs to `arduino` (as in `python-slim`), the layer's
+root-owned `/app` takes over, which the runners, only reading it, do not mind.
+
+A layer's bake target inherits `_layer` with just its `context`: bake builds it in-graph whenever an image
+adding it is built, cache only, with no tags and no registry cache. Nothing of it is published, so an
+image adding a layer is built with `docker buildx bake <name>` (or `task build:containers -- <name>`),
+never with a standalone `docker build` of its directory.
 
 `scripts/container.py` reads every `FROM ${REGISTRY}app-bricks/...` stage that is not the parent as a
-layer: `check-bake` requires its link, and a dev build of the layer rebuilds every image adding it.
+layer, and every container `FROM scratch` as one: `check-bake` requires its link and refuses tags on it,
+`list --published` leaves it out, as the release does, and a dev build of the layer rebuilds every image
+adding it.
 
 See the [docker-bake.hcl reference](../.github/README.md#docker-bakehcl-reference) for the variables CI sets.
 
@@ -147,7 +162,7 @@ dependency order from the parent links in `docker-bake.hcl`, so `python-slim` is
 `python-base`, which is built before `python-apps-base`, however deep the chain. Every image is pushed
 to `ghcr.io/arduino/app-bricks/<name>:X.Y.Z`, plus `:latest` unless the version is a prerelease (`rc`,
 `alpha` or `beta`). Base images in `containers/base/` are published like any other, tagged with the
-release version.
+release version, except the layers, which exist only inside the build.
 
 A per-image registry cache (`<name>:buildcache`) is imported and exported on every release. The cache is
 content addressed, so only the layers whose inputs changed since the previous release are rebuilt; the
@@ -160,8 +175,8 @@ Every image is pushed with the SBOM BuildKit generated while building it, readab
 `docker buildx imagetools inspect <image> --format '{{ json .SBOM }}'`. Each release also attaches
 `sboms.zip` to the GitHub Release, covering **every image it publishes**: `scripts/sbom_delta.py` reads
 those attestations and computes, for each image, the delta against the base image of its Dockerfile,
-the attestation of the parent container, a Syft scan of the external base, or an empty SBOM for a layer
-`FROM scratch`. The archive holds one
+the attestation of the parent container or a Syft scan of the external base. Layers have no SBOM of their
+own: they are never published, and their files are in the SBOM of the images adding them. The archive holds one
 `<name>-<version>/` folder per image with `base`, `full` and `delta` SPDX documents. A failed delta never
 blocks the release: the image is reported as a warning and listed in `MISSING.txt` inside the archive.
 

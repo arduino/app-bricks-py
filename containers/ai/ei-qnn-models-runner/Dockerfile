@@ -41,3 +41,6 @@ ENV NODE_COMPILE_CACHE=/home/arduino/.cache/node-compile-cache
 RUN mkdir -p $NODE_COMPILE_CACHE
 
 ENTRYPOINT ["/home/arduino/start-runner.sh"]
+
+# Texts of the licenses the models above declare in their SPDX tags
+COPY --from=licenses BSD-3-Clause.txt Apache-2.0.txt LICENSES/

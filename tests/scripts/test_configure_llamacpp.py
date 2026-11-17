@@ -5,11 +5,12 @@
 """Unit tests for the llama.cpp runners' configure-llamacpp.py scripts.
 
 Covers the Hexagon session sizing of the NPU runner — the GGUF header reading it is
-built on, the sizing itself, and a regression table of what the measured models were
-measured to need (containers/ai/llamacpp-npu-runner/SESSION_ALLOCATION.md) — and, for
+built on, the sizing itself, and a regression table of what the measured models were measured to need
+(containers/ai/llamacpp-npu-runner/SESSION_ALLOCATION.md) — and, for
 both runners, whose scripts deliberately duplicate the code, the served model names,
 which are derived from the ".arduino_metadata.yaml" download records rather than from
-a catalog baked into the images.
+a catalog baked into the images, and the per-model preset keys a decision model gets in
+models.ini so that its whole prompt fits in one micro-batch.
 """
 
 from __future__ import annotations
@@ -17,13 +18,16 @@ from __future__ import annotations
 import configparser
 import importlib.util
 import struct
+import tracemalloc
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NPU_SCRIPT = REPO_ROOT / "containers" / "ai" / "llamacpp-npu-runner" / "scripts" / "configure-llamacpp.py"
 CPU_SCRIPT = REPO_ROOT / "containers" / "ai" / "llamacpp-runner" / "scripts" / "configure-llamacpp.py"
+COMPOSE = REPO_ROOT / "src" / "arduino" / "app_services" / "llamacpp" / "service_compose.yaml"
 
 
 def _load_script(script: Path, name: str):
@@ -54,7 +58,7 @@ CTX_SIZES = (4096, 8192, 16384)
 # only prove that the fake matches the reader.
 # --------------------------------------------------------------------------- #
 
-GGUF_UINT32, GGUF_BOOL, GGUF_STRING, GGUF_ARRAY = 4, 7, 8, 9
+GGUF_UINT32, GGUF_FLOAT32, GGUF_BOOL, GGUF_STRING, GGUF_ARRAY = 4, 6, 7, 8, 9
 Q4_0, Q3_K, Q6_K, Q8_0, F32 = 2, 11, 14, 8, 0
 
 
@@ -69,12 +73,14 @@ def _gguf_value(value) -> bytes:
         return struct.pack("<IB", GGUF_BOOL, int(value))
     if isinstance(value, int):
         return struct.pack("<II", GGUF_UINT32, value)
+    if isinstance(value, float):
+        return struct.pack("<If", GGUF_FLOAT32, value)
     if isinstance(value, str):
         return struct.pack("<I", GGUF_STRING) + _gguf_string(value)
     if isinstance(value, list):
-        item_type = GGUF_BOOL if isinstance(value[0], bool) else GGUF_UINT32
+        item_type = _gguf_value(value[0])[:4]  # the tag of the first item, for all of them
         body = b"".join(_gguf_value(item)[4:] for item in value)
-        return struct.pack("<IIQ", GGUF_ARRAY, item_type, len(value)) + body
+        return struct.pack("<I", GGUF_ARRAY) + item_type + struct.pack("<Q", len(value)) + body
     raise TypeError(value)
 
 
@@ -108,11 +114,14 @@ def attention_model(
     recurrent_layers: int = 0,
     window: int = 0,
     architecture: str = "llama",
+    extra_metadata: dict | None = None,
 ) -> Path:
     """A plain attention model: *layers* layers, all of them caching, plus the
-    recurrent layers that do not. Its weights are one q4_0 tensor of *weight_mib*."""
+    recurrent layers that do not. Its weights are one q4_0 tensor of *weight_mib*.
+    *extra_metadata* goes right after the architecture, ahead of every key the sizing reads."""
     metadata = {
         "general.architecture": architecture,
+        **(extra_metadata or {}),
         f"{architecture}.block_count": layers + recurrent_layers,
         f"{architecture}.attention.head_count": kv_heads,
         f"{architecture}.attention.head_count_kv": kv_heads,
@@ -343,6 +352,79 @@ def test_an_unreadable_header_is_not_a_model(tmp_path):
 
     with pytest.raises(ValueError):
         read_model_shape(tmp_path / "m.gguf")
+
+
+# --------------------------------------------------------------------------- #
+# The tokenizer
+#
+# Most of a header's bytes are the vocabulary, and none of the sizing: a gemma-4 header
+# holds ~800k token strings, scores and types, which took 1.1 s per model to decode on a
+# VENTUNO Q. They are skipped instead, and whatever follows them must read the same.
+# --------------------------------------------------------------------------- #
+
+
+def vocabulary(size: int) -> dict:
+    """The tokenizer arrays of a *size*-token vocabulary, as llama.cpp writes them."""
+    return {
+        "tokenizer.ggml.tokens": [f"<token{i}>" for i in range(size)],
+        "tokenizer.ggml.scores": [float(-i) for i in range(size)],
+        "tokenizer.ggml.token_type": [1] * size,
+    }
+
+
+def test_a_vocabulary_is_skipped_rather_than_decoded(tmp_path):
+    gguf = attention_model(tmp_path / "m.gguf", layers=4, extra_metadata=vocabulary(100_000))
+    configure_llamacpp.ggml_types()  # probed once per process: not part of the read
+
+    tracemalloc.start()
+    try:
+        metadata, _ = configure_llamacpp.read_gguf(gguf)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+    assert metadata["tokenizer.ggml.tokens"] is None
+    assert peak < MIB, f"{peak / MIB:.1f} MiB allocated: the vocabulary was decoded"
+
+
+def test_what_follows_a_skipped_array_reads_as_if_it_were_not_there(tmp_path):
+    """Strings are skipped by their lengths, numbers by their width, arrays of arrays
+    item by item: a skip that lands one byte off turns every key and tensor after it
+    into garbage."""
+    skipped = vocabulary(5000) | {"test.nested": [[1, 2]] * 2000}
+    with_arrays = attention_model(tmp_path / "arrays.gguf", layers=32, window=1024, extra_metadata=skipped)
+    without = attention_model(tmp_path / "plain.gguf", layers=32, window=1024)
+
+    assert read_model_shape(with_arrays) == read_model_shape(without)
+
+
+def test_a_header_cut_inside_its_vocabulary_is_refused(tmp_path):
+    """A seek past the end of the file does not fail by itself: the read after it must."""
+    gguf = attention_model(tmp_path / "m.gguf", layers=4, extra_metadata=vocabulary(5000))
+    gguf.write_bytes(gguf.read_bytes()[:30_000])
+
+    with pytest.raises((ValueError, struct.error)):
+        read_model_shape(gguf)
+
+
+def test_both_runners_skip_a_vocabulary_when_reading_the_metadata(runner, tmp_path):
+    """The llamacpp-runner reads every installed header at start too, to tell a decision
+    model apart, with its own copy of the reader: the vocabulary costs neither copy any
+    memory, and every key after it reads the same."""
+    skipped = vocabulary(100_000) | {"test.nested": [[1, 2]] * 2000}
+    with_arrays = attention_model(tmp_path / "arrays.gguf", layers=4, extra_metadata=skipped)
+    without = attention_model(tmp_path / "plain.gguf", layers=4)
+
+    tracemalloc.start()
+    try:
+        metadata = runner.read_gguf_metadata(with_arrays)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+    assert peak < MIB, f"{peak / MIB:.1f} MiB allocated: the vocabulary was decoded"
+    assert all(metadata[key] is None for key in skipped)
+    assert {k: v for k, v in metadata.items() if k not in skipped} == runner.read_gguf_metadata(without)
 
 
 # --------------------------------------------------------------------------- #
@@ -676,12 +758,21 @@ def test_the_busiest_session_holds_one_layer_more_than_an_even_share():
     assert granite.session_bytes(16384, 1) == granite.npu_bytes(16384) + compute(1)
 
 
-def test_the_budget_is_87_percent_of_the_address_space_a_session_offers():
-    """3134 MiB of DSP address space, as the backend prints it at start-up, with 13% kept
+def test_the_budget_is_85_percent_of_the_address_space_a_session_offers():
+    """3134 MiB of DSP address space, as the backend prints it at start-up, with 15% kept
     back for what the flat compute and state allowances get wrong — and so that no count
     the rule asks for is below one a load was seen to succeed on (see MEASURED_MODELS)."""
-    assert configure_llamacpp.SESSION_BUDGET == int(3285696512 * 0.87)
-    assert configure_llamacpp.SESSION_BUDGET / MIB == pytest.approx(2726, abs=1)
+    assert configure_llamacpp.SESSION_BUDGET == int(3285696512 * 0.85)
+    assert configure_llamacpp.SESSION_BUDGET / MIB == pytest.approx(2664, abs=1)
+
+
+def test_the_budget_excludes_the_one_figure_that_was_never_seen_to_load():
+    """What brought the fraction down from 0.87: bar-Qwen3.5-9B sizes to 2706 MiB a session
+    on three, which never loaded in four attempts, where four sessions load and generate
+    (board, 2026-09-21, MBUF 1024, n_ubatch 512). The budget has to sit below that figure
+    for the rule to give the model the fourth session, and above the 2583 MiB that
+    granite-4.2-8b holds on the four it loads on."""
+    assert 2583 * MIB < configure_llamacpp.SESSION_BUDGET < 2706 * MIB
 
 
 def test_every_session_reserves_a_compute_buffer_and_a_copy_of_the_one_feeding_it(monkeypatch):
@@ -719,6 +810,60 @@ def test_a_model_too_big_for_every_session_asks_for_them_all():
     huge = shape_of(npu_weight_mib=40000, n_layer=32, kv_layers=1, bytes_per_cell=0)
 
     assert huge.sessions_needed(16384) == configure_llamacpp.MAX_SESSIONS
+
+
+# --------------------------------------------------------------------------- #
+# The environment the sizing reads
+#
+# GGML_HEXAGON_MBUF is not among it: since llama.cpp #30126 it is "dyn,static[,total]",
+# the size of the compute and of the weight/KV buffers the backend cuts a session's
+# allocations into, and a tensor bigger than the static one gets a buffer of its own. It
+# moves neither what a session holds nor which tensor can be placed.
+# --------------------------------------------------------------------------- #
+
+
+def service_environment() -> dict:
+    """The environment service_compose.yaml gives the runner."""
+    environment = yaml.safe_load(COMPOSE.read_text())["services"]["llamacpp-models-runner"]["environment"]
+    return dict(item.split("=", 1) for item in environment)
+
+
+def test_the_defaults_are_the_ones_the_service_configures():
+    """The micro-batch is read from the environment the server will see, with a default
+    behind it, and that default has to be what the service sets: sizing for a micro-batch
+    the server is not running at is how the rule goes quietly wrong."""
+    environment = service_environment()
+
+    assert int(environment["LLAMA_ARG_UBATCH"]) == configure_llamacpp.DEFAULT_N_UBATCH
+
+
+def gemma_e2b_embedding(path: Path) -> Path:
+    """gemma-4-E2B as its header describes it: 330 MiB of tied q6_K token embeddings, which
+    the build that repacks the K-quants puts on the NPU as one tensor."""
+    return write_gguf(
+        path,
+        {"general.architecture": "gemma4", "gemma4.block_count": 1},
+        [
+            ("token_embd.weight", (330 * MIB // 210 * 256,), Q6_K),
+            ("blk.0.attn_k.weight", (q4_0_elements(10),), Q4_0),
+        ],
+    )
+
+
+@pytest.mark.parametrize("mbuf", ["256,256", "256", "1024", None], ids=["service", "dyn-only", "1024", "unset"])
+def test_the_sizing_does_not_read_the_buffer_size(tmp_path, monkeypatch, capsys, mbuf):
+    """E2B's 330 MiB tied embedding is bigger than the 256 MiB buffers the service runs
+    with, and loads: the backend gives it a buffer of its own. The sizing neither warns
+    about it nor changes with GGML_HEXAGON_MBUF, whatever its spelling."""
+    if mbuf is None:
+        monkeypatch.delenv("GGML_HEXAGON_MBUF", raising=False)
+    else:
+        monkeypatch.setenv("GGML_HEXAGON_MBUF", mbuf)
+    gemma_e2b_embedding(tmp_path / "gemma-4-E2B.gguf")
+    models = configure_llamacpp.find_models(tmp_path)
+
+    assert detect_hexagon_sessions(models, 16384) == 1
+    assert "WARNING" not in capsys.readouterr().err
 
 
 # gemma-4-E4B and E2B at 16k as measured on the board under this build — the one that
@@ -792,7 +937,8 @@ def test_the_measured_models_never_get_fewer_sessions_than_they_were_seen_to_loa
     """The sizing may ask for more than was measured — over-allocating costs a little
     throughput, under-allocating fails the load — but never for fewer than a load was seen
     to succeed on. This is what SESSION_BUDGET_FRACTION is set by: at 0.9 it breaks in two
-    cells (Nemotron-Mini-4B at 8k, DeepSeek-R1-Distill-Llama-8B at 16k), at 0.87 it holds."""
+    cells (Nemotron-Mini-4B at 8k, DeepSeek-R1-Distill-Llama-8B at 16k), and at 0.87 it broke
+    on bar-Qwen3.5-9B, which is why the fraction is 0.85."""
     shape, _ = MEASURED_MODELS[name]
 
     for ctx_size in CTX_SIZES:
@@ -815,6 +961,87 @@ def test_the_measured_models_are_not_over_allocated_by_more_than_a_session():
             if needed is None:
                 continue
             assert shape.sessions_needed(ctx_size) - needed <= 1, f"{name} at {ctx_size}"
+
+
+# --------------------------------------------------------------------------- #
+# The board run of 2026-09-21
+#
+# Every model installed on the 21q board, at 16k, on the session count the rule asks for,
+# under the environment the service ran then: GGML_HEXAGON_MBUF 1024, n_ubatch 512,
+# LLAMA_ARG_BATCH 1024, and the build that repacks the K-quants. Two runs of the whole
+# set: 18 models, all of which loaded and generated on the count below.
+#
+# The shapes are what read_model_shape() reads from those files on the board, so the table
+# pins the header reading and the rule together against what the hardware did. Unlike
+# MEASURED_MODELS this is not a search for the smallest count that works — only the count
+# the rule asked for was tried — so it says "this count loads", not "no smaller one does".
+# The exception is bar-Qwen3.5-9B, which is why SESSION_BUDGET_FRACTION came down to 0.85:
+# see test_the_9b_is_kept_off_the_three_sessions_that_never_loaded.
+#
+# Refresh it by running, on the board, with LD_LIBRARY_PATH pointing at the package's lib:
+#   python3 configure-llamacpp.py /path/to/models --print-ndev --ctx 16384
+# and containers/ai/llamacpp-npu-runner/tools/session-trial.sh for the verdicts.
+# --------------------------------------------------------------------------- #
+
+
+def board_shape(*, npu_weight_mib: float, n_layer: int, kv: tuple, recurrent: bool = False) -> ModelShape:
+    """A shape as the board's headers give it.
+
+    *kv* is (bytes per cell, window, layers) per group of layers.
+    """
+    layers = tuple(KvLayer(cell, window) for cell, window, count in kv for _ in range(count))
+    return ModelShape(
+        n_layer=n_layer,
+        npu_weight_bytes=int(npu_weight_mib * MIB),
+        kv_layers=layers,
+        state_bytes=configure_llamacpp.RECURRENT_STATE_ALLOWANCE if recurrent else 0,
+    )
+
+
+BOARD_2026_09_21 = {
+    "DeepSeek-R1-0528-Qwen3-8B-Q4_0": (board_shape(npu_weight_mib=4226, n_layer=36, kv=((4096, 0, 36),)), 4),
+    "DeepSeek-R1-Distill-Llama-8B-Q4_0": (board_shape(npu_weight_mib=4170, n_layer=32, kv=((4096, 0, 32),)), 4),
+    "LFM2.5-8B-A1B-Q4_0": (board_shape(npu_weight_mib=4612, n_layer=24, kv=((2048, 0, 6),), recurrent=True), 3),
+    "Nemotron-Mini-4B-Instruct-Q4_0": (board_shape(npu_weight_mib=2028, n_layer=32, kv=((4096, 0, 32),)), 3),
+    "Qwen3-4B-Instruct-2507-Q4_0": (board_shape(npu_weight_mib=2260, n_layer=36, kv=((4096, 0, 36),)), 3),
+    "Qwen3.5-0.8B-Q4_0": (board_shape(npu_weight_mib=473, n_layer=24, kv=((2048, 0, 6),), recurrent=True), 1),
+    "Qwen3.5-4B-Q4_0": (board_shape(npu_weight_mib=2453, n_layer=32, kv=((4096, 0, 8),), recurrent=True), 2),
+    "Qwen3.5-4B-Q4_0-pure": (board_shape(npu_weight_mib=2259, n_layer=32, kv=((4096, 0, 8),), recurrent=True), 2),
+    "Qwen3.5-4B-Q8_0": (board_shape(npu_weight_mib=4264, n_layer=32, kv=((4096, 0, 8),), recurrent=True), 3),
+    "Qwen_Qwen3-8B-Q4_0": (board_shape(npu_weight_mib=4226, n_layer=36, kv=((4096, 0, 36),)), 4),
+    "SmolVLM2-500M-Video-Instruct-Q8_0": (board_shape(npu_weight_mib=367, n_layer=32, kv=((1280, 0, 32),)), 1),
+    "bar-Qwen_Qwen3.5-9B-Q4_0": (board_shape(npu_weight_mib=4919, n_layer=33, kv=((4096, 0, 9),), recurrent=True), 4),
+    "gemma-3-1b-it-Q4_0": (board_shape(npu_weight_mib=682, n_layer=26, kv=((1024, 0, 26),)), 1),
+    "gemma-4-12b-it-qat-q4_0": (board_shape(npu_weight_mib=6638, n_layer=48, kv=((8192, 1024, 40), (2048, 0, 8))), 4),
+    "gemma-4-E4B_q4_0-it": (board_shape(npu_weight_mib=2696, n_layer=42, kv=((2048, 512, 20), (4096, 0, 4))), 2),
+    "granite-4.2-3b-Q4_0": (board_shape(npu_weight_mib=1889, n_layer=40, kv=((2048, 0, 40),)), 2),
+    "granite-4.2-8b-Q4_0": (board_shape(npu_weight_mib=4598, n_layer=40, kv=((4096, 0, 40),)), 4),
+    "microsoft_Phi-4-mini-instruct-Q4_0": (board_shape(npu_weight_mib=2216, n_layer=32, kv=((4096, 0, 32),)), 3),
+}
+
+
+@pytest.mark.parametrize("name", sorted(BOARD_2026_09_21))
+def test_the_rule_asks_for_the_count_the_board_loaded_on(name, monkeypatch):
+    """The whole rule against the hardware: every one of the 18 models loaded and
+    generated at 16k on exactly this count."""
+    monkeypatch.delenv("LLAMA_ARG_UBATCH", raising=False)
+    shape, loaded = BOARD_2026_09_21[name]
+
+    assert shape.sessions_needed(16384) == loaded
+
+
+def test_the_9b_is_kept_off_the_three_sessions_that_never_loaded(monkeypatch):
+    """The one model the rule got wrong at SESSION_BUDGET_FRACTION 0.87. Three sessions
+    size to 2706 MiB, 99% of that budget, and failed on 4 attempts of 4 with
+    "fastrpc_mmap failed" while the board had 14 GB free; four load and generate on 3 of 3,
+    the busiest session holding 1984 MiB of the 2357 the rule allows it."""
+    monkeypatch.delenv("LLAMA_ARG_UBATCH", raising=False)
+    shape, _ = BOARD_2026_09_21["bar-Qwen_Qwen3.5-9B-Q4_0"]
+
+    assert shape.session_bytes(16384, 3) / MIB == pytest.approx(2706, abs=1)
+    assert shape.session_bytes(16384, 3) > configure_llamacpp.SESSION_BUDGET
+    assert shape.session_bytes(16384, 4) / MIB == pytest.approx(2357, abs=1)
+    assert shape.sessions_needed(16384) == 4
 
 
 # --------------------------------------------------------------------------- #
@@ -847,6 +1074,24 @@ def test_detect_hexagon_sessions_ignores_models_it_cannot_read(tmp_path, capsys)
 
     assert detect_hexagon_sessions(models, 4096) == 1
     assert "broken: cannot size it from its GGUF header" in capsys.readouterr().err
+
+
+def test_models_that_share_a_gguf_read_its_header_once(tmp_path, monkeypatch, capsys):
+    """<name> and <name>-multimodal are the same file, sized the same way."""
+    attention_model(tmp_path / "m.gguf", layers=32)
+    (tmp_path / "m-mmproj.gguf").write_bytes(b"")
+    models = configure_llamacpp.find_models(tmp_path)
+    reads = []
+    read = configure_llamacpp.read_model_shape
+    monkeypatch.setattr(configure_llamacpp, "read_model_shape", lambda path: reads.append(path) or read(path))
+
+    assert detect_hexagon_sessions(models, 4096) == 1
+
+    assert sorted(models) == ["m", "m-multimodal"]
+    assert reads == [tmp_path / "m.gguf"]
+    diagnostics = capsys.readouterr().err
+    assert "  m: 100 MiB on the NPU" in diagnostics
+    assert "  m-multimodal: 100 MiB on the NPU" in diagnostics
 
 
 def test_detect_ctx_size_halves_the_context_until_the_models_fit(tmp_path, capsys):
@@ -1010,8 +1255,8 @@ def test_unreadable_metadata_degrades_to_out_of_the_box(runner, tmp_path):
 
 
 def test_models_ini_serves_each_model_under_its_derived_name(runner, tmp_path, capsys):
-    """End to end: one curated and one ad-hoc install become two sections, and the
-    mmproj companion in the ad-hoc repository is attached to its model."""
+    """End to end: one curated and one ad-hoc install become their sections, and the
+    mmproj companion in the ad-hoc repository makes its model's multimodal section."""
     curated = tmp_path / "google" / "gemma-4-E2B-it-qat-q4_0-gguf"
     _gguf(curated / "gemma-4-E2B_q4_0-it.gguf")
     _write_records(curated, ("built_in", ["gemma-4-E2B_q4_0-it.gguf"]))
@@ -1027,5 +1272,206 @@ def test_models_ini_serves_each_model_under_its_derived_name(runner, tmp_path, c
     assert sorted(config.sections()) == [
         "gemma-4-E2B_q4_0-it",
         "unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0",
+        "unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0-multimodal",
     ]
-    assert config["unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0"]["mmproj"].endswith("mmproj-BF16.gguf")
+    assert config["unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0-multimodal"]["mmproj"].endswith("mmproj-BF16.gguf")
+
+
+def test_models_ini_serves_a_gguf_with_a_projector_as_its_text_and_multimodal_models(runner, tmp_path, capsys):
+    """The text section loads the GGUF alone, so it never pays for the vision encoder;
+    the -multimodal section loads the same GGUF with the projector. The names are the
+    catalog ids the models-downloader lists the two under."""
+    repo = tmp_path / "google" / "gemma-4-E4B-it-qat-q4_0-gguf"
+    model = _gguf(repo / "gemma-4-E4B_q4_0-it.gguf")
+    mmproj = _gguf(repo / "gemma-4-E4B-it-mmproj.gguf")
+    _write_records(repo, ("built_in", ["gemma-4-E4B_q4_0-it.gguf"]), ("built_in", ["gemma-4-E4B-it-mmproj.gguf", "gemma-4-E4B_q4_0-it.gguf"]))
+
+    runner.generate_models_ini(tmp_path)
+
+    config = configparser.ConfigParser()
+    config.read(tmp_path / "models.ini")
+    assert sorted(config.sections()) == ["gemma-4-E4B_q4_0-it", "gemma-4-E4B_q4_0-it-multimodal"]
+    assert dict(config["gemma-4-E4B_q4_0-it"]) == {"model": model.as_posix()}
+    assert dict(config["gemma-4-E4B_q4_0-it-multimodal"]) == {"model": model.as_posix(), "mmproj": mmproj.as_posix()}
+
+
+# --------------------------------------------------------------------------- #
+# Decision models: the per-model preset keys of models.ini
+#
+# A decision model evaluates its whole prompt in one micro-batch, and the service
+# configures a small one for the chat models (LLAMA_ARG_UBATCH=128 on the UNO Q), so its
+# section gets LLAMA_ARG_* keys of its own. Both runner scripts carry the same code, and
+# the tests write real headers: the decision model is told by its <arch>.decision.type key.
+# --------------------------------------------------------------------------- #
+
+DECISION_MODEL_BATCH = configure_llamacpp.DECISION_MODEL_BATCH
+DEFAULT_CTX_SIZE = configure_llamacpp.DEFAULT_CTX_SIZE
+
+
+def decision_model(
+    path: Path, *, context_length: int = 262144, architecture: str = "qwen35", decision_type: str = "vllm-d3", causal: bool | None = False
+) -> Path:
+    """A decision model's header, as llama.cpp's convert script writes it for d3: one
+    layer, the decision type key that marks the model as one, and the non-causal attention
+    (attention.causal false). *causal* None leaves the key out, as the convert script does
+    for a causal Qwen (Kev)."""
+    metadata = {
+        "general.architecture": architecture,
+        f"{architecture}.decision.type": decision_type,
+        f"{architecture}.context_length": context_length,
+        f"{architecture}.block_count": 1,
+    }
+    if causal is not None:
+        metadata[f"{architecture}.attention.causal"] = causal
+    return write_gguf(path, metadata, [("blk.0.attn_k.weight", (768,), Q8_0)])
+
+
+def test_a_decision_model_gets_a_micro_batch_as_big_as_its_prompt_room(runner, tmp_path, monkeypatch, capsys):
+    """d3-edge holds more than the service's 16k context: its section keeps that context
+    and gets a batch and micro-batch of DECISION_MODEL_BATCH, where the router's own
+    micro-batch (128 on the UNO Q) would fail any prompt longer than that."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    gguf = decision_model(tmp_path / "vllm-d3-edge-Q8_0.gguf")
+
+    assert runner.decision_model_options(gguf) == {
+        "LLAMA_ARG_CTX_SIZE": "16384",
+        "LLAMA_ARG_BATCH": "2048",
+        "LLAMA_ARG_UBATCH": "2048",
+    }
+    assert "vllm-d3-edge-Q8_0: decision model (vllm-d3), ctx 16384, batch 2048" in capsys.readouterr().err
+
+
+def test_the_batch_never_exceeds_what_the_model_holds(runner, tmp_path, monkeypatch):
+    """A model trained on 512 tokens cannot take a 2048-token batch: the batch and the
+    micro-batch are capped by its context, which the section then runs at."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    gguf = decision_model(tmp_path / "small.gguf", context_length=512)
+
+    assert runner.decision_model_options(gguf) == {
+        "LLAMA_ARG_CTX_SIZE": "512",
+        "LLAMA_ARG_BATCH": "512",
+        "LLAMA_ARG_UBATCH": "512",
+    }
+
+
+@pytest.mark.parametrize(
+    ("model_ctx", "expected_ctx"),
+    [(8192, "8192"), (32768, str(DEFAULT_CTX_SIZE))],
+    ids=["model smaller than the default", "model larger than the default"],
+)
+def test_an_unset_context_is_the_default_one_or_the_models_whichever_is_smaller(runner, tmp_path, monkeypatch, model_ctx, expected_ctx):
+    """Without LLAMA_ARG_CTX_SIZE the server runs at the context the service configures
+    out of the box, so that is what the section is sized against."""
+    monkeypatch.delenv("LLAMA_ARG_CTX_SIZE", raising=False)
+    gguf = decision_model(tmp_path / "m.gguf", context_length=model_ctx)
+
+    options = runner.decision_model_options(gguf)
+
+    assert options["LLAMA_ARG_CTX_SIZE"] == expected_ctx
+    assert options["LLAMA_ARG_BATCH"] == options["LLAMA_ARG_UBATCH"] == str(DECISION_MODEL_BATCH)
+
+
+def test_a_smaller_configured_context_wins_over_the_models(runner, tmp_path, monkeypatch):
+    """The user's LLAMA_ARG_CTX_SIZE is a ceiling the section respects, like every other
+    model's: the preset only ever lowers the context, never raises it past what was asked."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "4096")
+    gguf = decision_model(tmp_path / "m.gguf", context_length=8192)
+
+    options = runner.decision_model_options(gguf)
+
+    assert options["LLAMA_ARG_CTX_SIZE"] == "4096"
+    assert options["LLAMA_ARG_UBATCH"] == "2048"
+
+
+@pytest.mark.parametrize("causal", [None, True])
+def test_a_causal_decision_model_keeps_the_routers_arguments(runner, tmp_path, monkeypatch, capsys, causal):
+    """Kev is a Qwen3.5 with a decision head: it reads its prompt in chunks like a chat
+    model, and the big micro-batch only cost it memory — OOM-killed on the UNO Q on a
+    4000-token state at ubatch 2048, where the router's 128 serves it. Its header has no
+    attention.causal key (None), a causal True would say the same."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    gguf = decision_model(tmp_path / "Kev-0.8B-Q8_0.gguf", architecture="qwen35", decision_type="kev", context_length=262144, causal=causal)
+
+    assert runner.decision_model_options(gguf) == {}
+    assert "Kev-0.8B-Q8_0: causal decision model (kev)" in capsys.readouterr().err
+
+
+def test_a_vllm_d3_model_with_its_projector_gets_the_preset_in_both_its_sections(runner, tmp_path, monkeypatch, capsys):
+    """d3 is a Qwen3.5 like Kev, but its header says attention.causal false (llama.cpp
+    evaluates its whole prompt in one batch), so it takes the micro-batch preset. The vision
+    projector downloaded next to it on the VENTUNO Q makes it two models like any other GGUF:
+    the text section loads the GGUF alone, the -multimodal one adds the projector, and both
+    carry the preset, read from the header once."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    repo = tmp_path / "ggml-org" / "vllm-d3-lite-GGUF"
+    decision_model(repo / "vllm-d3-lite-Q8_0.gguf")
+    _gguf(repo / "mmproj-vllm-d3-lite-BF16.gguf")
+
+    runner.generate_models_ini(tmp_path)
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(tmp_path / "models.ini")
+    assert config.sections() == ["vllm-d3-lite-Q8_0", "vllm-d3-lite-Q8_0-multimodal"]
+    text, multimodal = config["vllm-d3-lite-Q8_0"], config["vllm-d3-lite-Q8_0-multimodal"]
+    assert "mmproj" not in text
+    assert multimodal["mmproj"].endswith("mmproj-vllm-d3-lite-BF16.gguf")
+    for section in (text, multimodal):
+        assert (section["LLAMA_ARG_CTX_SIZE"], section["LLAMA_ARG_BATCH"], section["LLAMA_ARG_UBATCH"]) == ("16384", "2048", "2048")
+    assert capsys.readouterr().err.count("vllm-d3-lite-Q8_0: decision model (vllm-d3), ctx 16384, batch 2048") == 1
+
+
+def test_a_chat_model_gets_no_preset_keys(runner, tmp_path, monkeypatch, capsys):
+    """A header without the decision type key is a chat model, which keeps the router's
+    arguments: an empty dict adds nothing to its section."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    gguf = attention_model(tmp_path / "chat.gguf", layers=2)
+
+    assert runner.decision_model_options(gguf) == {}
+    assert "decision model" not in capsys.readouterr().err
+
+
+def test_an_unreadable_header_gets_no_preset_keys(runner, tmp_path):
+    """The naming tests install 1-byte GGUFs, and a corrupt download is possible on the
+    board: neither may fail the container start, so an unreadable header is not a decision
+    model rather than an error."""
+    assert runner.decision_model_options(_gguf(tmp_path / "stub.gguf")) == {}
+    assert runner.decision_model_options(tmp_path / "missing.gguf") == {}
+
+
+def test_models_ini_carries_the_decision_model_keys_in_their_own_case(runner, tmp_path, monkeypatch):
+    """End to end: the decision model's section gets its LLAMA_ARG_* keys spelled as the
+    environment variables they stand for — llama-server matches them case-sensitively,
+    and configparser would lowercase them by default — and the chat model's section is
+    untouched."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    decision_model(tmp_path / "ggml-org" / "vllm-d3-edge-GGUF" / "vllm-d3-edge-Q8_0.gguf")
+    _gguf(tmp_path / "unsloth" / "Qwen3-0.6B-GGUF" / "Qwen3-0.6B-Q4_0.gguf")
+
+    runner.generate_models_ini(tmp_path)
+
+    raw = (tmp_path / "models.ini").read_text()
+    decision_section = raw[raw.index("[vllm-d3-edge-Q8_0]") :].split("\n[", 1)[0]
+    assert "LLAMA_ARG_UBATCH = 2048" in decision_section
+    assert "llama_arg_ubatch" not in raw
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(tmp_path / "models.ini")
+    assert sorted(config.sections()) == ["Qwen3-0.6B-Q4_0", "vllm-d3-edge-Q8_0"]
+    assert list(config["vllm-d3-edge-Q8_0"]) == ["model", "LLAMA_ARG_CTX_SIZE", "LLAMA_ARG_BATCH", "LLAMA_ARG_UBATCH"]
+    assert config["vllm-d3-edge-Q8_0"]["LLAMA_ARG_CTX_SIZE"] == "16384"
+    assert config["vllm-d3-edge-Q8_0"]["LLAMA_ARG_BATCH"] == "2048"
+    assert list(config["Qwen3-0.6B-Q4_0"]) == ["model"]
+
+
+def test_the_hexagon_sizing_survives_a_decision_model_header(tmp_path, monkeypatch):
+    """The NPU runner sizes its sessions from the same headers: a decision model header,
+    which says nothing about heads or head sizes, must still come out as a session count rather
+    than an exception, whether sized from the header or by file size."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    gguf = decision_model(tmp_path / "vllm-d3-edge-Q8_0.gguf")
+
+    sessions = detect_hexagon_sessions({"vllm-d3-edge-Q8_0": {"model": str(gguf)}}, 16384)
+
+    assert isinstance(sessions, int) and sessions >= 1

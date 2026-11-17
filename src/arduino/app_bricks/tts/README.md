@@ -9,7 +9,8 @@ The `TextToSpeech` brick provides a completely offline text-to-speech (TTS) solu
 - **Audio Output Formats:** Directly output synthesized speech to a Speaker instance or to WAV, PCM, or PCM audio.
 - **Long Text Support:** `speak()` splits long input into sentence-aware chunks of up to 1024 characters before synthesis.
 - **Streaming Playback:** `speak()` plays PCM chunks as they arrive from the local TTS service instead of waiting for the full rendered response.
-- **Blocking or Background Playback:** `speak()` blocks until playback completes by default; pass `block=False` to enqueue the text and return immediately. A single background worker plays queued texts sequentially (FIFO), so `speak()` can be called repeatedly — e.g. sentence by sentence from a streaming LLM — without waiting. In background mode synthesis errors are logged instead of raised, and you can use `is_speaking()` to poll for completion. The queue holds up to 128 pending requests by default (configurable via the `max_queue_size` constructor parameter); when full, further non-blocking calls raise `TTSBusyError`.
+- **Blocking or Background Playback:** `speak()` blocks until playback completes by default; pass `block=False` to enqueue the text and return immediately. A single background worker plays queued texts sequentially (FIFO), so `speak()` can be called repeatedly without waiting. In background mode synthesis errors are logged instead of raised; `is_speaking()` tells whether speech is still playing or queued, and `wait_until_done()` blocks until it is over. The queue holds up to 128 pending requests by default (configurable via the `max_queue_size` constructor parameter); when full, further non-blocking calls raise `TTSBusyError`.
+- **Speaking a Streaming LLM Answer:** `speak_stream()` takes text in pieces, such as the chunks of `chat_stream()`, and queues each sentence as soon as it is complete, so the voice starts after the first sentence instead of after the whole answer. It returns the text it spoke.
 - **Cancellable Playback:** Use `cancel()` to stop the current spoken sequence and notify the local TTS service without stopping the TTS brick or speaker.
 - **Single-Session Semantics:** Each instance handles one speech session at a time. For concurrent speech, create multiple `TextToSpeech` instances.
 
@@ -62,6 +63,31 @@ def runner():
 
 App.run(user_loop=runner)
 ```
+
+### Speak an LLM answer while it is generated
+
+This example speaks the answer of a local language model sentence by sentence, while the rest of the answer is still being generated.
+
+```python
+from arduino.app_bricks.llm import LargeLanguageModel
+from arduino.app_bricks.tts import TextToSpeech
+from arduino.app_utils import App
+
+
+llm = LargeLanguageModel(system_prompt="Answer in two short sentences of plain text.")
+tts = TextToSpeech()
+
+
+def runner():
+    spoken = tts.speak_stream(llm.chat_stream("Why is the sky blue?"))  # Blocks until the answer has been spoken
+    print(spoken)
+    raise StopIteration
+
+
+App.run(user_loop=runner)
+```
+
+Pass `block=False` to return as soon as the answer is generated, while its last sentences still play; `wait_until_done()` waits for them, and `cancel()` stops the speech and the reading of the rest of the answer.
 
 ### Save as WAV
 

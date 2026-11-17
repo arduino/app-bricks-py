@@ -79,10 +79,13 @@ def engineio_patched_site_packages(tmp_path: Path) -> Path:
 
 
 def _run_with(site_packages: Path, code: str) -> None:
-    """Run code in a fresh interpreter that imports the patched FastAPI, whose path is sys.argv[1]."""
+    """Run code in a fresh interpreter that imports the patched FastAPI, whose path is sys.argv[1].
+
+    A crash of that interpreter reports the stack of each of its threads.
+    """
     pythonpath = [str(site_packages), *filter(None, os.environ.get("PYTHONPATH", "").split(os.pathsep))]
     result = subprocess.run(
-        [sys.executable, "-c", textwrap.dedent(code), str(site_packages)],
+        [sys.executable, "-X", "faulthandler", "-c", textwrap.dedent(code), str(site_packages)],
         env={**os.environ, "PYTHONPATH": os.pathsep.join(pythonpath)},
         capture_output=True,
         text=True,
@@ -199,7 +202,8 @@ def test_socketio_client_still_connects_over_polling_and_websocket(engineio_patc
             Path(assets, "index.html").write_text("<html><body>Hello</body></html>")
             ui = WebUI(port=0, assets_dir_path=assets)
             ui.start()
-            threading.Thread(target=ui.execute, daemon=True).start()
+            server = threading.Thread(target=ui.execute, daemon=True)
+            server.start()
             time.sleep(1)
             try:
                 for transports in (["polling"], ["websocket"]):
@@ -211,5 +215,8 @@ def test_socketio_client_still_connects_over_polling_and_websocket(engineio_patc
                 assert "requests" in sys.modules and "websocket" in sys.modules  # Imported by the connections
             finally:
                 ui.stop()
+                # stop() does not wait: exiting while the server thread still shuts down can crash the interpreter
+                server.join(timeout=10)
+            assert not server.is_alive(), "the server did not stop"
         """,
     )

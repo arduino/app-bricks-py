@@ -12,7 +12,8 @@ through the QNN execution provider, which ships in two flavours:
     registered at runtime against a stock `onnxruntime` install. It is the only variant
     with Linux aarch64 wheels, so it is the one the container installs (the base image,
     aihub-onnx-models-runner, pins it in pyproject.toml). The wheel ships a full
-    QAIRT of its own (libQnnHtp.so, libQnnHtpPrepare.so, libQnnHtpV*Skel.so, ~190 MB) and
+    QAIRT of its own (libQnnHtp.so, libQnnHtpPrepare.so, libQnnHtpV*Skel.so; the base
+    image keeps the libraries the EP loads for HTP v73 and v75, ~115 MB) and
     that is the QAIRT the NPU runs: the base image builds on python-slim and deliberately
     ships no QAIRT SDK, since the EP refuses one older than the release it was built
     against anyway, and the EP releases built with older QAIRTs miscompile the recognizer

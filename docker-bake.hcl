@@ -7,18 +7,19 @@
 # A container deriving from another container of this repository declares it
 # in its Dockerfile (FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION})
 # and links it here with parent_context(): bake then builds the parent in-graph,
-# in dependency order, however deep the chain. A container copying files out of
-# a layer of this repository, an image like aihub-framework that is never run,
-# declares it the same way in a stage of its own
-# (FROM ${REGISTRY}app-bricks/<layer>:${BASE_IMAGE_VERSION} AS <alias>, then
-# COPY --link --from=<alias>, which adds the layer's own blobs) and links it with
-# parent_context() next to its parent.
+# in dependency order, however deep the chain. A container adding a layer of
+# this repository, an image FROM scratch like aihub-framework that holds files
+# only and is never run nor published, declares it the same way in a stage of
+# its own (FROM ${REGISTRY}app-bricks/<layer>:${BASE_IMAGE_VERSION} AS <alias>,
+# then COPY --link --from=<alias>, which adds the layer's own blobs) and links it
+# with parent_context() next to its parent. Layers inherit _layer: built
+# in-graph, cache only, no tags.
 # scripts/container.py reads the same FROM lines and the release checks that the
 # two agree. Targets are listed parents and layers first, each followed by the
 # containers deriving from it.
 #
 # Build arguments specific to a container (download URLs and digests) are the
-# ARG defaults of its Dockerfile, so it also builds standalone.
+# ARG defaults of its Dockerfile; the targets carry only the common ones.
 #
 #   docker buildx bake --print                  # inspect the resolved definition
 #   docker buildx bake python-apps-base         # build a container and its parents
@@ -26,7 +27,8 @@
 #
 # python-apps-base installs the wheel from the "wheel" context (dist/, filled by
 # `task build:bricks`), models-downloader reads models-list.yaml from the "models"
-# context (models/).
+# context (models/), and the runners shipping code or models under licenses other
+# than MPL-2.0 copy their texts from the "licenses" context (LICENSES/).
 
 # Registry prefix the images are published under, with a trailing slash.
 variable "REGISTRY" {
@@ -127,10 +129,21 @@ target "_downstream" {
   }
 }
 
-# Every container: a release builds and publishes them all.
+# Layers: images FROM scratch holding only files other containers add with
+# COPY --link. Built in-graph when an image adding them is built, never run and
+# never published: no tags, no registry cache, no SBOM of their own since their
+# files are in the SBOM of the images adding them.
+target "_layer" {
+  platforms = ["linux/arm64"]
+  attest    = ["type=provenance,disabled=true"]
+  output    = ["type=cacheonly"]
+}
+
+# Every container: a release builds them all and publishes all but the layers.
 group "default" {
   targets = [
     "aihub-framework",
+    "edge-impulse-server",
     "python-slim",
     "llamacpp-runner",
     "models-downloader",
@@ -151,14 +164,18 @@ group "default" {
   ]
 }
 
-# The `aihub` runner framework and the app skeleton, a layer FROM scratch that
-# aihub-litert-models-runner and aihub-onnx-models-runner copy from.
+# The `aihub` runner framework and the app skeleton, a layer that
+# aihub-litert-models-runner and aihub-onnx-models-runner add.
 target "aihub-framework" {
-  inherits   = ["_common"]
-  context    = "containers/base/aihub-framework"
-  tags       = image_tags("aihub-framework")
-  cache-from = cache_from("aihub-framework")
-  cache-to   = cache_to("aihub-framework")
+  inherits = ["_layer"]
+  context  = "containers/base/aihub-framework"
+}
+
+# The Edge Impulse inference server and its locked packages, a layer that
+# edge-impulse-runner and edge-impulse-npu-runner add.
+target "edge-impulse-server" {
+  inherits = ["_layer"]
+  context  = "containers/base/edge-impulse-server"
 }
 
 target "python-slim" {
@@ -238,7 +255,10 @@ target "ocr-runner" {
   tags       = image_tags("ocr-runner")
   cache-from = cache_from("ocr-runner")
   cache-to   = cache_to("ocr-runner")
-  contexts   = parent_context("aihub-onnx-models-runner")
+  contexts = merge(
+    { licenses = "LICENSES" },
+    parent_context("aihub-onnx-models-runner"),
+  )
 }
 
 target "edge-impulse-runner" {
@@ -247,7 +267,10 @@ target "edge-impulse-runner" {
   tags       = image_tags("edge-impulse-runner")
   cache-from = cache_from("edge-impulse-runner")
   cache-to   = cache_to("edge-impulse-runner")
-  contexts   = parent_context("python-slim")
+  contexts = merge(
+    parent_context("python-slim"),
+    parent_context("edge-impulse-server"),
+  )
 }
 
 target "qairt-common-base" {
@@ -276,7 +299,10 @@ target "gesture-recognition-runner" {
   tags       = image_tags("gesture-recognition-runner")
   cache-from = cache_from("gesture-recognition-runner")
   cache-to   = cache_to("gesture-recognition-runner")
-  contexts   = parent_context("aihub-litert-models-runner")
+  contexts = merge(
+    { licenses = "LICENSES" },
+    parent_context("aihub-litert-models-runner"),
+  )
 }
 
 target "pose-estimation-runner" {
@@ -285,7 +311,10 @@ target "pose-estimation-runner" {
   tags       = image_tags("pose-estimation-runner")
   cache-from = cache_from("pose-estimation-runner")
   cache-to   = cache_to("pose-estimation-runner")
-  contexts   = parent_context("aihub-litert-models-runner")
+  contexts = merge(
+    { licenses = "LICENSES" },
+    parent_context("aihub-litert-models-runner"),
+  )
 }
 
 target "llamacpp-npu-runner" {
@@ -304,8 +333,9 @@ target "edge-impulse-npu-runner" {
   cache-from = cache_from("edge-impulse-npu-runner")
   cache-to   = cache_to("edge-impulse-npu-runner")
   contexts = merge(
-    { server = "containers/ai/edge-impulse-runner" },
+    { licenses = "LICENSES" },
     parent_context("qairt-common-base"),
+    parent_context("edge-impulse-server"),
   )
 }
 
@@ -315,6 +345,9 @@ target "ei-models-runner" {
   tags       = image_tags("ei-models-runner")
   cache-from = cache_from("ei-models-runner")
   cache-to   = cache_to("ei-models-runner")
+  contexts = {
+    licenses = "LICENSES"
+  }
 }
 
 target "ei-qnn-models-runner" {
@@ -323,4 +356,7 @@ target "ei-qnn-models-runner" {
   tags       = image_tags("ei-qnn-models-runner")
   cache-from = cache_from("ei-qnn-models-runner")
   cache-to   = cache_to("ei-qnn-models-runner")
+  contexts = {
+    licenses = "LICENSES"
+  }
 }

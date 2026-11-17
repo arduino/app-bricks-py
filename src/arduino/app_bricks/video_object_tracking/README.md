@@ -1,6 +1,6 @@
 # Video Object Tracking Brick
 
-This Brick provides a Python interface for **tracking objects in real time from a USB camera video stream**.
+This Brick provides a Python interface for **tracking objects in real time from a camera video stream**.
 It recognizes the objects in front of the camera and follows each one while it stays in view, so every object keeps the same **ID** from frame to frame.
 
 Because an object keeps its ID, the Brick can answer questions plain detection cannot: *how many different people walked by*, *how many crossed this line*, *who is inside this area*, *which way are they going*.
@@ -37,9 +37,7 @@ The Video Object Tracking Brick allows you to:
 
 ## Prerequisites
 
-To use this Brick you should have a USB camera connected to your board.
-
-**Tip**: Use a USB-C® Hub with USB-A connectors to support commercial web cameras.
+To use this Brick you should have a USB/CSI camera connected to your board.
 
 ## Code example and usage
 
@@ -48,7 +46,7 @@ from arduino.app_utils import App
 from arduino.app_bricks.video_object_tracking import VideoObjectTracking
 
 # Track only people, with a 1.5s debounce between repeated callbacks
-tracker = VideoObjectTracking(confidence=0.4, debounce_sec=1.5, labels_to_track=["person"])
+tracker = VideoObjectTracking(confidence=0.4, labels_to_track=["person"])
 
 
 # Callback when a "person" is tracked

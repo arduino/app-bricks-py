@@ -710,3 +710,16 @@ def test_factory_shares_csi_cameras(two_csi_cameras_only):
     assert isinstance(second, CameraFollower)
     assert second.csi_path == first.csi_path
     assert isinstance(other, CSICamera)
+
+
+def test_a_latest_capture_reads_a_new_frame_instead_of_the_shared_one():
+    """A shared frame may be the one the device queued before a pause: latest goes to the device."""
+    leader = CountingCamera()
+    leader_handle, follower = _shared(leader, 1)
+    with _started([leader_handle, follower]):
+        first = _frame_id(leader_handle.capture())
+        assert _frame_id(follower.capture()) == first  # a fresh frame the follower has not received is reused
+
+        second = _frame_id(leader_handle.capture())
+        assert _frame_id(follower.capture(latest=True)) == second + 1  # not the shared one
+        assert leader.read_count == second + 1

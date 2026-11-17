@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import json
+import math
 import os
 import subprocess
 from collections import deque
@@ -263,3 +264,95 @@ class PauseDetector:
         self._quiet = level < max(floor * self._quiet_ratio, self._quiet_min)
         self._quiet_s = self._quiet_s + duration_s if self._quiet else 0.0
         return self._quiet
+
+
+class SpeechSegmenter:
+    """
+    Finds where a stretch of speech ends in a stream of PCM chunks, at a pause of the speaker.
+
+    A segment starts at the first chunk that is not quiet, and ends at the first pause of at
+    least ``pause_s`` once it is ``min_s`` long, or after ``max_s`` whatever the speaker does.
+    A segment holding less than ``min_speech_s`` of speech never ends: a click or a cough is
+    not a segment. Quiet chunks and pauses are told by a :class:`PauseDetector`, which adapts
+    to the room noise; ``reset()`` starts the next segment and keeps the noise it learned.
+
+    Example:
+        segmenter = SpeechSegmenter(pause_s=1.0, max_s=10.0, min_speech_s=0.3)
+        for chunk in mic.stream():
+            if segmenter.update(chunk, mic.sample_rate, mic.channels, mic.format_is_packed):
+                break  # the speaker paused
+    """
+
+    def __init__(self, pause_s: float = 0.25, min_s: float = 0.0, max_s: float = math.inf, min_speech_s: float = 0.0) -> None:
+        """
+        Args:
+            pause_s (float): Length of the pause that ends a segment, in seconds. Default: 0.25.
+            min_s (float): Shortest segment a pause can end, in seconds. Default: 0.0.
+            max_s (float): Longest segment, ended even without a pause, in seconds. Default: no limit.
+            min_speech_s (float): Speech a segment needs before it can end, in seconds. Default: 0.0.
+        """
+        self.min_s = min_s
+        self.max_s = max_s
+        self.min_speech_s = min_speech_s
+        self.detector = PauseDetector(pause_s=pause_s)
+        """The detector telling quiet chunks and pauses; feed it directly to teach it the room noise without starting a segment."""
+        self.reset()
+
+    def reset(self) -> None:
+        """Start a new segment, keeping the room noise learned so far."""
+        self._in_segment = False
+        self._segment_s = 0.0
+        self._speech_s = 0.0
+
+    @property
+    def in_segment(self) -> bool:
+        """Whether a segment has started: a chunk that is not quiet arrived since the last reset."""
+        return self._in_segment
+
+    @property
+    def segment_s(self) -> float:
+        """Length of the current segment, in seconds."""
+        return self._segment_s
+
+    @property
+    def speech_s(self) -> float:
+        """Length of the chunks of the current segment that are not quiet, in seconds."""
+        return self._speech_s
+
+    def update(self, chunk: np.ndarray, sample_rate: int, channels: int = 1, is_packed: bool = False) -> bool:
+        """
+        Account one PCM chunk.
+
+        Args:
+            chunk (np.ndarray): PCM samples, interleaved if multichannel.
+            sample_rate (int): Sample rate of the chunk, in Hz.
+            channels (int): Number of interleaved channels. Default: 1.
+            is_packed (bool): True for 24-bit samples packed in int32. Default: False.
+
+        Returns:
+            bool: True when the segment ends with this chunk.
+        """
+        return self.update_level(chunk_level(chunk, is_packed), chunk.size / (sample_rate * channels))
+
+    def update_level(self, level: float, duration_s: float) -> bool:
+        """
+        Account one chunk given its level, as computed by :func:`chunk_level`.
+
+        Args:
+            level (float): RMS level of the chunk, 0..1 full scale.
+            duration_s (float): Duration of the chunk, in seconds.
+
+        Returns:
+            bool: True when the segment ends with this chunk.
+        """
+        quiet = self.detector.update_level(level, duration_s)
+        if not self._in_segment:
+            if quiet:
+                return False
+            self._in_segment = True
+        self._segment_s += duration_s
+        if not quiet:
+            self._speech_s += duration_s
+        if self._speech_s < self.min_speech_s:
+            return False
+        return (self._segment_s >= self.min_s and self.detector.paused) or self._segment_s >= self.max_s

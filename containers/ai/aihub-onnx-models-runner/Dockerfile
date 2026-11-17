@@ -95,11 +95,23 @@ COPY pyproject.toml uv.lock /tmp/deps/
 # uv is only mounted while installing, it is not part of the image
 RUN --mount=from=uv,source=/uv,target=/bin/uv \
     set -ex; \
-    # Make the venv the default for child images
-    python -m venv --system-site-packages /opt/venv; \
+    # Make the venv the default for child images. No pip in it: uv installs the packages,
+    # and a second copy of pip (~13 MB) is never run.
+    python -m venv --system-site-packages --without-pip /opt/venv; \
     # --no-deps: the export is the whole locked closure, and without it uv would resolve the
     # dependencies the wheels declare again, the ones overridden out of the lock included
     uv export --frozen --project /tmp/deps | uv pip install --python /opt/venv/bin/python --no-cache-dir --no-deps --require-hashes -r -; \
+    # The QAIRT bundled in onnxruntime-qnn, cut to what the QNN EP loads on the supported
+    # NPUs (v73: QCS9075, v75: QCS8275): the EP library, libQnnHtp.so, libQnnSystem.so (to
+    # load and write context binaries), libQnnHtpPrepare.so (to compile a graph when no
+    # context binary fits) and the stub/skel pair of each HTP version. Genie, the GPU
+    # backend, the IR/Saver/NetRun tools and the other HTP versions are never loaded.
+    # Plain rm and test -f: a wheel with a different layout fails the build here.
+    cd /opt/venv/lib/python3.13/site-packages/onnxruntime_qnn; \
+    rm libGenie.so libQnnGpu.so libQnnIr.so libQnnSaver.so libQnnHtpNetRunExtensions.so; \
+    for v in 68 69 79 81; do rm "libQnnHtpV${v}Stub.so" "libQnnHtpV${v}Skel.so"; done; \
+    for v in 73 75; do test -f "libQnnHtpV${v}Stub.so"; test -f "libQnnHtpV${v}Skel.so"; done; \
+    cd /; \
     /opt/venv/bin/python -m compileall -q /opt/venv/lib; \
     rm -rf /tmp/deps
 

@@ -32,6 +32,7 @@ __all__ = [
     "FrameDesigner",
     "JSONParser",
     "Logger",
+    "AudioClip",
     "SineGenerator",
     "SlidingWindowBuffer",
     "Leds",

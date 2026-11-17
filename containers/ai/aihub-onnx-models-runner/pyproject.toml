@@ -9,7 +9,8 @@
 #   onnxruntime, onnxruntime-qnn the runtime and its QNN plugin execution provider
 #
 # onnxruntime-qnn is a plugin EP compiled against one onnxruntime release and one QAIRT
-# release, and it bundles that QAIRT (~190 MB of libQnnHtp*.so plus the Hexagon skels). That
+# release, and it bundles that QAIRT (~190 MB of libQnn*.so plus the Hexagon skels, which the
+# Dockerfile cuts to the ~115 MB the EP loads for HTP v73 and v75). That
 # bundled QAIRT is the only one in this image - unlike qairt-common-base, python-slim ships no
 # QAIRT SDK of its own - so the wheel decides the QAIRT the NPU runs, and the HTP context
 # binaries a runner ships have to be compiled against it. Both wheels are pinned with == for

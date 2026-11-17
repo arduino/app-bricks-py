@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -77,26 +76,16 @@ def test_image_without_attestation_is_rejected():
         extract_attested_sbom("img", None)
 
 
-def test_delta_of_a_scratch_layer_is_its_whole_sbom_without_scanning_the_base(tmp_path, monkeypatch):
-    """scratch is not an image syft can pull: a layer FROM scratch is diffed against an empty SBOM."""
+def test_a_layer_is_skipped_without_reading_or_scanning_anything(tmp_path, monkeypatch, capsys):
+    """A layer FROM scratch is never published: there is no attestation to read and nothing to report."""
     containers = Containers(make_containers_dir(tmp_path, LAYERED))
-    package = {
-        "SPDXID": "SPDXRef-Package-python-aihub",
-        "name": "aihub",
-        "versionInfo": "0",
-        "externalRefs": [{"referenceType": "purl", "referenceLocator": "pkg:pypi/aihub@0"}],
-    }
 
-    def fetch(image: str, output_path: Path) -> None:
-        assert image == "ghcr.io/arduino/app-bricks/aihub-framework:1.2.3"
-        output_path.write_text(json.dumps({"SPDXID": "SPDXRef-DOCUMENT", "packages": [package]}), encoding="utf-8")
+    def refuse(image: str, output_path: Path) -> None:
+        raise AssertionError(f"touched {image}")
 
-    def scan(image: str, output_path: Path) -> None:
-        raise AssertionError(f"scanned {image}")
-
-    monkeypatch.setattr(sbom_delta, "fetch_attested_sbom", fetch)
-    monkeypatch.setattr(sbom_delta, "scan_image", scan)
+    monkeypatch.setattr(sbom_delta, "fetch_attested_sbom", refuse)
+    monkeypatch.setattr(sbom_delta, "scan_image", refuse)
     sbom_delta.generate_delta_for_container(containers, tmp_path / "out", "aihub-framework", "ghcr.io/arduino/", "1.2.3")
 
-    delta = json.loads((tmp_path / "out" / "delta.spdx.json").read_text(encoding="utf-8"))
-    assert [pkg["name"] for pkg in delta["packages"] if pkg["SPDXID"] != delta["documentDescribes"][0]] == ["aihub"]
+    assert not (tmp_path / "out").exists()
+    assert "never published" in capsys.readouterr().out

@@ -6,7 +6,7 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
-    # The inference server of the brick, serving its one model on the NPU, see containers/ai/edge-impulse-runner/README.md
+    # The inference server of the brick, serving its one model on the NPU, see containers/base/edge-impulse-server/README.md
     command: [--max-models=1, --max-clients=4, --memory-reserve-mb=512]
     cpuset: "0-3"                   # the big cores, scheduling on the small ones too costs about a quarter of the frame rate
     devices:

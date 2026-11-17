@@ -15,7 +15,7 @@ cp ../build-linuxarm64-snapdragon.sh .
 
 2) Start sdk container
 ```bash
-docker run -it -u $(id -u):$(id -g) --volume $(pwd):/workspace --platform linux/amd64 ghcr.io/snapdragon-toolchain/arm64-linux:v0.1
+docker run -it -u $(id -u):$(id -g) --volume $(pwd):/workspace --platform linux/amd64 ghcr.io/snapdragon-toolchain/arm64-linux:v0.8
 cd /workspace
 ```
 

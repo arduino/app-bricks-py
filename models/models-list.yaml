@@ -261,6 +261,305 @@ models:
       - id: "arduino:video_object_detection"
         model_configuration:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano-qnn.eim"
+ - "ei:yolox-small-qnn-object-detection":
+    name : "General purpose object detection - YoloX small"
+    description: "General purpose object detection model based on YoloX-Small. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
+    model_labels:
+      - airplane
+      - apple
+      - backpack
+      - banana
+      - baseball bat
+      - baseball glove
+      - bear
+      - bed
+      - bench
+      - bicycle
+      - bird
+      - boat
+      - book
+      - bottle
+      - bowl
+      - broccoli
+      - bus
+      - cake
+      - car
+      - carrot
+      - cat
+      - cell phone
+      - chair
+      - clock
+      - couch
+      - cow
+      - cup
+      - dining table
+      - dog
+      - donut
+      - elephant
+      - fire hydrant
+      - fork
+      - frisbee
+      - giraffe
+      - hair drier
+      - handbag
+      - hot dog
+      - horse
+      - keyboard
+      - kite
+      - knife
+      - laptop
+      - microwave
+      - motorcycle
+      - mouse
+      - orange
+      - oven
+      - parking meter
+      - person
+      - pizza
+      - potted plant
+      - refrigerator
+      - remote
+      - sandwich
+      - scissors
+      - sheep
+      - sink
+      - skateboard
+      - skis
+      - snowboard
+      - spoon
+      - sports ball
+      - stop sign
+      - suitcase
+      - surfboard
+      - teddy bear
+      - tennis racket
+      - tie
+      - toaster
+      - toilet
+      - toothbrush
+      - traffic light
+      - train
+      - truck
+      - tv
+      - umbrella
+      - vase
+      - wine glass
+      - zebra
+    metadata:
+      model_size_mb: 48
+      source: "edgeimpulse"
+      image-resolution: "640x640"
+      hw_acceleration_backend: "qnn"
+      ei-project-id: 1014102
+      ei-impulse-id: 1
+      ei-model-url: "https://studio.edgeimpulse.com/public/1014102/live"
+      source-model-id: "yolox"
+      source-model-url: "https://aihub.qualcomm.com/models/yolox"
+      model_publisher: "qualcomm-ai-hub"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ei-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              ei_project_id: 1014102
+              ei_impulse_id: 1
+              models_repository: "edge-impulse"
+              model_name: yolo-x-small-qnn.eim
+              target: runner-linux-aarch64-qnn
+    bricks:
+      - id: "arduino:object_detection"
+        model_configuration:
+          "EI_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/yolo-x-small-qnn/yolo-x-small-qnn.eim"
+      - id: "arduino:video_object_detection"
+        model_configuration:
+          "EI_V_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/yolo-x-small-qnn/yolo-x-small-qnn.eim"
+ - "ei:yolox-medium-qnn-object-detection":
+    name : "General purpose object detection - YoloX medium"
+    description: "General purpose object detection model based on YoloX-Medium. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
+    model_labels:
+      - airplane
+      - apple
+      - backpack
+      - banana
+      - baseball bat
+      - baseball glove
+      - bear
+      - bed
+      - bench
+      - bicycle
+      - bird
+      - boat
+      - book
+      - bottle
+      - bowl
+      - broccoli
+      - bus
+      - cake
+      - car
+      - carrot
+      - cat
+      - cell phone
+      - chair
+      - clock
+      - couch
+      - cow
+      - cup
+      - dining table
+      - dog
+      - donut
+      - elephant
+      - fire hydrant
+      - fork
+      - frisbee
+      - giraffe
+      - hair drier
+      - handbag
+      - hot dog
+      - horse
+      - keyboard
+      - kite
+      - knife
+      - laptop
+      - microwave
+      - motorcycle
+      - mouse
+      - orange
+      - oven
+      - parking meter
+      - person
+      - pizza
+      - potted plant
+      - refrigerator
+      - remote
+      - sandwich
+      - scissors
+      - sheep
+      - sink
+      - skateboard
+      - skis
+      - snowboard
+      - spoon
+      - sports ball
+      - stop sign
+      - suitcase
+      - surfboard
+      - teddy bear
+      - tennis racket
+      - tie
+      - toaster
+      - toilet
+      - toothbrush
+      - traffic light
+      - train
+      - truck
+      - tv
+      - umbrella
+      - vase
+      - wine glass
+      - zebra
+    metadata:
+      model_size_mb: 62
+      source: "edgeimpulse"
+      image-resolution: "640x640"
+      hw_acceleration_backend: "qnn"
+      ei-project-id: 1165499
+      ei-impulse-id: 1
+      ei-model-url: "https://studio.edgeimpulse.com/public/1165499/live"
+      source-model-id: "YOLOX-Medium"
+      source-model-url: "https://github.com/Megvii-BaseDetection/YOLOX"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ei-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              ei_project_id: 1165499
+              ei_impulse_id: 1
+              history_id: 1
+              models_repository: "edge-impulse"
+              model_name: yolo-x-medium-qnn.eim
+              target: runner-linux-aarch64-qnn
+    bricks:
+      - id: "arduino:object_detection"
+        model_configuration:
+          "EI_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/yolo-x-medium-qnn/yolo-x-medium-qnn.eim"
+      - id: "arduino:video_object_detection"
+        model_configuration:
+          "EI_V_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/yolo-x-medium-qnn/yolo-x-medium-qnn.eim"         
+ - hand-gestures:
+    name : "Hand gestures"
+    description: "A lightweight vision model that detects four hand gestures: neutral fist, open hand (five), V-sign (peace), and thumbs-up (good)."
+    model_labels:
+      - five
+      - good
+      - neut
+      - peace
+    bricks:
+      - id: "arduino:object_detection"
+        model_configuration:
+          "EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/hand-gestures.eim"
+      - id: "arduino:video_object_detection"
+        model_configuration:
+          "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/hand-gestures.eim"
+    metadata:
+      model_size_mb: 15
+      source: "edgeimpulse"
+      ei-project-id: 842271
+      ei-model-url: "https://studio.edgeimpulse.com/public/842271/live"
+      source-model-id: "hand-gestures"
+      source-model-url: "https://studio.edgeimpulse.com/public/842271/live"
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true
+ - "ei:desk-items-detector":
+    name : "Desk Items Detector"
+    description: "A tiny computer vision model optimized for real-time detection of common objects found in a desk or office environment."
+    metadata:
+      model_size_mb: 22
+      source: "edgeimpulse"
+      image-resolution: "320x320"
+      ei-project-id: 995296
+      ei-impulse-id: 6
+      ei-model-url: "https://studio.edgeimpulse.com/public/995296/live"
+      source-model-id: "995296"
+      source-model-url: "https://studio.edgeimpulse.com/public/995296/live"
+    model_labels:
+      - "Book"
+      - "Mug"
+      - "Mobile phone"
+      - "Mug"
+      - "Phone"
+      - "Plant"
+      - "Box"
+      - "Bottle"
+      - "Glasses"
+    deployment:
+      handler: "ei-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              ei_project_id: 995296
+              ei_impulse_id: 6
+              history_id: 7
+              models_repository: "edge-impulse"
+              model_name: desk-items-detector.eim
+              target: runner-linux-aarch64-qnn
+        - unoq:
+            variables:
+              ei_project_id: 995296
+              ei_impulse_id: 6
+              history_id: 8
+              models_repository: "edge-impulse"
+              model_name: desk-items-detector.eim
+              target: arduino-uno-q
+    bricks:
+      - id: "arduino:object_detection"
+        model_configuration:
+          "EI_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector/desk-items-detector.eim"
+      - id: "arduino:video_object_detection"
+        model_configuration:
+          "EI_V_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector/desk-items-detector.eim"
  - yolox-small-qnn-object-tracker:
     name : "General purpose object tracker - YoloX small"
     description: "General purpose object tracking model based on YoloX-Small. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
@@ -1361,6 +1660,39 @@ models:
     deployment:
       handler: "ei-handler"
       pre-loaded: true
+ - "ei:efficientnet-b4":
+    name : "General purpose object classification - EfficientNet-B4"
+    description: "EfficientNetB4 is a machine learning model that can classify images from the Imagenet dataset. It can also be used as a backbone in building more complex models for specific use cases. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
+    metadata:
+      requires_softmax: true
+      model_size_mb: 89
+      source: "edgeimpulse"
+      image-resolution: "380x380"
+      hw_acceleration_backend: "qnn"
+      ei-project-id: 948887
+      ei-impulse-id: 10
+      ei-model-url: "https://studio.edgeimpulse.com/public/948887/live"
+      source-model-id: "efficientnet_b4"
+      source-model-url: "https://aihub.qualcomm.com/compute/models/efficientnet_b4"
+      model_publisher: "qualcomm-ai-hub"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ei-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              ei_project_id: 948887
+              ei_impulse_id: 10
+              models_repository: "edge-impulse"
+              model_name: efficientnet-b4-qnn.eim
+              target: runner-linux-aarch64-qnn
+    bricks:
+      - id: "arduino:image_classification"
+        model_configuration:
+          "EI_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
+      - id: "arduino:video_image_classification"
+        model_configuration:
+          "EI_V_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
  - concrete-crack-anomaly-detection:
     name : "Concrete crack anomaly detection"
     description: "Anomaly detection model to identify cracks in concrete structures."
@@ -1483,31 +1815,6 @@ models:
     deployment:
       handler: "ei-handler"
       pre-loaded: true
- - hand-gestures:
-    name : "Hand gestures"
-    description: "A lightweight vision model that detects four hand gestures: neutral fist, open hand (five), V-sign (peace), and thumbs-up (good)."
-    model_labels:
-      - five
-      - good
-      - neut
-      - peace
-    bricks:
-      - id: "arduino:object_detection"
-        model_configuration:
-          "EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/hand-gestures.eim"
-      - id: "arduino:video_object_detection"
-        model_configuration:
-          "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/hand-gestures.eim"
-    metadata:
-      model_size_mb: 15
-      source: "edgeimpulse"
-      ei-project-id: 842271
-      ei-model-url: "https://studio.edgeimpulse.com/public/842271/live"
-      source-model-id: "hand-gestures"
-      source-model-url: "https://studio.edgeimpulse.com/public/842271/live"
-    deployment:
-      handler: "ei-handler"
-      pre-loaded: true
  - "genie:qwen3_4b_instruct_2507":
     name : "Qwen 3-4B Instruct"
     description: >-
@@ -1536,6 +1843,158 @@ models:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_4b_instruct_2507"
       source-model-url: "https://aihub.qualcomm.com/models/qwen3_4b_instruct_2507"
+ - "llamacpp:gemma-4-E2B_q4_0-it":
+    name : "Gemma 4 E2B"
+    description: >-
+      Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind.
+      Activating an effective two billion parameters, it is engineered specifically for mobile and edge devices.
+      It's optimized for offline agentic workflows.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/347eef722ec7f151f37d1ef0b5c7c77d8de4efcb/gemma-4-E2B_q4_0-it.gguf"
+              models_repository: "llamacpp"
+              model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
+    metadata:
+      model_size_mb: 3195
+      source: "huggingface"
+      source-model-id: "gemma-4-E2B-it-qat-q4_0-gguf"
+      source-model-url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf"
+ - "llamacpp:gemma-4-E4B_q4_0-it":
+    name : "Gemma 4 E4B"
+    description: >-
+      Gemma 4 E4B is an efficient, open AI model developed by Google DeepMind.
+      Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
+      It's optimized for offline agentic workflows.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 2
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/e998672c8018dd704e347d3b6843c112547244d1/gemma-4-E4B_q4_0-it.gguf"
+              models_repository: "llamacpp"
+              model_directory: "google/gemma-4-E4B-it-qat-q4_0-gguf"
+    metadata:
+      model_size_mb: 4917
+      source: "huggingface"
+      source-model-id: "gemma-4-E4B-it-qat-q4_0-gguf"
+      source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"
+ - "llamacpp:gemma-3-1b-it-Q4_0":
+     name : "Gemma 3 1B"
+     description: >-
+        Gemma 3 1B is an efficient AI model developed by Google DeepMind.
+     supported_boards: ["ventunoq", "unoq"]
+     bricks:
+       - id: "arduino:llm"
+         model_configuration:
+           GGML_HEXAGON_DEVICES: 1
+     deployment:
+       handler: "hf-handler"
+       platforms:
+         - ventunoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/f0b45be0aac41bd6a100a4b5734cad5f67255bfb/gemma-3-1b-it-Q4_0.gguf"
+               models_repository: "llamacpp"
+               model_directory: "unsloth/gemma-3-1b-it-GGUF"
+         - unoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/f0b45be0aac41bd6a100a4b5734cad5f67255bfb/gemma-3-1b-it-Q4_0.gguf"
+               models_repository: "llamacpp"
+               model_directory: "unsloth/gemma-3-1b-it-GGUF"
+     metadata:
+       model_size_mb: 722
+       source: "huggingface"
+       source-model-id: "gemma-3-1b-it-GGUF"
+       source-model-url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF"
+ - "llamacpp:Qwen3.5-0.8B-Q4_0":
+     name : "Qwen 3.5 0.8B"
+     description: >-
+       Qwen 3.5 0.8B is a compact yet powerful language model developed by Alibaba, designed to deliver efficient performance on edge devices.
+       With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal
+       for applications that require natural language understanding and generation in constrained environments.
+     supported_boards: ["ventunoq", "unoq"]
+     bricks:
+       - id: "arduino:llm"
+         model_configuration:
+           GGML_HEXAGON_DEVICES: 1                 
+     deployment:
+       handler: "hf-handler"
+       platforms:
+         - ventunoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
+               models_repository: "llamacpp"
+               model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
+         - unoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
+               models_repository: "llamacpp"
+               model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
+     metadata:
+       model_size_mb: 484
+       source: "huggingface"
+       source-model-id: "Qwen3.5-0.8B-Q4_0"
+       source-model-url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF"
+ - "llamacpp:Qwen3.5-4B-Q4_K_S":
+    name : "Qwen 3.5 4B"
+    description: >-
+      Qwen 3.5 4B is a language model developed by Alibaba, designed to deliver efficient performance on edge devices.
+      With four billion parameters, it is a hybrid model in which only one layer in four keeps an attention cache,
+      so long conversations need little extra memory.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 2
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/blob/35edb278feb3f797d270a605d9745cab09538c12/Qwen3.5-4B-Q4_K_S.gguf"
+              models_repository: "llamacpp"
+              model_directory: "unsloth/Qwen3.5-4B-GGUF"
+    metadata:
+      model_size_mb: 2471
+      source: "huggingface"
+      source-model-id: "Qwen3.5-4B-GGUF"
+      source-model-url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF"
+ - "llamacpp:MiniCPM5-2B-Q4_K_M":
+    name : "MiniCPM5 2B"
+    description: >-
+      MiniCPM5 2B is a dense two billion parameter language model developed by OpenBMB,
+      built for on-device and resource-constrained deployment.
+      It supports English and Chinese and is strong at coding, mathematics, long-context understanding and tool use.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF/blob/2079a22f3beaa4e306449978533478fe0522f4b3/MiniCPM5-2B-Q4_K_M.gguf"
+              models_repository: "llamacpp"
+              model_directory: "openbmb/MiniCPM5-2B-GGUF"
+    metadata:
+      model_size_mb: 1489
+      source: "huggingface"
+      source-model-id: "MiniCPM5-2B-GGUF"
+      source-model-url: "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF"
  - "genie:qwen2_5_vl_7b_instruct":
     name : "Qwen 2.5-VL-7B VLM"
     description: >-
@@ -1614,6 +2073,145 @@ models:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_vl_8b_instruct"
       source-model-url: "https://aihub.qualcomm.com/models/qwen3_vl_8b_instruct"      
+ - "llamacpp:Qwen3.5-0.8B-Q4_0-multimodal":
+     name : "Qwen 3.5 0.8B VLM"
+     description: >-
+       Qwen 3.5 0.8B is a compact yet powerful language model developed by Alibaba, designed to deliver efficient performance on edge devices.
+       With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal
+       for applications that require natural language understanding and generation in constrained environments.
+     supported_boards: ["ventunoq", "unoq"]
+     bricks:
+       - id: "arduino:vlm"
+         model_configuration:
+           GGML_HEXAGON_DEVICES: 1                  
+     deployment:
+       handler: "hf-handler"
+       platforms:
+         - ventunoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
+               model_mmproj_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/ed94380a8b2c929e11722fda3fd64d974b5e353f/mmproj-F16.gguf"
+               models_repository: "llamacpp"
+               model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
+         - unoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
+               model_mmproj_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/ed94380a8b2c929e11722fda3fd64d974b5e353f/mmproj-F16.gguf"
+               models_repository: "llamacpp"
+               model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
+     metadata:
+       model_size_mb: 680
+       source: "huggingface"
+       source-model-id: "Qwen3.5-0.8B-Q4_0"
+       source-model-url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF"
+ - "llamacpp:Qwen3.5-4B-Q4_K_S-multimodal":
+    name : "Qwen 3.5 4B VLM"
+    description: >-
+      Qwen 3.5 4B is a language model developed by Alibaba, designed to deliver efficient performance on edge devices.
+      With four billion parameters, it is a hybrid model in which only one layer in four keeps an attention cache,
+      so long conversations need little extra memory.
+      It understands text and images.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:vlm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 3
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/blob/35edb278feb3f797d270a605d9745cab09538c12/Qwen3.5-4B-Q4_K_S.gguf"
+              model_mmproj_url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/blob/b2413f923af33948a30ef771cdac7bc0f253bc97/mmproj-BF16.gguf"
+              models_repository: "llamacpp"
+              model_directory: "unsloth/Qwen3.5-4B-GGUF"
+    metadata:
+      model_size_mb: 3115
+      source: "huggingface"
+      source-model-id: "Qwen3.5-4B-GGUF"
+      source-model-url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF"
+ - "llamacpp:SmolVLM2-500M-Video-Instruct-Q8_0-multimodal":
+    name : "SmolVLM2-500M-Video-Instruct"
+    description: >-
+      SmolVLM2 500M Video Instruct is a compact vision-language model developed by Hugging Face.
+      With 500 million parameters, it understands images and short video clips alongside text,
+      making it suitable for visual question answering, image captioning and scene description
+      directly on edge devices.
+    supported_boards: ["unoq", "ventunoq"]
+    bricks:
+      - id: "arduino:vlm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1      
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/ccd7aae53bcb1997355c2f094959e72b3642ce17/mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"
+        - unoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/ccd7aae53bcb1997355c2f094959e72b3642ce17/mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"              
+    metadata:
+      model_size_mb: 521
+      source: "huggingface"
+      source-model-id: "ggml-org/SmolVLM2-500M-Video-Instruct-Q8_0"
+      source-model-url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"
+ - "llamacpp:gemma-4-E2B_q4_0-it-multimodal":
+    name : "Gemma 4 E2B Multimodal"
+    description: >-
+      Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind.
+      Activating an effective two billion parameters, it is engineered specifically for mobile and edge devices.
+      It understands text, images and audio.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:multimodal_llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/347eef722ec7f151f37d1ef0b5c7c77d8de4efcb/gemma-4-E2B_q4_0-it.gguf"
+              model_mmproj_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/675cff42a74c774d6cb76f76d8eacb49b48c9b93/gemma-4-E2B-it-mmproj.gguf"
+              models_repository: "llamacpp"
+              model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
+    metadata:
+      model_size_mb: 4136
+      source: "huggingface"
+      source-model-id: "gemma-4-E2B-it-qat-q4_0-gguf"
+      source-model-url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf"
+ - "llamacpp:gemma-4-E4B_q4_0-it-multimodal":
+    name : "Gemma 4 E4B Multimodal"
+    description: >-
+      Gemma 4 E4B is an efficient, open AI model developed by Google DeepMind.
+      Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
+      It understands text, images and audio.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:multimodal_llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 2
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/e998672c8018dd704e347d3b6843c112547244d1/gemma-4-E4B_q4_0-it.gguf"
+              model_mmproj_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/4b4a2c1d584be7264f87aac328a1bc739ce81b6c/gemma-4-E4B-it-mmproj.gguf"
+              models_repository: "llamacpp"
+              model_directory: "google/gemma-4-E4B-it-qat-q4_0-gguf"
+    metadata:
+      model_size_mb: 5862
+      source: "huggingface"
+      source-model-id: "gemma-4-E4B-it-qat-q4_0-gguf"
+      source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"
  - gesture-recognition:
     name : "MediaPipe Hand-Gesture Recognition"
     description: >-
@@ -1653,10 +2251,138 @@ models:
     deployment:
       handler: "ai-hub-handler"
       pre-loaded: true
+ - whisper-base:
+    name : "Whisper Base"
+    description: >-
+      Whisper ASR (Base - 74M parameters) model is a state-of-the-art system designed for transcribing spoken language into written text.
+      This model is based on the transformer architecture and has been optimized for edge inference by replacing Multi-Head Attention (MHA)
+      with Single-Head Attention (SHA) and linear layers with convolutional (conv) layers. It exhibits robust performance in realistic, noisy environments,
+      making it highly reliable for real-world applications.
+      Specifically, it excels in long-form transcription, capable of accurately transcribing audio clips up to 30 seconds long.
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ai-hub-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "whisper_base"
+              models_repository: "audio-analytics/asr"
+              model_directory: "whisper_base-voice_ai-float-qualcomm_qcs8275"
+              quantization: "float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.65.0"
+    bricks:
+      - id: "arduino:asr"
+    metadata:
+      model_size_mb: 193
+      source: "qualcomm-ai-hub"
+      source-model-id: "whisper_base"
+      source-model-url: "https://aihub.qualcomm.com/models/whisper_base"
+    supported_languages:
+      - en
+      - zh
+      - de
+      - es
+      - ru
+      - ko
+      - fr
+      - ja
+      - pt
+      - tr
+      - pl
+      - ca
+      - nl
+      - ar
+      - sv
+      - it
+      - id
+      - hi
+      - fi
+      - vi
+      - he
+      - uk
+      - el
+      - ms
+      - cs
+      - ro
+      - da
+      - hu
+      - ta
+      - "no"
+      - th
+      - ur
+      - hr
+      - bg
+      - lt
+      - la
+      - mi
+      - ml
+      - cy
+      - sk
+      - te
+      - fa
+      - lv
+      - bn
+      - sr
+      - az
+      - sl
+      - kn
+      - et
+      - mk
+      - br
+      - eu
+      - is
+      - hy
+      - ne
+      - mn
+      - bs
+      - kk
+      - sq
+      - sw
+      - gl
+      - mr
+      - pa
+      - si
+      - km
+      - sn
+      - yo
+      - so
+      - af
+      - oc
+      - ka
+      - be
+      - tg
+      - sd
+      - gu
+      - am
+      - yi
+      - lo
+      - uz
+      - fo
+      - ht
+      - ps
+      - tk
+      - nn
+      - mt
+      - sa
+      - lb
+      - my
+      - bo
+      - tl
+      - mg
+      - as
+      - tt
+      - haw
+      - ln
+      - ha
+      - ba
+      - jw
+      - su      
  - whisper-small-quantized:
     name : "Whisper Small (quantized)"
     description: >-
-      Whisper ASR (Automatic Speech Recognition) model is a state-of-the-art system designed for transcribing spoken language into written text.
+      Whisper ASR (Small - 244M parameters) model is a state-of-the-art system designed for transcribing spoken language into written text.
       This model is based on the transformer architecture and has been optimized for edge inference by replacing Multi-Head Attention (MHA)
       with Single-Head Attention (SHA) and linear layers with convolutional (conv) layers. It exhibits robust performance in realistic, noisy environments,
       making it highly reliable for real-world applications.
@@ -1925,96 +2651,15 @@ models:
       source: "qualcomm-ai-hub"
       source-model-id: "pipertts_en"
       source-model-url: "https://aihub.qualcomm.com/models/pipertts_en"
- - "ei:efficientnet-b4":
-    name : "General purpose object classification - EfficientNet-B4"
-    description: "EfficientNetB4 is a machine learning model that can classify images from the Imagenet dataset. It can also be used as a backbone in building more complex models for specific use cases. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
-    metadata:
-      requires_softmax: true
-      model_size_mb: 89
-      source: "edgeimpulse"
-      image-resolution: "380x380"
-      hw_acceleration_backend: "qnn"
-      ei-project-id: 948887
-      ei-impulse-id: 10
-      ei-model-url: "https://studio.edgeimpulse.com/public/948887/live"
-      source-model-id: "efficientnet_b4"
-      source-model-url: "https://aihub.qualcomm.com/compute/models/efficientnet_b4"
-      model_publisher: "qualcomm-ai-hub"
-    supported_boards: ["ventunoq"]
-    deployment:
-      handler: "ei-handler"
-      platforms:
-        - ventunoq:
-            variables:
-              ei_project_id: 948887
-              ei_impulse_id: 10
-              models_repository: "edge-impulse"
-              model_name: efficientnet-b4-qnn.eim
-              target: runner-linux-aarch64-qnn
-    bricks:
-      - id: "arduino:image_classification"
-        model_configuration:
-          "EI_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
-      - id: "arduino:video_image_classification"
-        model_configuration:
-          "EI_V_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
- - "ei:desk-items-detector":
-    name : "Desk Items Detector"
-    description: "A tiny computer vision model optimized for real-time detection of common objects found in a desk or office environment."
-    metadata:
-      model_size_mb: 22
-      source: "edgeimpulse"
-      image-resolution: "320x320"
-      ei-project-id: 995296
-      ei-impulse-id: 6
-      ei-model-url: "https://studio.edgeimpulse.com/public/995296/live"
-      source-model-id: "995296"
-      source-model-url: "https://studio.edgeimpulse.com/public/995296/live"
-    model_labels:
-      - "Book"
-      - "Mug"
-      - "Mobile phone"
-      - "Mug"
-      - "Phone"
-      - "Plant"
-      - "Box"
-      - "Bottle"
-      - "Glasses"
-    deployment:
-      handler: "ei-handler"
-      platforms:
-        - ventunoq:
-            variables:
-              ei_project_id: 995296
-              ei_impulse_id: 6
-              history_id: 7
-              models_repository: "edge-impulse"
-              model_name: desk-items-detector.eim
-              target: runner-linux-aarch64-qnn
-        - unoq:
-            variables:
-              ei_project_id: 995296
-              ei_impulse_id: 6
-              history_id: 8
-              models_repository: "edge-impulse"
-              model_name: desk-items-detector.eim
-              target: arduino-uno-q
-    bricks:
-      - id: "arduino:object_detection"
-        model_configuration:
-          "EI_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector/desk-items-detector.eim"
-      - id: "arduino:video_object_detection"
-        model_configuration:
-          "EI_V_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector/desk-items-detector.eim"
- - "llamacpp:gemma-4-E2B_q4_0-it":
-    name : "Gemma 4 E2B"
+ - "llamacpp:vllm-d3-edge-Q8_0":
+    name : "vLLM-SR d3-edge"
     description: >-
-      Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind.
-      Activating an effective two billion parameters, it is engineered specifically for mobile and edge devices.
-      It's optimized for offline agentic workflows.
-    supported_boards: ["ventunoq"]
+      d3-edge is a 0.6 billion parameter decision model (Decision 3.0 by vLLM Semantic Router, built on Qwen3.5) for the Decision Model brick.
+      Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
+      with a probability for every answer. It supports up to 255 options per question.
+    supported_boards: ["ventunoq", "unoq"]
     bricks:
-      - id: "arduino:llm"
+      - id: "arduino:decision_model"
         model_configuration:
           GGML_HEXAGON_DEVICES: 1
     deployment:
@@ -2022,23 +2667,131 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/347eef722ec7f151f37d1ef0b5c7c77d8de4efcb/gemma-4-E2B_q4_0-it.gguf"
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/vllm-d3-edge-Q8_0.gguf"
               models_repository: "llamacpp"
-              model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
+              model_directory: "ggml-org/vllm-d3-edge-GGUF"
+        - unoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/vllm-d3-edge-Q8_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/vllm-d3-edge-GGUF"
     metadata:
-      model_size_mb: 3430
+      model_size_mb: 769
       source: "huggingface"
-      source-model-id: "gemma-4-E2B-it-qat-q4_0-gguf"
-      source-model-url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf"
- - "llamacpp:gemma-4-E4B_q4_0-it":
-    name : "Gemma 4 E4B"
+      source-model-id: "vllm-d3-edge-GGUF"
+      source-model-url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF"
+ - "llamacpp:vllm-d3-edge-Q8_0-multimodal":
+    name : "vLLM-SR d3-edge Multimodal"
     description: >-
-      Gemma 4 E4B is an efficient, open AI model developed by Google DeepMind.
-      Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
-      It's optimized for offline agentic workflows.
+      d3-edge is a 0.6 billion parameter decision model (Decision 3.0 by vLLM Semantic Router, built on Qwen3.5) for the Decision Model brick.
+      Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
+      with a probability for every answer. It supports up to 255 options per question.
+    bricks:
+      - id: "arduino:decision_model"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/vllm-d3-edge-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/mmproj-vllm-d3-edge-Q8_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/vllm-d3-edge-GGUF"
+        - unoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/vllm-d3-edge-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/blob/e59a4bd76e00c243e08f01182f55fd1893142d95/mmproj-vllm-d3-edge-Q8_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/vllm-d3-edge-GGUF"
+    metadata:
+      model_size_mb: 880
+      source: "huggingface"
+      source-model-id: "vllm-d3-edge-GGUF"
+      source-model-url: "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF"
+ - "llamacpp:vllm-d3-lite-Q8_0":
+    name : "vLLM-SR d3-lite"
+    description: >-
+      d3-lite is a 0.8 billion parameter decision model (Decision 3.0 by vLLM Semantic Router, built on Qwen3.5) for the Decision Model brick.
+      Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
+      with a probability for every answer. It supports up to 255 options per question and is more accurate than d3-edge.
     supported_boards: ["ventunoq"]
     bricks:
-      - id: "arduino:llm"
+      - id: "arduino:decision_model"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/0d544132bc35075d6346013f56454ea6dc19e640/vllm-d3-lite-Q8_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/vllm-d3-lite-GGUF"
+    metadata:
+      model_size_mb: 1032
+      source: "huggingface"
+      source-model-id: "vllm-d3-lite-GGUF"
+      source-model-url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF"      
+ - "llamacpp:vllm-d3-lite-Q8_0-multimodal":
+    name : "vLLM-SR d3-lite Multimodal"
+    description: >-
+      d3-lite is a 0.8 billion parameter decision model (Decision 3.0 by vLLM Semantic Router, built on Qwen3.5) for the Decision Model brick.
+      Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
+      with a probability for every answer. It supports up to 255 options per question and is more accurate than d3-edge.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:decision_model"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/0d544132bc35075d6346013f56454ea6dc19e640/vllm-d3-lite-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF/blob/0d544132bc35075d6346013f56454ea6dc19e640/mmproj-vllm-d3-lite-BF16.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/vllm-d3-lite-GGUF"
+    metadata:
+      model_size_mb: 1230
+      source: "huggingface"
+      source-model-id: "vllm-d3-lite-GGUF"
+      source-model-url: "https://huggingface.co/ggml-org/vllm-d3-lite-GGUF"
+ - "llamacpp:vllm-d3-nano-Q8_0":
+    name : "vLLM-SR d3-nano"
+    description: >-
+      d3-nano is a 2.4 billion parameter decision model (Decision 3.0 by vLLM Semantic Router, built on Qwen3.5) for the Decision Model brick.
+      Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
+      with a probability for every answer. It supports up to 255 options per question and is more accurate than d3-lite.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:decision_model"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-nano-GGUF/blob/f2256dfaff5b8337e8bf67ca064aeef18ee14a79/vllm-d3-nano-Q8_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/vllm-d3-nano-GGUF"
+    metadata:
+      model_size_mb: 2435
+      source: "huggingface"
+      source-model-id: "vllm-d3-nano-GGUF"
+      source-model-url: "https://huggingface.co/ggml-org/vllm-d3-nano-GGUF"
+ - "llamacpp:vllm-d3-nano-Q8_0-multimodal":
+    name : "vLLM-SR d3-nano Multimodal"
+    description: >-
+      d3-nano is a 2.4 billion parameter decision model (Decision 3.0 by vLLM Semantic Router, built on Qwen3.5) for the Decision Model brick.
+      Instead of generating text, it answers typed questions about a state - a choice among options, a score on a scale, or a yes/no -
+      with a probability for every answer. It supports up to 255 options per question and is more accurate than d3-lite.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:decision_model"
         model_configuration:
           GGML_HEXAGON_DEVICES: 2
     deployment:
@@ -2046,207 +2799,15 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/e998672c8018dd704e347d3b6843c112547244d1/gemma-4-E4B_q4_0-it.gguf"
+              model_url: "https://huggingface.co/ggml-org/vllm-d3-nano-GGUF/blob/f2256dfaff5b8337e8bf67ca064aeef18ee14a79/vllm-d3-nano-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/vllm-d3-nano-GGUF/blob/f2256dfaff5b8337e8bf67ca064aeef18ee14a79/mmproj-vllm-d3-nano-Q8_0.gguf"
               models_repository: "llamacpp"
-              model_directory: "google/gemma-4-E4B-it-qat-q4_0-gguf"
+              model_directory: "ggml-org/vllm-d3-nano-GGUF"
     metadata:
-      model_size_mb: 5273
+      model_size_mb: 2783
       source: "huggingface"
-      source-model-id: "gemma-4-E4B-it-qat-q4_0-gguf"
-      source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"
- - "llamacpp:gemma-3-1b-it-Q4_0":
-     name : "Gemma 3 1B"
-     description: >-
-        Gemma 3 1B is an efficient AI model developed by Google DeepMind.
-     supported_boards: ["ventunoq", "unoq"]
-     bricks:
-       - id: "arduino:llm"
-         model_configuration:
-           GGML_HEXAGON_DEVICES: 1
-     deployment:
-       handler: "hf-handler"
-       platforms:
-         - ventunoq:
-             variables:
-               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/f0b45be0aac41bd6a100a4b5734cad5f67255bfb/gemma-3-1b-it-Q4_0.gguf"
-               models_repository: "llamacpp"
-               model_directory: "unsloth/gemma-3-1b-it-GGUF"
-         - unoq:
-             variables:
-               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/f0b45be0aac41bd6a100a4b5734cad5f67255bfb/gemma-3-1b-it-Q4_0.gguf"
-               models_repository: "llamacpp"
-               model_directory: "unsloth/gemma-3-1b-it-GGUF"
-     metadata:
-       model_size_mb: 722
-       source: "huggingface"
-       source-model-id: "gemma-3-1b-it-GGUF"
-       source-model-url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF"
- - "llamacpp:Qwen3.5-0.8B-Q4_0":
-     name : "Qwen 3.5 0.8B"
-     description: >-
-       Qwen 3.5 0.8B is a compact yet powerful language model developed by Alibaba, designed to deliver efficient performance on edge devices.
-       With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal
-       for applications that require natural language understanding and generation in constrained environments.
-     supported_boards: ["ventunoq", "unoq"]
-     bricks:
-       - id: "arduino:llm"
-         model_configuration:
-           GGML_HEXAGON_DEVICES: 1
-     deployment:
-       handler: "hf-handler"
-       platforms:
-         - ventunoq:
-             variables:
-               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
-               models_repository: "llamacpp"
-               model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
-         - unoq:
-             variables:
-               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
-               models_repository: "llamacpp"
-               model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
-     metadata:
-       model_size_mb: 507
-       source: "huggingface"
-       source-model-id: "Qwen3.5-0.8B-Q4_0"
-       source-model-url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF"
- - "llamacpp:MiniCPM5-2B-Q4_K_M":
-    name : "MiniCPM5 2B"
-    description: >-
-      MiniCPM5 2B is a dense two billion parameter language model developed by OpenBMB,
-      built for on-device and resource-constrained deployment.
-      It supports English and Chinese and is strong at coding, mathematics, long-context understanding and tool use.
-    supported_boards: ["ventunoq"]
-    bricks:
-      - id: "arduino:llm"
-        model_configuration:
-          GGML_HEXAGON_DEVICES: 1
-    deployment:
-      handler: "hf-handler"
-      platforms:
-        - ventunoq:
-            variables:
-              model_url: "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF/blob/2079a22f3beaa4e306449978533478fe0522f4b3/MiniCPM5-2B-Q4_K_M.gguf"
-              models_repository: "llamacpp"
-              model_directory: "openbmb/MiniCPM5-2B-GGUF"
-    metadata:
-      model_size_mb: 1489
-      source: "huggingface"
-      source-model-id: "MiniCPM5-2B-GGUF"
-      source-model-url: "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF"
- - "ei:yolox-small-qnn-object-detection":
-    name : "General purpose object detection - YoloX small"
-    description: "General purpose object detection model based on YoloX-Small. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
-    model_labels:
-      - airplane
-      - apple
-      - backpack
-      - banana
-      - baseball bat
-      - baseball glove
-      - bear
-      - bed
-      - bench
-      - bicycle
-      - bird
-      - boat
-      - book
-      - bottle
-      - bowl
-      - broccoli
-      - bus
-      - cake
-      - car
-      - carrot
-      - cat
-      - cell phone
-      - chair
-      - clock
-      - couch
-      - cow
-      - cup
-      - dining table
-      - dog
-      - donut
-      - elephant
-      - fire hydrant
-      - fork
-      - frisbee
-      - giraffe
-      - hair drier
-      - handbag
-      - hot dog
-      - horse
-      - keyboard
-      - kite
-      - knife
-      - laptop
-      - microwave
-      - motorcycle
-      - mouse
-      - orange
-      - oven
-      - parking meter
-      - person
-      - pizza
-      - potted plant
-      - refrigerator
-      - remote
-      - sandwich
-      - scissors
-      - sheep
-      - sink
-      - skateboard
-      - skis
-      - snowboard
-      - spoon
-      - sports ball
-      - stop sign
-      - suitcase
-      - surfboard
-      - teddy bear
-      - tennis racket
-      - tie
-      - toaster
-      - toilet
-      - toothbrush
-      - traffic light
-      - train
-      - truck
-      - tv
-      - umbrella
-      - vase
-      - wine glass
-      - zebra
-    metadata:
-      model_size_mb: 48
-      source: "edgeimpulse"
-      image-resolution: "640x640"
-      hw_acceleration_backend: "qnn"
-      ei-project-id: 1014102
-      ei-impulse-id: 1
-      ei-model-url: "https://studio.edgeimpulse.com/public/1014102/live"
-      source-model-id: "yolox"
-      source-model-url: "https://aihub.qualcomm.com/models/yolox"
-      model_publisher: "qualcomm-ai-hub"
-    supported_boards: ["ventunoq"]
-    deployment:
-      handler: "ei-handler"
-      platforms:
-        - ventunoq:
-            variables:
-              ei_project_id: 1014102
-              ei_impulse_id: 1
-              models_repository: "edge-impulse"
-              model_name: yolo-x-small-qnn.eim
-              target: runner-linux-aarch64-qnn
-    bricks:
-      - id: "arduino:object_detection"
-        model_configuration:
-          "EI_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/yolo-x-small-qnn/yolo-x-small-qnn.eim"
-      - id: "arduino:video_object_detection"
-        model_configuration:
-          "EI_V_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/yolo-x-small-qnn/yolo-x-small-qnn.eim"
+      source-model-id: "vllm-d3-nano-GGUF"
+      source-model-url: "https://huggingface.co/ggml-org/vllm-d3-nano-GGUF"
  - easy-ocr:
     name : "EasyOCR"
     description: >-

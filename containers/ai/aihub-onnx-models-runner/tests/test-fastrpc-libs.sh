@@ -81,6 +81,21 @@ check "onnxruntime and the QNN plugin EP are importable" \
 check "the plugin wheel ships its own libQnnHtp.so and its Hexagon skels" \
   in_image "python -c 'import glob, os, onnxruntime_qnn as q; p = q.get_qnn_htp_path(); assert os.path.isfile(p), p; assert glob.glob(os.path.join(os.path.dirname(p), \"libQnnHtpV*Skel.so\"))'"
 
+# The Dockerfile cuts the bundled QAIRT to what the EP loads for HTP v73 and v75: running
+# from a context binary needs libQnnSystem.so, compiling a graph needs libQnnHtpPrepare.so,
+# and the DSP loads the skel of its own HTP version through ADSP_LIBRARY_PATH.
+QNN_DIR=/opt/venv/lib/python3.13/site-packages/onnxruntime_qnn
+for lib in libonnxruntime_providers_qnn.so libQnnHtp.so libQnnSystem.so libQnnHtpPrepare.so \
+  libQnnHtpV73Stub.so libQnnHtpV73Skel.so libQnnHtpV75Stub.so libQnnHtpV75Skel.so; do
+  check "the QNN plugin keeps $lib" in_image "test -f $QNN_DIR/$lib"
+done
+check "the QNN plugin ships no library the EP never loads" \
+  in_image "cd $QNN_DIR && ! ls libGenie.so libQnnGpu.so libQnnIr.so libQnnSaver.so libQnnHtpNetRunExtensions.so libQnnHtpV6[89]* libQnnHtpV79* libQnnHtpV81* 2>/dev/null | grep -q ."
+
+# uv installs the packages, so the venv carries no pip of its own.
+check "the venv has no pip of its own" \
+  in_image "test ! -e /opt/venv/bin/pip && test -z \"\$(ls -d /opt/venv/lib/python3.13/site-packages/pip* 2>/dev/null)\""
+
 # The QAIRT the wheel bundles is what the shipped HTP context binaries were compiled
 # against; pyproject.toml declares it and the python tests compare the two.
 declared="$(sed -n 's/^#[[:space:]]*qairt-version:[[:space:]]*//p' "$(dirname "$0")/../pyproject.toml")"

@@ -6,7 +6,7 @@ import queue
 import re
 import threading
 import time
-from collections.abc import Generator, Iterator
+from collections.abc import Generator, Iterable, Iterator
 from contextlib import AbstractContextManager
 from types import TracebackType
 from typing import Any, TypedDict
@@ -22,6 +22,11 @@ logger = Logger("TextToSpeech")
 
 TTS_MAX_CHARS = 1024
 TTS_MAX_QUEUE_SIZE = 128
+
+# Where speak_stream() cuts streamed text for the voice: after the end of a sentence, or at a line break.
+_SENTENCE_END = re.compile(r"(?<=[.!?…])\s+|\n+")
+# How often wait_until_done() checks whether the speech is over, in seconds.
+_WAIT_POLL_S = 0.02
 
 
 class VoiceConfig(TypedDict):
@@ -149,6 +154,62 @@ class TextToSpeech:
         with self._worker_lock:
             pending = self._pending_speech
         return pending > 0 or self._active_session_lock.locked()
+
+    def wait_until_done(self, timeout: float | None = None) -> bool:
+        """Block until nothing is being spoken or queued for speech.
+
+        Args:
+            timeout (float | None): Longest wait, in seconds. None (default) waits as long as it takes.
+
+        Returns:
+            bool: True when the speech is over, False when the timeout expired first.
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while self.is_speaking():
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+            time.sleep(_WAIT_POLL_S)
+        return True
+
+    def speak_stream(self, text_chunks: Iterable[str], block: bool = True) -> str:
+        """
+        Speak text while it is still being produced, one sentence at a time.
+
+        Meant for the answer of a streaming language model (``chat_stream()``): each sentence
+        is queued for playback as soon as it is complete, so the voice starts after the first
+        sentence instead of after the whole answer. The chunks are read in the calling
+        thread; a sentence can span several of them. ``cancel()`` also ends the stream: the
+        rest of the chunks is not read.
+
+        Args:
+            text_chunks (Iterable[str]): The text, in pieces of any length, in order.
+            block (bool): If True (default), return when everything has been spoken. If False,
+                return as soon as ``text_chunks`` is exhausted, with the last sentences still
+                playing; ``wait_until_done()`` waits for them.
+
+        Returns:
+            str: The text queued for speech, empty when there was nothing to say.
+
+        Raises:
+            TTSBusyError: If the speech queue is full.
+        """
+        with self._worker_lock:
+            epoch = self._cancel_epoch
+        spoken: list[str] = []
+        pending = ""
+        for chunk in text_chunks:
+            if self._cancel_epoch != epoch:
+                return " ".join(spoken)
+            *sentences, pending = _SENTENCE_END.split(pending + chunk)
+            for sentence in filter(str.strip, sentences):
+                self.speak(sentence, block=False)
+                spoken.append(sentence.strip())
+        if pending.strip() and self._cancel_epoch == epoch:
+            self.speak(pending, block=False)
+            spoken.append(pending.strip())
+        if block:
+            self.wait_until_done()
+        return " ".join(spoken)
 
     def speak(self, text: str, block: bool = True) -> None:
         """

@@ -1,7 +1,7 @@
-# Only what this image and edge-impulse-npu-runner, through its server context, copy from here
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+# Only the CPU models, the server comes from the edge-impulse-server layer
 *
-!pyproject.toml
-!uv.lock
-!src/
 !models/
-**/__pycache__

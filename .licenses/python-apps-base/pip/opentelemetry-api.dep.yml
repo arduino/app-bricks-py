@@ -1,6 +1,6 @@
 ---
 name: opentelemetry-api
-version: 1.44.0
+version: 1.45.1
 type: pip
 summary: OpenTelemetry Python API
 homepage: https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api

@@ -207,6 +207,23 @@ def test_init_forwards_temperature_when_set(monkeypatch):
     assert captured["temperature"] == 0.2
 
 
+def test_init_forwards_temperature_zero(monkeypatch):
+    # 0.0 is falsy but is a deliberate choice (greedy decoding, the VLM brick default):
+    # the forwarding check must be `is not None`, never truthiness, or 0.0 would be
+    # silently dropped and the provider default (e.g. llama-server's 0.8) would win.
+    captured = {}
+
+    def fake_factory(model, **kwargs):
+        captured.update(kwargs)
+        return FakeChatModel()
+
+    monkeypatch.setattr(cloud_llm_module, "model_factory", fake_factory)
+
+    CloudLLM(api_key="k", model="openai:gpt-x", temperature=0.0)
+
+    assert captured["temperature"] == 0.0
+
+
 def test_init_does_not_forward_reasoning_effort_to_base_model(monkeypatch):
     # reasoning_effort must NEVER be forwarded to the base model: on OpenAI it is sent as a
     # raw chat-completions field and breaks tool calling. It is stored as a default instead.

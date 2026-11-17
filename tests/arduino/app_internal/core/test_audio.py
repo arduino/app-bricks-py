@@ -3,7 +3,9 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import threading
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from arduino.app_internal.core.audio import AudioDetector
@@ -23,6 +25,43 @@ def test_get_best_match_without_inference_result_finds_nothing():
 def test_get_best_match_rejects_a_missing_confidence():
     with pytest.raises(ValueError, match="Confidence level must be provided."):
         AudioDetector.get_best_match(RESULT, None)
+
+
+def test_mic_loop_stops_iterating_once_the_microphone_is_stopped():
+    """The App stops a brick before its loops: the read loop then ends quietly, without logging
+    an error and without being called again on a stopped microphone."""
+    detector = AudioDetector.__new__(AudioDetector)
+    detector._buffer = SlidingWindowBuffer(window_size=16000, slide_amount=16000)
+    detector._mic = SimpleNamespace(stream=lambda: iter([]))  # the stream of a stopped microphone
+
+    with pytest.raises(StopIteration):
+        detector._read_mic_loop()
+
+
+def test_audio_heard_while_a_callback_runs_is_not_classified():
+    """A callback that takes long, like a voice assistant answering the request, pauses the
+    detection: what the microphone heard meanwhile, including the tail of the keyword still in
+    the overlapping windows, must not trigger the callback again once it returns."""
+    detector = AudioDetector.__new__(AudioDetector)
+    detector._buffer = SlidingWindowBuffer(window_size=4, slide_amount=2)
+    detector._buffer.push(np.ones(4, dtype=np.int16))
+    detector.confidence = 0.5
+    detector._debounce_sec = 2.0
+    detector._last_detected = {}
+    detector.handlers_lock = threading.Lock()
+    detector.infer_from_features = lambda features: RESULT
+    calls = []
+
+    def answer_request():
+        calls.append("yes")
+        detector._buffer.push(np.ones(4, dtype=np.int16))  # the microphone keeps reading meanwhile
+
+    detector.handlers = {"yes": answer_request}
+
+    detector._inference_loop()
+
+    assert calls == ["yes"]
+    assert len(detector._buffer.pull(timeout=0)) == 0
 
 
 def test_inference_loop_returns_while_no_window_is_available():
