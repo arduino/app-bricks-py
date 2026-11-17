@@ -138,3 +138,22 @@ relay.reset()                   # relay off
 ```
 
 After a power on the status is `UNKNOWN` until the first `set()` or `reset()`: the relay keeps its previous position, but the module doesn't know it. If reading the status fails, `getStatus()` returns the last status it read.
+
+## Modulino Vibro
+
+`Modulino_Vibro` drives a vibration motor. `on(duration_ms, power=Modulino_Vibro.MAXIMUM, block=False)` vibrates for `duration_ms` milliseconds and `off()` stops it earlier:
+
+```python
+from arduino.app_bricks.modulino import Modulino_Vibro
+
+vibro = Modulino_Vibro()   # autoscan for the address
+vibro.start()
+
+vibro.on(500)                                   # 500 ms at full power, returns right away
+vibro.on(1000, Modulino_Vibro.GENTLE, block=True)   # waits 1 s, then stops
+vibro.off()                                     # stop the current vibration
+```
+
+The module stops by itself after `duration_ms`, so by default `on()` returns right away and your app keeps running. With `block=True` it waits `duration_ms` and then calls `off()`; only your app waits, the other Modulini keep working.
+
+`power` goes from `Modulino_Vibro.STOP` (0) to `Modulino_Vibro.MAXIMUM` (50). The named levels are `GENTLE` (25), `MODERATE` (30), `MEDIUM` (35), `INTENSE` (40) and `POWERFUL` (45), and any integer in between is allowed. Out-of-range values raise `ModulinoError`.

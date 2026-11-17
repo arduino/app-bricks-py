@@ -1,3 +1,4 @@
+import time
 from typing import NamedTuple, override
 
 from arduino.app_utils import brick, Logger, Bridge
@@ -805,3 +806,79 @@ class Modulino_LatchRelay(Modulino):
             return Bridge.call(f"{self.name}:getStatus")
         except:
             raise ModulinoError(f"cannot get status from modulino {self.name}")
+
+class Modulino_Vibro(Modulino):
+    """Class to handle a Modulino Vibro (vibration motor)."""
+    STOP = 0
+    """Power level: no vibration."""
+    GENTLE = 25
+    """Power level: soft vibration."""
+    MODERATE = 30
+    """Power level: moderate vibration."""
+    MEDIUM = 35
+    """Power level: medium vibration."""
+    INTENSE = 40
+    """Power level: intense vibration."""
+    POWERFUL = 45
+    """Power level: powerful vibration."""
+    MAXIMUM = 50
+    """Power level: strongest vibration."""
+
+    def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
+        """Initialize the Modulino_Vibro with the given I2C address.
+
+        Args:
+            i2c_address (int, optional): The I2C address of the vibro modulino. Defaults it will autoscan for the address.
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
+        """
+        super().__init__("vibro", i2c_address, hub_port)
+
+    @override
+    def start(self) -> None:
+        """Start the vibro modulino."""
+        try:
+            ok = Bridge.call(f"{self.name}:begin")
+        except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+
+    @override
+    def stop(self) -> None:
+        """Stop the vibro modulino."""
+        try:
+            Bridge.call("delete_modulino", self.name)
+        except:
+            raise ModulinoError(f"cannot delete modulino {self.name}")
+
+    def on(self, duration_ms, power = MAXIMUM, block = False) -> None:
+        """Vibrate for the given time.
+
+        The modulino stops by itself after `duration_ms`. By default the call returns right away.
+
+        Args:
+            duration_ms (int): The vibration duration in milliseconds.
+            power (int, optional): The power level, `STOP` (0) to `MAXIMUM` (50). Any value in between
+                is allowed, the named levels are `GENTLE`, `MODERATE`, `MEDIUM`, `INTENSE` and `POWERFUL`. Defaults to `MAXIMUM`.
+            block (bool, optional): If True, wait `duration_ms` and then call `off()`. Defaults to False.
+        """
+        if not isinstance(duration_ms, int) or duration_ms < 0:
+            raise ModulinoError("duration_ms must be a non-negative integer")
+        if not isinstance(power, int) or not self.STOP <= power <= self.MAXIMUM:
+            raise ModulinoError(f"power must be an integer between {self.STOP} and {self.MAXIMUM}")
+        try:
+            ok = Bridge.call(f"{self.name}:on", duration_ms, power)
+        except:
+            raise ModulinoError(f"cannot turn on modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot turn on modulino {self.name}")
+        if block:
+            time.sleep(duration_ms / 1000)
+            self.off()
+
+    def off(self) -> None:
+        """Stop the vibration."""
+        try:
+            Bridge.call(f"{self.name}:off")
+        except:
+            raise ModulinoError(f"cannot turn off modulino {self.name}")
