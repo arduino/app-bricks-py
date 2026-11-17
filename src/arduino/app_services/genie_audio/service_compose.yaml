@@ -7,7 +7,7 @@ services:
       - /dev/fastrpc-cdsp
       - /dev/fastrpc-adsp-secure
     environment:
-      - LOG_LEVEL=${LOG_LEVEL:-20}
+      - LOG_LEVEL=${LOG_LEVEL:-30}
       - DEV_MODE=false
       - MODELS_DIR=${MODELS_DIR:-/mnt/work/models}
       - ASR_MODELS_DIR=${ASR_MODELS_DIR:-/mnt/work/models/asr}

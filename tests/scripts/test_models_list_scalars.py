@@ -12,6 +12,7 @@ Norwegian language code ``no`` is a YAML 1.1 boolean, so an unquoted ``- no`` be
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,12 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODELS_LIST_FILES = sorted((REPO_ROOT / "models").glob("models-*.yaml"))
+PARAMETER_COUNT = re.compile(r"\d+(\.\d+)?[KMB]")
+
+
+def _catalog_metadata() -> list[tuple[str, dict]]:
+    data = yaml.safe_load((REPO_ROOT / "models" / "models-list.yaml").read_text(encoding="utf-8"))
+    return [(model_id, model.get("metadata") or {}) for entry in data["models"] for model_id, model in entry.items()]
 
 
 def _scalars_in_lists(node: object, trail: str = "") -> list[tuple[str, object]]:
@@ -62,3 +69,17 @@ def test_language_lists_keep_norwegian_as_a_string(path: Path):
     for where, value in _scalars_in_lists(yaml.safe_load(path.read_text(encoding="utf-8"))):
         if "supported_languages" in where:
             assert value is not False, f"{where} is the Norwegian code 'no' read as a boolean"
+
+
+@pytest.mark.parametrize(("model_id", "metadata"), _catalog_metadata(), ids=[model_id for model_id, _ in _catalog_metadata()])
+def test_a_declared_parameter_count_is_a_quoted_count(model_id: str, metadata: dict):
+    """``metadata.model_parameters``, when declared, is the nominal size of the model (the figure
+    its publisher states, or the count of its architecture when none is stated), as a string: a
+    number with a K, M or B suffix such as "878K", "244M" or "0.8B"."""
+    if "model_parameters" not in metadata:
+        return
+    value = metadata["model_parameters"]
+
+    assert isinstance(value, str) and PARAMETER_COUNT.fullmatch(value), (
+        f'{model_id}: metadata.model_parameters must be a quoted count such as "878K", "244M" or "0.8B", got {value!r}'
+    )
