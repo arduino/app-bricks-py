@@ -81,7 +81,7 @@ def _wait_for(condition, timeout: float = TIMEOUT) -> bool:
 
 def _delivered(tracker: VideoObjectTracking) -> None:
     """Wait until every event submitted so far has run; the brick submits no more afterwards."""
-    tracker._executor.shutdown(wait=True)
+    tracker._event_executor.shutdown(wait=True)
 
 
 @pytest.fixture(autouse=True)
@@ -635,6 +635,35 @@ def test_the_area_callbacks_receive_the_object(tracker):
 
     assert entered.get(timeout=TIMEOUT) == {"label": "person", "object_id": 7}
     assert exited.get(timeout=TIMEOUT) == {"label": "person", "object_id": 7}
+
+
+def test_the_events_reach_the_callbacks_one_at_a_time_in_the_order_they_happened(tracker):
+    delivered, running, running_together = [], [], []
+
+    def recording(kind):
+        def on_event(event):
+            running.append(event)
+            running_together.append(len(running))
+            time.sleep(0.05 if event["object_id"] == 1 else 0)
+            delivered.append((kind, event["object_id"]))
+            running.pop()
+
+        return on_event
+
+    tracker.on_area_enter(recording("entered"))
+    tracker.on_area_exit(recording("exited"))
+    tracker.on_line_crossing(recording("crossed"))
+    tracker.set_rectangular_area(*AREA)
+    tracker.set_vertical_crossing_line(450)
+
+    _replay(tracker, [[_at(x, y, object_id=object_id) for object_id, y in ((1, 250), (2, 300), (3, 350))] for x in (300, 500)])
+    _delivered(tracker)
+
+    in_order = "the callback of object 1 is the slowest, so on several threads the events after its own overtake them"
+    assert delivered[:3] == [("entered", 1), ("entered", 2), ("entered", 3)], in_order
+    assert [event for event in delivered[3:] if event[0] == "crossed"] == [("crossed", 1), ("crossed", 2), ("crossed", 3)], in_order
+    assert [event for event in delivered[3:] if event[0] == "exited"] == [("exited", 1), ("exited", 2), ("exited", 3)], in_order
+    assert max(running_together) == 1
 
 
 def test_the_area_callbacks_must_be_functions(tracker):
