@@ -24,7 +24,7 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 
 | Container | Group | Built `FROM` | Purpose |
 |---|---|---|---|
-| `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
+| `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else, without `pip`: the images built on it install their packages with `uv` |
 | `edge-impulse-server` | base | `scratch` | Layer, never run or published: the Edge Impulse multi-model inference server and its locked packages, added by `edge-impulse-runner` and `edge-impulse-npu-runner` |
 | `edge-impulse-runner` | ai | `python-slim` | Edge Impulse inference server, CPU image of the `edge-impulse-server` layer |
 | `edge-impulse-npu-runner` | ai | `qairt-common-base` | Edge Impulse inference server, Hexagon NPU (QNN) image of the `edge-impulse-server` layer |

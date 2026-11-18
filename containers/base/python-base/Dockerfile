@@ -37,6 +37,8 @@ RUN set -ex; \
     uv pip install --system --no-cache-dir meson-python ninja; \
     uv pip install --system --no-cache-dir --no-build-isolation --no-deps -C setup-args="-Dpycairo=disabled" "PyGObject==${PYGOBJECT_VERSION}"; \
     uv pip uninstall --system meson-python meson ninja pyproject-metadata packaging; \
+    # python-slim has no pip: the one of this stage would reach the image with the two directories copied from here
+    python -m pip uninstall -y --root-user-action ignore pip; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
