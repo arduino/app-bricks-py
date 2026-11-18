@@ -1,0 +1,8 @@
+# The distributions that provide the cv2 module: uv installs none of them, whether an app requires one or a package
+# it installs depends on it. The image has its own build of OpenCV, the only one with the GStreamer backend of the CSI
+# cameras, and a copy in the venv of the app would be imported in its place. The builds with a GUI do not even import
+# in the image, which has no libGL
+opencv-python
+opencv-python-headless
+opencv-contrib-python
+opencv-contrib-python-headless

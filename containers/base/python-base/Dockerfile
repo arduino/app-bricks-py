@@ -18,7 +18,7 @@ COPY ./pyproject.toml ./uv.lock /tmp/deps/
 # uv stays in the image, run.sh installs the user's packages with it at runtime
 COPY --from=uv /uv /usr/local/bin/uv
 
-# The wheel stays in the image, run.sh serves it to the user's installs through UV_FIND_LINKS
+# Installed below: only site-packages leaves this stage, the wheel does not reach the image
 ADD --chmod=644 --checksum=${OPENCV_WHL_DIGEST} ${OPENCV_WHL_URL} /opt/wheels/
 
 RUN set -ex; \
@@ -32,7 +32,6 @@ RUN set -ex; \
     # Install the locked Python dependencies, then the prefetched OpenCV wheel
     uv export --frozen --project /tmp/deps | uv pip install --system --no-cache-dir --require-hashes -r -; \
     uv pip install --system --no-cache-dir /opt/wheels/*.whl; \
-    printf 'opencv-python-headless==%s\n' "$(python -c 'from importlib.metadata import version; print(version("opencv-python-headless"))')" > /etc/uv-constraints.txt; \
     rm -rf /tmp/deps; \
     # Build PyGObject without cairo support
     uv pip install --system --no-cache-dir meson-python ninja; \
@@ -74,14 +73,11 @@ ADD --checksum=${GSTREAMER_PLUGINS_GOOD_DEB_DIGEST} ${GSTREAMER_PLUGINS_GOOD_DEB
 # Copy the installed dependencies from the 'builder' stage
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
-COPY --from=builder /etc/uv-constraints.txt /etc/uv-constraints.txt
-COPY --from=builder /opt/wheels /opt/wheels
 
-# User installs are pinned to the shipped OpenCV build and can fetch it from the image, PyPI does not have it
-ENV UV_CONSTRAINT=/etc/uv-constraints.txt
-ENV PIP_CONSTRAINT=/etc/uv-constraints.txt
-ENV UV_FIND_LINKS=/opt/wheels
-ENV PIP_FIND_LINKS=/opt/wheels
+# The installs of uv from here on, the ones of the apps included, skip the OpenCV distributions and leave cv2 to the
+# build above. Not for the builder stage: a wheel given by path is skipped too, without an error
+COPY conf/uv-excludes.txt /etc/uv-excludes.txt
+ENV UV_EXCLUDE=/etc/uv-excludes.txt
 
 COPY conf/dpkg-no-mesa /etc/dpkg/dpkg.cfg.d/no-mesa
 
