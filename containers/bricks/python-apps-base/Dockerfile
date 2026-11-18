@@ -22,18 +22,22 @@ RUN set -ex; \
     uv export --frozen --project /app --extra all --no-dev --no-emit-project --no-emit-package opencv-python-headless | uv pip install --system --no-cache-dir --require-hashes -r -; \
     uv pip install --system --no-cache-dir --no-deps /app/*.whl; \
     rm /app/*.whl /app/pyproject.toml /app/uv.lock; \
+    # GNU patch and binutils are installed for the next two steps only
+    apt-get update -y; \
+    apt-get install -y --no-install-recommends --no-install-suggests patch binutils; \
     # Every patch in patches/ (see its README), in name order: one that no longer applies exactly fails the build.
-    # Applied before compileall, which compiles the patched sources. GNU patch is installed for this step only
+    # Applied before compileall, which compiles the patched sources
     set -- /tmp/patches/*.patch; \
     if [ -e "$1" ]; then \
-        apt-get update -y; \
-        apt-get install -y --no-install-recommends --no-install-suggests patch; \
         for p in "$@"; do patch -p1 --forward --fuzz=0 --no-backup-if-mismatch -d /usr/local/lib/python3.13/site-packages -i "$p"; done; \
-        apt-get purge -y --auto-remove patch; \
-        apt-get dist-clean; \
-        rm -rf /var/lib/apt/lists/* /var/lib/dpkg/*-old; \
     fi; \
     rm -rf /tmp/patches; \
+    # Debug sections of the compiled extensions installed above, some wheels ship megabytes of them. Only the files
+    # that carry them are rewritten: the others are in the python-base layers, a rewrite would copy them into this one
+    find /usr/local/lib/python3.13/site-packages -type f \( -name "*.so" -o -name "*.so.*" \) -exec sh -c 'readelf -S "$1" | grep -q " \.debug_"' sh {} \; -print -exec strip --strip-debug {} +; \
+    apt-get purge -y --auto-remove patch binutils; \
+    apt-get dist-clean; \
+    rm -rf /var/lib/apt/lists/* /var/lib/dpkg/*-old; \
     # ALSA dsnoop/dmix wrappers: the file is static, generate it once here instead of at every app start
     HOME=/home/app bash /provision-alsa-devices.sh; \    
     # fix permissions for /home/app
