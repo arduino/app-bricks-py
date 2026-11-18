@@ -157,3 +157,37 @@ vibro.off()                                     # stop the current vibration
 The module stops by itself after `duration_ms`, so by default `on()` returns right away and your app keeps running. With `block=True` it waits `duration_ms` and then calls `off()`; only your app waits, the other Modulini keep working.
 
 `power` goes from `Modulino_Vibro.STOP` (0) to `Modulino_Vibro.MAXIMUM` (50). The named levels are `GENTLE` (25), `MODERATE` (30), `MEDIUM` (35), `INTENSE` (40) and `POWERFUL` (45), and any integer in between is allowed. Out-of-range values raise `ModulinoError`.
+
+## Modulino Motors
+
+`Modulino_Motors` drives two DC motors (channels A and B) or one stepper motor. It starts in DC mode. `setSpeedA(percent)` and `setSpeedB(percent)` set one channel at a time, from -100 to 100 percent, and the sign gives the direction:
+
+```python
+from arduino.app_bricks.modulino import Modulino_Motors
+
+motors = Modulino_Motors()   # autoscan for the address
+motors.start()
+
+motors.setSpeedA(60)     # channel A forward at 60%
+motors.setSpeedB(-30)    # channel B backwards at 30%, A keeps running
+motors.stopMotors()      # stop both
+```
+
+For a stepper motor, enable the stepper mode and pass the full steps per revolution of your motor. `move(steps, rpm, release_ms=0, block=False)` moves by `steps` (negative to go backwards) at `rpm`:
+
+```python
+motors = Modulino_Motors(steps_per_revolution=200)
+motors.start()
+motors.setStepperMode(True)
+
+motors.setOnMoveCompleteCallback(lambda: print("done"))
+motors.move(400, 60)                  # two revolutions at 60 rpm, returns right away
+motors.move(-200, 30, block=True)     # one revolution backwards, waits for the end
+motors.release()                      # free the shaft
+```
+
+With `release_ms=0` the motor keeps holding its position at the end of the move; 1 to 255 releases the coils that many milliseconds after the end. `hold()` and `release()` energize or release the coils right away. `setHalfStep(True)` doubles the steps per revolution for a smoother movement. The stepper methods raise `ModulinoError` until `setStepperMode(True)` is called, and `setSpeedA`, `setSpeedB` and `stopMotors` raise it in stepper mode.
+
+Both modes share the driver settings: `setDecay(mode)` with `DECAY_SLOW`, `DECAY_MIXED_SLOW`, `DECAY_MIXED_FAST` or `DECAY_FAST`, `setHalfFullScale(enabled)` for the 1.9 A range (better accuracy at low currents) instead of 3.8 A, and `setFrequency(hz)` for the DC PWM frequency (200 to 60000 Hz, 20000 by default). `isStepperMode()`, `isHalfStep()`, `isBusy()`, `getDecay()` and `isHalfFullScale()` read the state from the module; `getFrequency()` returns the last frequency set. `getCurrentA()` and `getCurrentB()` return the current of each channel in milliamps.
+
+`stop()` stops the motors (or releases the stepper coils) before closing the modulino.

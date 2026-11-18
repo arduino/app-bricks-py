@@ -882,3 +882,281 @@ class Modulino_Vibro(Modulino):
             Bridge.call(f"{self.name}:off")
         except:
             raise ModulinoError(f"cannot turn off modulino {self.name}")
+
+class Modulino_Motors(Modulino):
+    """Class to handle a Modulino Motors (two DC motors on channels A and B, or one stepper motor).
+
+    The modulino starts in DC mode. The stepper methods (`move`, `hold`, `release`, `setHalfStep`
+    and the move complete callback) are available after `setStepperMode(True)`.
+    """
+    DECAY_SLOW = 0
+    """Decay mode: smoother and quieter, slower to follow speed changes."""
+    DECAY_MIXED_SLOW = 1
+    """Decay mode: mixed, 30% fast and 70% slow."""
+    DECAY_MIXED_FAST = 2
+    """Decay mode: mixed, 60% fast and 40% slow."""
+    DECAY_FAST = 3
+    """Decay mode: quick response to changes, more vibration and noise."""
+
+    _CHANNEL_A = 0
+    _CHANNEL_B = 1
+
+    def __init__(self, i2c_address = 0xFF, hub_port = None, steps_per_revolution = None) -> None:
+        """Initialize the Modulino_Motors with the given I2C address.
+
+        Args:
+            i2c_address (int, optional): The I2C address of the motors modulino. Defaults it will autoscan for the address.
+            hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
+            steps_per_revolution (int, optional): Full steps per shaft revolution of the stepper motor (1 to 32767).
+                Required only by `move()`. Defaults to None.
+        """
+        if steps_per_revolution is not None and (not isinstance(steps_per_revolution, int) or not 1 <= steps_per_revolution <= 32767):
+            raise ModulinoError("steps_per_revolution must be an integer between 1 and 32767")
+        super().__init__("motors", i2c_address, hub_port)
+        self.steps_per_revolution = steps_per_revolution
+        self._stepper = False
+
+    def _command(self, what, method, *args) -> None:
+        try:
+            ok = Bridge.call(f"{self.name}:{method}", *args)
+        except Exception:
+            raise ModulinoError(f"cannot {what} for modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot {what} for modulino {self.name}")
+
+    def _require_stepper(self, what) -> None:
+        if not self._stepper:
+            raise ModulinoError(f"cannot {what} for modulino {self.name}: stepper mode not enabled")
+
+    def _require_dc(self, what) -> None:
+        if self._stepper:
+            raise ModulinoError(f"cannot {what} for modulino {self.name}: stepper mode enabled")
+
+    def _status(self) -> int:
+        try:
+            status = Bridge.call(f"{self.name}:getStatus")
+        except Exception:
+            raise ModulinoError(f"cannot get status from modulino {self.name}")
+        if status < 0:
+            raise ModulinoError(f"cannot get status from modulino {self.name}")
+        return status
+
+    @override
+    def start(self) -> None:
+        """Start the motors modulino, in DC mode with both motors stopped."""
+        try:
+            ok = Bridge.call(f"{self.name}:begin")
+        except Exception:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        self._stepper = False
+
+    @override
+    def stop(self) -> None:
+        """Stop the motors and the motors modulino.
+
+        In DC mode both motors are stopped, in stepper mode the coils are released.
+        """
+        try:
+            Bridge.call(f"{self.name}:release" if self._stepper else f"{self.name}:stop")
+        except Exception:
+            logger.warning(f"cannot stop the motors of modulino {self.name}")
+        try:
+            Bridge.call("delete_modulino", self.name)
+        except Exception:
+            raise ModulinoError(f"cannot delete modulino {self.name}")
+
+    # Common methods
+
+    def setStepperMode(self, enabled) -> None:
+        """Switch between DC mode (two DC motors) and stepper mode (one stepper motor).
+
+        Enabling the stepper mode stops the DC motors first.
+
+        Args:
+            enabled (bool): True for stepper mode, False for DC mode.
+        """
+        if not isinstance(enabled, bool):
+            raise ModulinoError("enabled must be a boolean")
+        self._command("set stepper mode", "setStepperMode", enabled)
+        self._stepper = enabled
+
+    def isStepperMode(self) -> bool:
+        """Return True if the module is in stepper mode (read from the module)."""
+        return bool(self._status() & 0x02)
+
+    def setDecay(self, mode) -> None:
+        """Set the current decay mode of the motor driver.
+
+        Args:
+            mode (int): `DECAY_SLOW`, `DECAY_MIXED_SLOW`, `DECAY_MIXED_FAST` or `DECAY_FAST`.
+        """
+        if not isinstance(mode, int) or not self.DECAY_SLOW <= mode <= self.DECAY_FAST:
+            raise ModulinoError("mode must be DECAY_SLOW, DECAY_MIXED_SLOW, DECAY_MIXED_FAST or DECAY_FAST")
+        self._command("set decay", "setDecay", mode)
+
+    def getDecay(self) -> int:
+        """Return the decay mode (read from the module): `DECAY_SLOW`, `DECAY_MIXED_SLOW`, `DECAY_MIXED_FAST` or `DECAY_FAST`."""
+        return (self._status() >> 4) & 0x03
+
+    def setHalfFullScale(self, enabled) -> None:
+        """Set the current range of the motor driver.
+
+        Args:
+            enabled (bool): True for up to 1.9 A with better accuracy at low currents,
+                False for up to 3.8 A (default).
+        """
+        if not isinstance(enabled, bool):
+            raise ModulinoError("enabled must be a boolean")
+        self._command("set half full scale", "setHalfFullScale", enabled)
+
+    def isHalfFullScale(self) -> bool:
+        """Return True if the half full scale current range is enabled (read from the module)."""
+        return bool(self._status() & 0x08)
+
+    def _current(self, channel) -> float:
+        try:
+            current = Bridge.call(f"{self.name}:getCurrent", channel)
+        except Exception:
+            raise ModulinoError(f"cannot get current from modulino {self.name}")
+        if current < 0:
+            raise ModulinoError(f"cannot get current from modulino {self.name}")
+        return current
+
+    def getCurrentA(self) -> float:
+        """Return the current of channel A in milliamps (in stepper mode, the current of coil A)."""
+        return self._current(self._CHANNEL_A)
+
+    def getCurrentB(self) -> float:
+        """Return the current of channel B in milliamps (in stepper mode, the current of coil B)."""
+        return self._current(self._CHANNEL_B)
+
+    # DC mode
+
+    def _setSpeed(self, channel, percent) -> None:
+        if not isinstance(percent, int) or not -100 <= percent <= 100:
+            raise ModulinoError("percent must be an integer between -100 and 100")
+        self._require_dc("set speed")
+        self._command("set speed", "setSpeed", channel, percent)
+
+    def setSpeedA(self, percent) -> None:
+        """Set the speed of the DC motor on channel A, leaving channel B unchanged.
+
+        Args:
+            percent (int): The speed from -100 to 100 percent, the sign gives the direction. 0 stops the motor.
+        """
+        self._setSpeed(self._CHANNEL_A, percent)
+
+    def setSpeedB(self, percent) -> None:
+        """Set the speed of the DC motor on channel B, leaving channel A unchanged.
+
+        Args:
+            percent (int): The speed from -100 to 100 percent, the sign gives the direction. 0 stops the motor.
+        """
+        self._setSpeed(self._CHANNEL_B, percent)
+
+    def stopMotors(self) -> None:
+        """Stop both DC motors."""
+        self._require_dc("stop motors")
+        self._command("stop motors", "stop")
+
+    def setFrequency(self, hz) -> None:
+        """Set the PWM frequency of the DC motors.
+
+        Args:
+            hz (int): The frequency from 200 to 60000 Hz. Defaults to 20000 Hz, above the audible range.
+        """
+        if not isinstance(hz, int) or not 200 <= hz <= 60000:
+            raise ModulinoError("hz must be an integer between 200 and 60000")
+        self._command("set frequency", "setFrequency", hz)
+
+    def getFrequency(self) -> int:
+        """Return the PWM frequency of the DC motors in Hz (the last value set, the module does not report it)."""
+        return (self._status() >> 8) & 0xFFFF
+
+    # Stepper mode
+
+    def move(self, steps, rpm, release_ms = 0, block = False) -> None:
+        """Move the stepper motor by a number of steps.
+
+        Requires the stepper mode and `steps_per_revolution`. In half step mode a step is a half step.
+
+        Args:
+            steps (int): The number of steps, negative to move backwards.
+            rpm (float): The shaft speed in revolutions per minute.
+            release_ms (int, optional): 0 keeps the motor holding its position at the end of the move,
+                1 to 255 releases the coils that many milliseconds after the end of the move. Defaults to 0.
+            block (bool, optional): If True, wait until the move is complete. Defaults to False.
+        """
+        if not isinstance(steps, int):
+            raise ModulinoError("steps must be an integer")
+        if not isinstance(rpm, (int, float)) or rpm <= 0:
+            raise ModulinoError("rpm must be a positive number")
+        if not isinstance(release_ms, int) or not 0 <= release_ms <= 255:
+            raise ModulinoError("release_ms must be an integer between 0 and 255")
+        if self.steps_per_revolution is None:
+            raise ModulinoError(f"cannot move modulino {self.name}: steps_per_revolution not set")
+        self._require_stepper("move")
+        steps_per_revolution = self.steps_per_revolution * (2 if self.isHalfStep() else 1)
+        period = int(600000 / (rpm * steps_per_revolution))   # 0.1 ms ticks between steps
+        if not 1 <= period <= 65535:
+            raise ModulinoError(f"rpm out of range for {steps_per_revolution} steps per revolution")
+        self._command("move", "move", steps, period, release_ms)
+        if block:
+            while self.isBusy():
+                time.sleep(0.01)
+
+    def isBusy(self) -> bool:
+        """Return True while the stepper motor is moving (read from the module)."""
+        return bool(self._status() & 0x01)
+
+    def hold(self) -> None:
+        """Energize the stepper coils, so the motor holds its position."""
+        self._require_stepper("hold")
+        self._command("hold", "hold")
+
+    def release(self) -> None:
+        """Release the stepper coils, so the motor turns freely."""
+        self._require_stepper("release")
+        self._command("release", "release")
+
+    def setHalfStep(self, enabled) -> None:
+        """Set half step mode: twice the steps per revolution, smoother movement.
+
+        Args:
+            enabled (bool): True for half step, False for full step.
+        """
+        if not isinstance(enabled, bool):
+            raise ModulinoError("enabled must be a boolean")
+        self._require_stepper("set half step")
+        self._command("set half step", "setHalfStep", enabled)
+
+    def isHalfStep(self) -> bool:
+        """Return True if half step mode is enabled (read from the module)."""
+        return bool(self._status() & 0x04)
+
+    def setOnMoveCompleteCallback(self, callback) -> None:
+        """Call a callback each time a stepper move completes.
+
+        Set it before calling `move()`. If a new move starts before the previous one completes,
+        the callback is called once, at the end of the last move.
+
+        Args:
+            callback (Callable[[], None]): Called with no arguments:
+                  def callback() -> None:
+        """
+        self._require_stepper("set move complete callback")
+        try:
+            # The MCU notifies 3 integers: busy (always 0) and two unused values
+            Bridge.provide(f"{self.name}_callback", lambda _busy, _unused1, _unused2: callback())
+            Bridge.notify("poll_subscribe", self.name, 20)
+        except Exception:
+            raise ModulinoError(f"cannot set callback for modulino {self.name}")
+
+    def removeOnMoveCompleteCallback(self) -> None:
+        """Remove the move complete callback."""
+        try:
+            Bridge.notify("poll_unsubscribe", self.name)
+        except Exception:
+            raise ModulinoError(f"cannot remove callback for modulino {self.name}")
