@@ -2,6 +2,7 @@ import time
 from typing import NamedTuple, override
 
 from arduino.app_utils import brick, Logger, Bridge
+from arduino.app_utils.ledmatrix import Frame, FrameDesigner, MODULINO_MATRIX
 
 logger = Logger("Modulino")
 class ModulinoError(Exception):
@@ -1160,3 +1161,187 @@ class Modulino_Motors(Modulino):
             Bridge.notify("poll_unsubscribe", self.name)
         except Exception:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
+
+class Modulino_LEDMatrix(Modulino):
+    """Class to handle a Modulino LED Matrix (12x8 LEDs).
+
+    Frames are `Frame` objects of 12x8 pixels (`MODULINO_MATRIX`), create them with `designer()`.
+    The matrix is monochrome by default, `setGrayscale(True)` enables 16 brightness levels.
+    The LED matrix is not supported on a Modulino Hub: connect it to the main bus.
+    """
+    MAX_FRAMES = 20
+    """Maximum number of frames of an animation (MODULINO_LED_MATRIX_MAX_FRAMES of the sketch library)."""
+
+    _MODE_MONOCHROME = 0
+    _MODE_GRAYSCALE = 1
+    _GRAYSCALE_LEVELS = 16
+
+    def __init__(self, i2c_address = 0x39) -> None:
+        """Initialize the Modulino_LEDMatrix with the given I2C address.
+
+        Args:
+            i2c_address (int, optional): The I2C address of the LED matrix. Defaults to 0x39.
+        """
+        if not isinstance(i2c_address, int) or not 0x08 <= i2c_address <= 0x77:
+            raise ModulinoError("i2c_address must be an integer between 0x08 and 0x77")
+        super().__init__("led_matrix", i2c_address)
+        self._grayscale = False
+        self._on_animation_end = None
+
+    @override
+    def start(self) -> None:
+        """Start the LED matrix, in monochrome mode."""
+        try:
+            ok = Bridge.call(f"{self.name}:begin")
+        except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        self._grayscale = False
+        try:
+            # Always provided: the MCU notifies (3 unused integers) the end of every animation without loop
+            Bridge.provide(f"{self.name}_callback", lambda _unused0, _unused1, _unused2: self._animation_ended())
+        except Exception:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+
+    def _animation_ended(self) -> None:
+        callback = self._on_animation_end
+        if callback is not None:
+            callback()
+
+    @override
+    def stop(self) -> None:
+        """Stop the LED matrix."""
+        try:
+            Bridge.call("delete_modulino", self.name)
+        except:
+            raise ModulinoError(f"cannot delete modulino {self.name}")
+
+    @property
+    def brightness_levels(self) -> int:
+        """Number of brightness levels shown by the matrix: 2 in monochrome mode, 16 in grayscale mode."""
+        return self._GRAYSCALE_LEVELS if self._grayscale else 2
+
+    def designer(self) -> FrameDesigner:
+        """Return a FrameDesigner for this matrix: 12x8 frames with the brightness levels of the current mode.
+
+        Returns:
+            FrameDesigner: The designer, e.g. `matrix.designer().empty()` for a blank frame.
+        """
+        return FrameDesigner(MODULINO_MATRIX, self.brightness_levels)
+
+    def setGrayscale(self, enabled) -> None:
+        """Set the display mode.
+
+        Args:
+            enabled (bool): True for grayscale (16 brightness levels), False for monochrome (on/off).
+        """
+        if not isinstance(enabled, bool):
+            raise ModulinoError("enabled must be a boolean")
+        mode = self._MODE_GRAYSCALE if enabled else self._MODE_MONOCHROME
+        try:
+            ok = Bridge.call(f"{self.name}:setMode", mode)
+        except:
+            raise ModulinoError(f"cannot set the mode of modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot set the mode of modulino {self.name}")
+        self._grayscale = enabled
+
+    def isGrayscale(self) -> bool:
+        """Return True if the matrix is in grayscale mode."""
+        return self._grayscale
+
+    def _check_frame(self, frame) -> None:
+        if not isinstance(frame, Frame):
+            raise ModulinoError("frame must be a Frame")
+        if (frame.width, frame.height) != MODULINO_MATRIX:
+            raise ModulinoError(f"frame must be {MODULINO_MATRIX.width}x{MODULINO_MATRIX.height}, got {frame.width}x{frame.height}")
+
+    def draw(self, frame) -> None:
+        """Show a frame on the matrix. A running animation is stopped.
+
+        In monochrome mode the pixels with a value greater than 0 are on. In grayscale mode the values are
+        rescaled from the frame brightness levels to the 16 levels of the matrix.
+
+        Args:
+            frame (Frame): A 12x8 frame, with any number of brightness levels.
+        """
+        self._check_frame(frame)
+        pixels = frame.to_bytes(self._GRAYSCALE_LEVELS) if self._grayscale else frame.to_bytes()
+        try:
+            ok = Bridge.call(f"{self.name}:draw", pixels)
+        except:
+            raise ModulinoError(f"cannot draw on modulino {self.name}")
+        if not ok:
+            raise ModulinoError(f"cannot draw on modulino {self.name}")
+
+    def clear(self) -> None:
+        """Turn off every LED. A running animation is stopped."""
+        self.draw(Frame.empty(MODULINO_MATRIX))
+
+    def playAnimation(self, frames, loop = False) -> None:
+        """Play an animation on the matrix, the frames are timed by the board.
+
+        The frames are shown on/off (a pixel is on when its value is greater than 0), also in grayscale mode.
+        The call returns right away. A new animation replaces the running one, `draw()` and `clear()` stop it.
+        Without loop, the callback set with `setOnAnimationEndCallback()` is called when the animation ends.
+
+        Args:
+            frames (Sequence[tuple]): `(frame, duration_ms)` or `(frame, duration_ms, label)` items, as taken
+                by `sequence_to_c()`: 12x8 frames shown for `duration_ms` milliseconds each, up to `MAX_FRAMES`.
+            loop (bool, optional): If True, repeat the animation until it is stopped. Defaults to False.
+        """
+        if not frames:
+            raise ModulinoError("frames must not be empty")
+        if len(frames) > self.MAX_FRAMES:
+            raise ModulinoError(f"too many frames: {len(frames)}, the maximum is {self.MAX_FRAMES}")
+        if not isinstance(loop, bool):
+            raise ModulinoError("loop must be a boolean")
+        entries = []
+        for item in frames:
+            frame, duration_ms = item[0], item[1]
+            self._check_frame(frame)
+            if not isinstance(duration_ms, int) or not 0 <= duration_ms <= 0x7FFFFFFF:
+                raise ModulinoError("duration_ms must be a non-negative integer")
+            entries.append([*frame.to_words(), duration_ms])   # 3 words + duration
+        try:
+            Bridge.call(f"{self.name}:stop_animation")   # drops the frames of the previous animation
+            for entry in entries:
+                Bridge.notify(f"{self.name}:load_frame", entry)
+            count = Bridge.call(f"{self.name}:play_animation", loop)
+        except:
+            raise ModulinoError(f"cannot play animation on modulino {self.name}")
+        if count != len(entries):
+            raise ModulinoError(f"cannot play animation on modulino {self.name}: {count} of {len(entries)} frames loaded")
+        try:
+            # Starts the playback: the MCU shows the first frame right away, then sets the
+            # polling period to the duration of each frame and unsubscribes at the end.
+            Bridge.notify("poll_subscribe", self.name, 1)
+        except:
+            raise ModulinoError(f"cannot play animation on modulino {self.name}")
+
+    def stopAnimation(self) -> None:
+        """Stop the animation, the current frame stays on the matrix."""
+        try:
+            Bridge.call(f"{self.name}:stop_animation")
+        except:
+            raise ModulinoError(f"cannot stop animation on modulino {self.name}")
+
+    def setOnAnimationEndCallback(self, callback) -> None:
+        """Call a callback each time an animation without loop ends, after the duration of its last frame.
+
+        An animation stopped by `stopAnimation()`, `draw()`, `clear()` or a new `playAnimation()` does not call it.
+        The callback runs on the bridge thread: it must not call the methods of the Modulini, signal the app instead
+        (e.g. with a `threading.Event`).
+
+        Args:
+            callback (Callable[[], None]): Called with no arguments:
+                  def callback() -> None:
+        """
+        if not callable(callback):
+            raise ModulinoError("callback must be callable")
+        self._on_animation_end = callback
+
+    def removeOnAnimationEndCallback(self) -> None:
+        """Remove the animation end callback."""
+        self._on_animation_end = None

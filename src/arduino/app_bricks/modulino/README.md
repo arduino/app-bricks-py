@@ -24,6 +24,7 @@ thermo = Modulino_Thermo()   # main bus, no hub
 - **Reserved addresses**: the addresses of the hubs you use are reserved, both on the main bus and behind the hub ports. Don't use them for other devices: a Modulino moved to the 0x70-0x77 range with the AddressChanger, or a third-party I2C device at one of those addresses, collides with the hub. The brick doesn't check for this.
 - **Same port**: Modulini chained on the same port share that bus, so they need different addresses. Creating a second Modulino with the same address on the same port (or on the main bus) raises `ModulinoError`, and the first one keeps working.
 - **No cascading**: a hub connected to the port of another hub is not supported. Connect every hub to the main bus.
+- **LED Matrix**: the Modulino LED Matrix is not supported behind a hub. Connect it to the main bus.
 
 ## Modulino Buzzer
 
@@ -191,3 +192,46 @@ With `release_ms=0` the motor keeps holding its position at the end of the move;
 Both modes share the driver settings: `setDecay(mode)` with `DECAY_SLOW`, `DECAY_MIXED_SLOW`, `DECAY_MIXED_FAST` or `DECAY_FAST`, `setHalfFullScale(enabled)` for the 1.9 A range (better accuracy at low currents) instead of 3.8 A, and `setFrequency(hz)` for the DC PWM frequency (200 to 60000 Hz, 20000 by default). `isStepperMode()`, `isHalfStep()`, `isBusy()`, `getDecay()` and `isHalfFullScale()` read the state from the module; `getFrequency()` returns the last frequency set. `getCurrentA()` and `getCurrentB()` return the current of each channel in milliamps.
 
 `stop()` stops the motors (or releases the stepper coils) before closing the modulino.
+
+## Modulino LED Matrix
+
+`Modulino_LEDMatrix` shows 12x8 frames, the `Frame` objects of `arduino.app_utils` (the same ones used for the UNO Q LED matrix). `designer()` returns a `FrameDesigner` bound to the matrix size (`MODULINO_MATRIX`) and to the brightness levels of the current mode. `draw(frame)` shows a frame and `clear()` turns off every LED:
+
+```python
+from arduino.app_bricks.modulino import Modulino_LEDMatrix
+
+matrix = Modulino_LEDMatrix()   # default address 0x39
+matrix.start()
+
+designer = matrix.designer()
+frame = designer.empty()
+frame.set_value(3, 5, 1)        # row 3, column 5 on
+matrix.draw(frame)
+```
+
+The matrix starts in monochrome mode: a pixel is on when its value is greater than 0, whatever the brightness levels of the frame. `setGrayscale(True)` switches to 16 brightness levels: the frame values are rescaled from the levels of the frame, so a frame designed with 8 levels (as in the LED Matrix Painter) is shown without conversions.
+
+`playAnimation(frames, loop=False)` plays an animation timed by the board, so it keeps a steady pace whatever your app is doing. `frames` is a list of `(frame, duration_ms)` items, the same taken by `sequence_to_c()`, up to `Modulino_LEDMatrix.MAX_FRAMES` (20):
+
+```python
+frames = [(frame_a, 200), (frame_b, 200), (frame_c, 400)]
+matrix.playAnimation(frames, loop=True)
+...
+matrix.stopAnimation()          # the current frame stays on the matrix
+```
+
+The animation frames are shown on/off, also in grayscale mode. A new animation replaces the running one, and `draw()` or `clear()` stop it. Frames that are not 12x8 raise `ModulinoError`.
+
+`setOnAnimationEndCallback(callback)` calls `callback()` when an animation without loop ends, after the duration of its last frame. A stopped or replaced animation does not call it. The callback runs on the bridge thread, where the Modulino methods can't be called: to chain animations, signal your app and play the next one from there:
+
+```python
+import threading
+
+ended = threading.Event()
+matrix.setOnAnimationEndCallback(ended.set)
+
+matrix.playAnimation(frames)
+ended.wait()
+ended.clear()
+matrix.playAnimation(next_frames)
+```
