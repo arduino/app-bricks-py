@@ -85,8 +85,17 @@ def test_from_rows_validates_the_geometry():
         Frame.from_rows([])
 
 
+def test_matrix_presets():
+    assert UNO_Q_MATRIX == (13, 8) and UNO_Q_MATRIX.width == 13 and UNO_Q_MATRIX.height == 8
+    assert MODULINO_MATRIX == (12, 8)
+    assert Frame.empty(UNO_Q_MATRIX).shape == (8, 13)
+    assert Frame.empty((32, 16)).shape == (16, 32)
+    with pytest.raises(ValueError):
+        Frame.empty((0, 8))
+
+
 def test_empty_and_copy():
-    f = Frame.empty(*MODULINO_MATRIX, brightness_levels=8)
+    f = Frame.empty(MODULINO_MATRIX, brightness_levels=8)
     assert f.shape == (8, 12)
     assert f.brightness_levels == 8
     assert not f.arr.any()
@@ -108,8 +117,8 @@ class _MetadataSubclass(Frame):
 
 def test_factories_return_the_subclass_when_its_constructor_allows_it():
     assert type(_PlainSubclass.from_rows([[0, 1]], brightness_levels=2)) is _PlainSubclass
-    assert type(_PlainSubclass.empty(2, 2)) is _PlainSubclass
-    assert type(_PlainSubclass.empty(2, 2).copy()) is _PlainSubclass
+    assert type(_PlainSubclass.empty((2, 2))) is _PlainSubclass
+    assert type(_PlainSubclass.empty((2, 2)).copy()) is _PlainSubclass
 
 
 def test_factories_fall_back_to_frame_for_subclasses_with_extra_arguments():

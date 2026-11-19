@@ -34,7 +34,7 @@ def test_to_c_array():
 
 def test_sequence_to_c():
     on = Frame(np.ones((8, 13), dtype=int), brightness_levels=2)
-    off = Frame.empty(13, 8, brightness_levels=2)
+    off = Frame.empty((13, 8), brightness_levels=2)
     text = sequence_to_c([(on, 500, "all on"), (off, 1000)], name="Blink")
     assert text == (
         "const uint32_t blink[][5] = {\n"
@@ -45,7 +45,7 @@ def test_sequence_to_c():
 
 
 def test_sequence_to_c_any_size():
-    frame = Frame.empty(12, 8)
+    frame = Frame.empty((12, 8))
     assert sequence_to_c([(frame, 100)]).startswith("const uint32_t animation[][4] = {")
 
 
@@ -53,4 +53,4 @@ def test_sequence_to_c_rejects_empty_or_mixed_sizes():
     with pytest.raises(ValueError):
         sequence_to_c([])
     with pytest.raises(ValueError):
-        sequence_to_c([(Frame.empty(13, 8), 100), (Frame.empty(12, 8), 100)])
+        sequence_to_c([(Frame.empty((13, 8)), 100), (Frame.empty((12, 8)), 100)])

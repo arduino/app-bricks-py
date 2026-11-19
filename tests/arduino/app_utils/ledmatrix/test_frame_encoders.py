@@ -71,7 +71,7 @@ def test_to_words_12x8_round_trip():
 def test_to_words_any_value_above_zero_is_on_and_pads_the_last_word():
     frame = Frame(np.array([[0, 1, 255]]), brightness_levels=256)
     assert frame.to_words() == [0b011 << 29]
-    assert len(Frame.empty(33, 1).to_words()) == 2
+    assert len(Frame.empty((33, 1)).to_words()) == 2
 
 
 def test_to_bytes_values_as_stored_or_quantized():

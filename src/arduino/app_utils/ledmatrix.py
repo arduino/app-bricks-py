@@ -5,7 +5,7 @@
 from __future__ import annotations
 import re
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 from warnings import deprecated
 
 if TYPE_CHECKING:
@@ -16,19 +16,45 @@ __all__ = [
     "Frame",
     "FrameDesigner",
     "MODULINO_MATRIX",
+    "MatrixSize",
     "UNO_Q_MATRIX",
     "c_identifier",
     "sequence_to_c",
     "to_c_array",
 ]
 
-# Convenience geometries, as (width, height) tuples, of some Arduino LED matrices. Frame and
-# FrameDesigner work with any size: these only save typing, e.g. Frame.empty(*MODULINO_MATRIX).
-UNO_Q_MATRIX: tuple[int, int] = (13, 8)
-"""(width, height) of the LED matrix built into Arduino UNO Q and VENTUNO Q."""
 
-MODULINO_MATRIX: tuple[int, int] = (12, 8)
-"""(width, height) of the Arduino Modulino Matrix, same layout as the UNO R4 WiFi LED matrix."""
+class MatrixSize(NamedTuple):
+    """Size of an LED matrix, in LEDs.
+
+    Wherever a size is expected, a plain `(width, height)` tuple works too, e.g.
+    `FrameDesigner((32, 16))` for a custom 32x16 matrix.
+    """
+
+    width: int
+    """Number of columns."""
+    height: int
+    """Number of rows."""
+
+
+# Sizes of the Arduino LED matrices. Frame and FrameDesigner work with any size: these only save
+# typing, e.g. FrameDesigner(MODULINO_MATRIX).
+UNO_Q_MATRIX = MatrixSize(13, 8)
+"""Size of the LED matrix built into Arduino UNO Q and VENTUNO Q."""
+
+MODULINO_MATRIX = MatrixSize(12, 8)
+"""Size of the Arduino Modulino Matrix, same layout as the UNO R4 WiFi LED matrix."""
+
+
+def _matrix_size(matrix: tuple[int, int]) -> MatrixSize:
+    """Validate a (width, height) pair and return it as a MatrixSize."""
+    try:
+        width, height = (int(v) for v in matrix)
+    except (TypeError, ValueError):
+        raise ValueError(f"matrix must be a (width, height) pair of integers, got {matrix!r}") from None
+    if width < 1 or height < 1:
+        raise ValueError("width and height must be positive")
+    return MatrixSize(width, height)
 
 
 class Frame:
@@ -236,20 +262,23 @@ class Frame:
         return cls._from_array(np_arr, brightness_levels)
 
     @classmethod
-    def empty(cls, width: int, height: int, brightness_levels: int = 256) -> Frame:
+    def empty(cls, matrix: tuple[int, int], brightness_levels: int = 256) -> Frame:
         """Create a frame with every LED off.
 
         Args:
-            width (int): number of columns.
-            height (int): number of rows.
+            matrix (tuple[int, int]): size of the matrix, e.g. `UNO_Q_MATRIX` or `(32, 16)`.
             brightness_levels (int): number of brightness levels (default 256).
 
         Returns:
             Frame: a blank frame, an instance of the class it is called on (see the class docstring).
+
+        Raises:
+            ValueError: on a size that is not a pair of positive integers.
         """
         import numpy as np
 
-        return cls._from_array(np.zeros((int(height), int(width)), dtype=np.uint8), brightness_levels)
+        width, height = _matrix_size(matrix)
+        return cls._from_array(np.zeros((height, width), dtype=np.uint8), brightness_levels)
 
     def copy(self) -> Frame:
         """Return an independent copy of this frame.
@@ -515,24 +544,26 @@ class FrameDesigner:
     A designer is bound to a geometry and a number of brightness levels: its
     `empty` and `from_rows` create frames with them, so that every frame of an
     application matches its matrix. The default is the UNO Q matrix
-    (`UNO_Q_MATRIX`); e.g. `FrameDesigner(*MODULINO_MATRIX)` designs frames for
-    the Modulino Matrix.
+    (`UNO_Q_MATRIX`). For example:
+
+        FrameDesigner(MODULINO_MATRIX)  # the Modulino Matrix
+        FrameDesigner((32, 16))         # a custom 32x16 matrix
     """
 
-    def __init__(self, width: int = 13, height: int = 8, brightness_levels: int = 256) -> None:
-        """Bind the designer to a matrix geometry and a number of brightness levels.
+    def __init__(self, matrix: tuple[int, int] = UNO_Q_MATRIX, brightness_levels: int = 256) -> None:
+        """Bind the designer to a matrix size and a number of brightness levels.
 
         Args:
-            width (int): number of columns of the matrix (default 13).
-            height (int): number of rows of the matrix (default 8).
+            matrix (tuple[int, int]): size of the matrix, e.g. `UNO_Q_MATRIX` (the default),
+                `MODULINO_MATRIX` or `(width, height)` for a custom matrix.
             brightness_levels (int): number of brightness levels of the frames (2..256, default 256).
 
         Raises:
-            ValueError: on a non positive size or brightness levels outside 2..256.
+            ValueError: on a size that is not a pair of positive integers or brightness levels outside 2..256.
         """
-        width, height, brightness_levels = int(width), int(height), int(brightness_levels)
-        if width < 1 or height < 1:
-            raise ValueError("width and height must be positive")
+        self.matrix = _matrix_size(matrix)
+        width, height = self.matrix
+        brightness_levels = int(brightness_levels)
         if not 2 <= brightness_levels <= 256:
             raise ValueError("brightness_levels must be an integer in 2..256")
         self.width = width  # led matrix width
@@ -546,7 +577,7 @@ class FrameDesigner:
         Returns:
             Frame: a blank frame.
         """
-        return Frame.empty(self.width, self.height, self.brightness_levels)
+        return Frame.empty(self.matrix, self.brightness_levels)
 
     def from_rows(self, rows: Sequence[list[int]] | Sequence[str]) -> Frame:
         """Create a frame from rows, which must match the designer geometry.

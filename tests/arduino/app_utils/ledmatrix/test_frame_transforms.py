@@ -4,7 +4,7 @@
 
 import numpy as np
 import pytest
-from arduino.app_utils.ledmatrix import MODULINO_MATRIX, Frame, FrameDesigner
+from arduino.app_utils.ledmatrix import MODULINO_MATRIX, UNO_Q_MATRIX, Frame, FrameDesigner, MatrixSize
 
 
 def _ramp(width: int = 12, height: int = 8, levels: int = 256) -> Frame:
@@ -42,7 +42,7 @@ def test_quantize_returns_a_new_frame():
 
 
 def test_designer_is_bound_to_a_geometry():
-    designer = FrameDesigner(*MODULINO_MATRIX, brightness_levels=8)
+    designer = FrameDesigner(MODULINO_MATRIX, brightness_levels=8)
     assert (designer.width, designer.height) == (12, 8)
     empty = designer.empty()
     assert empty.shape == (8, 12)
@@ -59,17 +59,29 @@ def test_designer_defaults_to_the_uno_q_matrix():
     designer = FrameDesigner()
     assert (designer.width, designer.height, designer.brightness_levels) == (13, 8, 256)
     assert designer.empty().shape == (8, 13)
+    assert designer.matrix == UNO_Q_MATRIX
+
+
+def test_designer_accepts_any_size():
+    for matrix in [(32, 16), [32, 16], MatrixSize(32, 16)]:
+        designer = FrameDesigner(matrix)
+        assert designer.matrix == MatrixSize(32, 16)
+        assert designer.empty().shape == (16, 32)
 
 
 def test_designer_rejects_invalid_parameters():
     with pytest.raises(ValueError):
-        FrameDesigner(0, 8)
+        FrameDesigner((0, 8))
+    with pytest.raises(ValueError, match="pair of integers"):
+        FrameDesigner((13, 8, 1))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="pair of integers"):
+        FrameDesigner(13)  # type: ignore[arg-type]
     with pytest.raises(ValueError):
-        FrameDesigner(13, 8, brightness_levels=1)
+        FrameDesigner((13, 8), brightness_levels=1)
 
 
 def test_designer_transformations_delegate_to_the_frame():
-    designer = FrameDesigner(*MODULINO_MATRIX)
+    designer = FrameDesigner(MODULINO_MATRIX)
     f = _ramp()
     expected = _ramp().flip_horizontally().rotate180().invert()
     assert designer.invert(designer.rotate180(designer.flip_horizontally(f))) is f
