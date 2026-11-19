@@ -51,6 +51,9 @@ class WebSocketCamera(BaseCamera):
     When connecting, clients can specify a "client_name" parameter in the URL query string
     to identify themselves. This name will be sanitized to allow only alphanumeric chars,
     whitespace, hyphens, and underscores, and limit its length to 64 characters.
+
+    The "connected" status is reported when the first valid frame from the client
+    arrives, not when the WebSocket connection opens.
     """
 
     def __init__(
@@ -239,6 +242,7 @@ class WebSocketCamera(BaseCamera):
                 self._client_raw = client_raw
 
         client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
+        client_info = {"client_address": client_addr, "client_name": client_name}
 
         async with self._client_lock:
             if self._client is not None:
@@ -255,7 +259,6 @@ class WebSocketCamera(BaseCamera):
             # Accept the client
             self._client = conn
 
-        self._set_status("connected", {"client_address": client_addr, "client_name": client_name})
         self.logger.debug(f"Client connected: {client_addr}")
 
         try:
@@ -278,6 +281,9 @@ class WebSocketCamera(BaseCamera):
                 if frame is None:
                     continue
 
+                # A client is connected once its first valid message arrives
+                self._set_status("connected", client_info)
+
                 # Drop old frames until there's room for the new one
                 while True:
                     try:
@@ -299,7 +305,7 @@ class WebSocketCamera(BaseCamera):
                 if self._client == conn:
                     self._client = None
                     self._client_raw = False
-                    self._set_status("disconnected", {"client_address": client_addr, "client_name": client_name})
+                    self._set_status("disconnected", client_info)
                     self.logger.debug(f"Client removed: {client_addr}")
 
     def _parse_message(self, message: websockets.Data) -> np.ndarray | None:

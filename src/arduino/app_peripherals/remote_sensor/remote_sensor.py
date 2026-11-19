@@ -45,6 +45,9 @@ class RemoteSensor:
     to identify themselves. This name will be sanitized to allow only alphanumeric chars,
     whitespace, hyphens, and underscores, and limit its length to 64 characters.
 
+    The "connected" status is reported when the first valid message from the client
+    arrives, not when the WebSocket connection opens.
+
     Each message is handed to the registered callback via the on_datapoint method.
     """
 
@@ -342,6 +345,7 @@ class RemoteSensor:
                 self._client_raw = client_raw
 
         client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
+        client_info = {"client_address": client_addr, "client_name": client_name}
 
         async with self._client_lock:
             if self._client is not None:
@@ -358,7 +362,6 @@ class RemoteSensor:
             # Accept the client
             self._client = conn
 
-        self._set_status("connected", {"client_address": client_addr, "client_name": client_name})
         self.logger.debug(f"Client connected: {client_addr}")
 
         try:
@@ -376,7 +379,13 @@ class RemoteSensor:
             # Handle incoming messages
             async for message in conn:
                 datapoint = self._parse_message(message)
-                if datapoint is None or self._on_datapoint_cb is None or self._loop is None:
+                if datapoint is None:
+                    continue
+
+                # A client is connected once its first valid message arrives
+                self._set_status("connected", client_info)
+
+                if self._on_datapoint_cb is None or self._loop is None:
                     continue
 
                 try:
@@ -393,7 +402,7 @@ class RemoteSensor:
                 if self._client == conn:
                     self._client = None
                     self._client_raw = False
-                    self._set_status("disconnected", {"client_address": client_addr, "client_name": client_name})
+                    self._set_status("disconnected", client_info)
                     self.logger.debug(f"Client removed: {client_addr}")
 
     def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict[str, Any] | None = None) -> None:
