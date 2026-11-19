@@ -185,6 +185,31 @@ async def test_websocket_camera_single_client():
 
 
 @pytest.mark.asyncio
+async def test_websocket_camera_rejected_client_leaves_active_client_untouched(bpp_frame_binary):
+    """Test that a rejected client changes neither the name nor the frames of the active one."""
+    loop = asyncio.get_running_loop()
+    connected = asyncio.Event()
+
+    camera = WebSocketCamera(port=0)
+    camera.on_status_changed(lambda status, info: loop.call_soon_threadsafe(connected.set) if status == "connected" else None)
+    camera.start()
+
+    async with websockets.connect(camera.url + "?client_name=first") as first:
+        await first.recv()  # Welcome
+
+        async with websockets.connect(camera.url + "?client_name=second&raw=true") as second:
+            rejection = json.loads(await second.recv())
+            assert rejection["error"] == "Server busy"
+
+        await first.send(bpp_frame_binary)
+        await asyncio.wait_for(connected.wait(), timeout=2)
+        assert camera.capture() is not None
+        assert camera.name == "first"
+
+    camera.stop()
+
+
+@pytest.mark.asyncio
 async def test_websocket_camera_welcome_message():
     """Test that welcome message is sent to connected client (BPP-wrapped)."""
     codec = BPPCodec("", enable_encryption=False)

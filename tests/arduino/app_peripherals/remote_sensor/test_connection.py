@@ -235,6 +235,30 @@ async def test_single_client_limitation(codec):
 
 
 @pytest.mark.asyncio
+async def test_rejected_client_leaves_active_client_untouched(codec):
+    """Test that a rejected client changes neither the name nor the data of the active one."""
+    loop = asyncio.get_running_loop()
+    received = asyncio.Queue()
+
+    sensor = RemoteSensor(port=0)
+    sensor.on_datapoint(lambda data: loop.call_soon_threadsafe(received.put_nowait, data))
+    sensor.start()
+
+    async with websockets.connect(sensor.url + "?client_name=first") as first:
+        await first.recv()  # Welcome
+
+        async with websockets.connect(sensor.url + "?client_name=second&raw=true") as second:
+            rejection = json.loads(await second.recv())
+            assert rejection["error"] == "Server busy"
+
+        await first.send(codec.encode(b"datapoint"))
+        assert await asyncio.wait_for(received.get(), timeout=2) == b"datapoint"
+        assert sensor.name == "first"
+
+    sensor.stop()
+
+
+@pytest.mark.asyncio
 async def test_welcome_goodbye_message_content(codec):
     """Test that welcome and goodbye messages contain expected fields."""
     sensor = RemoteSensor(port=0)

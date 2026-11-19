@@ -361,6 +361,30 @@ class TestWebSocketClientConnection:
         mic.stop()
 
     @pytest.mark.asyncio
+    async def test_rejected_client_leaves_active_client_untouched(self):
+        """Test that a rejected client changes neither the name nor the audio of the active one."""
+        loop = asyncio.get_running_loop()
+        connected = asyncio.Event()
+
+        mic = WebSocketMicrophone(port=0)
+        mic.on_status_changed(lambda status, info: loop.call_soon_threadsafe(connected.set) if status == "connected" else None)
+        mic.start()
+
+        async with websockets.connect(mic.url + "?client_name=first") as first:
+            await first.recv()  # Welcome
+
+            async with websockets.connect(mic.url + "?client_name=second&raw=true") as second:
+                rejection = json.loads(await second.recv())
+                assert rejection["error"] == "Server busy"
+
+            await first.send(BPPCodec().encode(AUDIO_CHUNK))
+            await asyncio.wait_for(connected.wait(), timeout=2)
+            assert np.array_equal(mic.capture(), np.frombuffer(AUDIO_CHUNK, dtype=np.int16))
+            assert mic.name == "first"
+
+        mic.stop()
+
+    @pytest.mark.asyncio
     async def test_client_disconnection_handled(self):
         """Test that client disconnection is handled gracefully."""
         codec = BPPCodec("", enable_encryption=False)
