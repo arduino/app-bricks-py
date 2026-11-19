@@ -90,8 +90,9 @@ class EdgeImpulseModel:
     def _configured_model(cls) -> str:
         """The model configured for the brick, as the inference service names it.
 
-        The app CLI sets the model variable when the app selects a model; for the default model of the board
-        the path comes from the models list, through the model the brick configuration selects.
+        The app CLI sets the model variable when the app selects a model, and CUSTOM_MODEL_PATH with the folder
+        of a custom model; for the default model of the board the path comes from the models list, through the
+        model the brick configuration selects.
         """
         if not cls.MODEL_VARIABLE:
             raise RuntimeError(f"{cls.__name__} names no model variable.")
@@ -99,7 +100,7 @@ class EdgeImpulseModel:
         if not model_path:
             raise RuntimeError(f"No model configured: select a model for the brick in the app or set the {cls.MODEL_VARIABLE} variable.")
         try:
-            return model_name_from_path(model_path)
+            return model_name_from_path(model_path, custom_model_dir=os.getenv("CUSTOM_MODEL_PATH"))
         except ValueError as e:
             raise RuntimeError(str(e)) from e
 

@@ -365,6 +365,17 @@ def test_a_refused_model_lets_the_brick_start(service, camera, monkeypatch):
     tracker.stop()
 
 
+def test_a_custom_model_is_opened_from_its_folder(service, camera, monkeypatch):
+    folder = "/home/arduino/.arduino-bricks/models/custom-ei/ei-model-1-2"
+    monkeypatch.setenv("EI_V_OBJ_TRACKING_MODEL", f"{folder}/model.eim")
+    monkeypatch.setenv("CUSTOM_MODEL_PATH", folder)
+
+    tracker = VideoObjectTracking(camera=camera, stream_port=0)
+
+    assert tracker.model == "custom/model"
+    tracker.stop()
+
+
 def test_a_new_connection_forgets_the_identifiers_and_keeps_the_counts(running, service, camera, monkeypatch):
     monkeypatch.setattr(VideoObjectTracking, "_RETRY_SEC", 0.1)
     service.models[TRACKER]["tracks"] = [_track(object_id=3)]
