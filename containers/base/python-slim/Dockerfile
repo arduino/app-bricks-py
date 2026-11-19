@@ -25,6 +25,9 @@ RUN set -ex; \
         /var/cache/apt/*.bin; \
     find /usr/share/doc -type f ! -name 'copyright' -delete; \
     find /usr/share/doc -type d -empty -delete; \
+    # No pip in the images built on this one: uv installs their packages. Uninstalled before compileall, which would
+    # add its bytecode to this layer
+    python -m pip uninstall -y --root-user-action ignore pip; \
     # precompile python files to .pyc to speed up startup time
     python -m compileall /usr/local/bin; \
     python -m compileall /usr/local/lib

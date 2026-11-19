@@ -4,7 +4,8 @@ name = "python-base"
 version = "0"
 requires-python = "==3.13.*"
 dependencies = [
-    "pandas",
+    # Required by the OpenCV wheel the image installs on top of this lock
+    "numpy",
     "pillow",
     "pyyaml",
     "requests",
