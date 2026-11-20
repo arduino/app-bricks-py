@@ -14,6 +14,8 @@ import numpy as np
 from arduino.app_internal.core.peripherals.bpp_codec import BPPCodec
 from arduino.app_peripherals.microphone import WebSocketMicrophone, MicrophoneOpenError, MicrophoneConfigError
 
+AUDIO_CHUNK = np.zeros(128, dtype=np.int16).tobytes()
+
 
 class TestWebSocketMicrophoneInit:
     """Test WebSocketMicrophone initialization and startup."""
@@ -359,6 +361,30 @@ class TestWebSocketClientConnection:
         mic.stop()
 
     @pytest.mark.asyncio
+    async def test_rejected_client_leaves_active_client_untouched(self):
+        """Test that a rejected client changes neither the name nor the audio of the active one."""
+        loop = asyncio.get_running_loop()
+        connected = asyncio.Event()
+
+        mic = WebSocketMicrophone(port=0)
+        mic.on_status_changed(lambda status, info: loop.call_soon_threadsafe(connected.set) if status == "connected" else None)
+        mic.start()
+
+        async with websockets.connect(mic.url + "?client_name=first") as first:
+            await first.recv()  # Welcome
+
+            async with websockets.connect(mic.url + "?client_name=second&raw=true") as second:
+                rejection = json.loads(await second.recv())
+                assert rejection["error"] == "Server busy"
+
+            await first.send(BPPCodec().encode(AUDIO_CHUNK))
+            await asyncio.wait_for(connected.wait(), timeout=2)
+            assert np.array_equal(mic.capture(), np.frombuffer(AUDIO_CHUNK, dtype=np.int16))
+            assert mic.name == "first"
+
+        mic.stop()
+
+    @pytest.mark.asyncio
     async def test_client_disconnection_handled(self):
         """Test that client disconnection is handled gracefully."""
         codec = BPPCodec("", enable_encryption=False)
@@ -425,8 +451,8 @@ class TestWebSocketClientEvents:
 
         # This should emit connection and disconnection events
         async def client_task():
-            async with websockets.connect(mic.url + "?client_name=test_client"):
-                pass
+            async with websockets.connect(mic.url + "?client_name=test_client") as ws:
+                await ws.send(BPPCodec().encode(AUDIO_CHUNK))
 
         # Run client concurrently to properly test event handling
         client = asyncio.create_task(client_task())
@@ -489,8 +515,9 @@ class TestWebSocketClientDisconnection:
 
         # Connect and disconnect
         async with websockets.connect(mic.url) as ws:
-            await asyncio.wait_for(connected.wait(), timeout=2)
             await ws.recv()
+            await ws.send(BPPCodec().encode(AUDIO_CHUNK))
+            await asyncio.wait_for(connected.wait(), timeout=2)
 
         await asyncio.wait_for(disconnected.wait(), timeout=2)
         mic.stop()
@@ -538,6 +565,7 @@ class TestWebSocketClientDisconnection:
 
         ws = await websockets.connect(mic.url)
         await ws.recv()
+        await ws.send(BPPCodec().encode(AUDIO_CHUNK))
 
         # Abruptly close without proper shutdown
         await ws.close()
@@ -667,6 +695,69 @@ class TestWebSocketRawMode:
 
 
 TEST_SECRET = "test-secret-key"
+SECURITY_MODES = [(None, False), (TEST_SECRET, False), (TEST_SECRET, True)]
+
+
+class TestWebSocketConnectedStatus:
+    """Test when a client is reported as connected."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("secret, encrypt", SECURITY_MODES)
+    async def test_connected_at_first_valid_message(self, secret, encrypt):
+        """Test that the client is connected when its first valid message arrives, not when the socket opens."""
+        loop = asyncio.get_running_loop()
+        connected = asyncio.Event()
+        codec = BPPCodec(secret or "", encrypt)
+
+        mic = WebSocketMicrophone(port=0, secret=secret, encrypt=encrypt)
+        mic.on_status_changed(lambda status, info: loop.call_soon_threadsafe(connected.set) if status == "connected" else None)
+        mic.start()
+
+        async with websockets.connect(mic.url) as ws:
+            await ws.recv()  # Welcome
+            assert mic.status == "disconnected"
+
+            await ws.send(codec.encode(AUDIO_CHUNK))
+            await asyncio.wait_for(connected.wait(), timeout=2)
+            assert mic.status == "connected"
+
+        mic.stop()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("secret, encrypt", SECURITY_MODES)
+    async def test_silent_client_is_not_connected(self, secret, encrypt):
+        """Test that a client that opens the socket and sends nothing causes no status change."""
+        events = []
+
+        mic = WebSocketMicrophone(port=0, secret=secret, encrypt=encrypt)
+        mic.on_status_changed(lambda status, info: events.append(status))
+        mic.start()
+
+        async with websockets.connect(mic.url) as ws:
+            await ws.recv()  # Welcome
+
+        mic.stop()
+
+        assert events == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("encrypt", [False, True])
+    async def test_wrong_secret_client_is_not_connected(self, encrypt):
+        """Test that a client sending messages with a wrong secret causes no status change."""
+        events = []
+        wrong_codec = BPPCodec("wrong-secret", encrypt)
+
+        mic = WebSocketMicrophone(port=0, secret=TEST_SECRET, encrypt=encrypt)
+        mic.on_status_changed(lambda status, info: events.append(status))
+        mic.start()
+
+        async with websockets.connect(mic.url) as ws:
+            await ws.recv()  # Welcome
+            await ws.send(wrong_codec.encode(AUDIO_CHUNK))
+
+        mic.stop()
+
+        assert events == []
 
 
 class TestWebSocketMicrophoneAuthenticated:

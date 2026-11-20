@@ -24,7 +24,7 @@ def codec() -> BPPCodec:
 
 
 @pytest.mark.asyncio
-async def test_plaintext_connectivity():
+async def test_plaintext_connectivity(codec):
     """Test that a client can connect to the server on a plaintext connection."""
     loop = asyncio.get_running_loop()
     connected = asyncio.Event()
@@ -44,6 +44,7 @@ async def test_plaintext_connectivity():
 
     async with websockets.connect(sensor.url) as ws:
         await ws.recv()  # Welcome
+        await ws.send(codec.encode(b"{}"))
 
     await asyncio.wait_for(connected.wait(), timeout=2)
 
@@ -55,7 +56,7 @@ async def test_plaintext_connectivity():
 
 
 @pytest.mark.asyncio
-async def test_tls_connectivity():
+async def test_tls_connectivity(codec):
     """Test that a client can connect to the server on a TLS connection."""
     loop = asyncio.get_running_loop()
     connected = asyncio.Event()
@@ -84,6 +85,7 @@ async def test_tls_connectivity():
         ssl_context.verify_mode = ssl.CERT_NONE
         async with websockets.connect(sensor.url, ssl=ssl_context) as ws:
             await ws.recv()  # Welcome
+            await ws.send(codec.encode(b"{}"))
 
         await asyncio.wait_for(connected.wait(), timeout=2)
 
@@ -92,6 +94,71 @@ async def test_tls_connectivity():
 
     assert connected.is_set()
     assert disconnected.is_set()
+
+
+TEST_SECRET = "test-secret-key"
+SECURITY_MODES = [(None, False), (TEST_SECRET, False), (TEST_SECRET, True)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("secret, encrypt", SECURITY_MODES)
+async def test_connected_at_first_valid_message(secret, encrypt):
+    """Test that the client is connected when its first valid message arrives, not when the socket opens."""
+    loop = asyncio.get_running_loop()
+    connected = asyncio.Event()
+    codec = BPPCodec(secret or "", encrypt)
+
+    sensor = RemoteSensor(port=0, secret=secret, encrypt=encrypt)
+    sensor.on_status_changed(lambda status, info: loop.call_soon_threadsafe(connected.set) if status == "connected" else None)
+    sensor.start()
+
+    async with websockets.connect(sensor.url) as ws:
+        await ws.recv()  # Welcome
+        assert sensor.status == "disconnected"
+
+        await ws.send(codec.encode(b"{}"))
+        await asyncio.wait_for(connected.wait(), timeout=2)
+        assert sensor.status == "connected"
+
+    sensor.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("secret, encrypt", SECURITY_MODES)
+async def test_silent_client_is_not_connected(secret, encrypt):
+    """Test that a client that opens the socket and sends nothing causes no status change."""
+    events = []
+
+    sensor = RemoteSensor(port=0, secret=secret, encrypt=encrypt)
+    sensor.on_status_changed(lambda status, info: events.append(status))
+    sensor.start()
+
+    async with websockets.connect(sensor.url) as ws:
+        await ws.recv()  # Welcome
+
+    sensor.stop()
+
+    assert events == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("encrypt", [False, True])
+async def test_wrong_secret_client_is_not_connected(encrypt):
+    """Test that a client sending messages with a wrong secret causes no status change."""
+    events = []
+    wrong_codec = BPPCodec("wrong-secret", encrypt)
+
+    sensor = RemoteSensor(port=0, secret=TEST_SECRET, encrypt=encrypt)
+    sensor.on_status_changed(lambda status, info: events.append(status))
+    sensor.start()
+
+    async with websockets.connect(sensor.url) as ws:
+        await ws.recv()  # Welcome
+        await ws.send(wrong_codec.encode(b"{}"))
+
+    sensor.stop()
+
+    assert events == []
 
 
 @pytest.mark.asyncio
@@ -163,6 +230,30 @@ async def test_single_client_limitation(codec):
         except websockets.exceptions.ConnectionClosedOK:
             # Expected - server closed the connection
             pass
+
+    sensor.stop()
+
+
+@pytest.mark.asyncio
+async def test_rejected_client_leaves_active_client_untouched(codec):
+    """Test that a rejected client changes neither the name nor the data of the active one."""
+    loop = asyncio.get_running_loop()
+    received = asyncio.Queue()
+
+    sensor = RemoteSensor(port=0)
+    sensor.on_datapoint(lambda data: loop.call_soon_threadsafe(received.put_nowait, data))
+    sensor.start()
+
+    async with websockets.connect(sensor.url + "?client_name=first") as first:
+        await first.recv()  # Welcome
+
+        async with websockets.connect(sensor.url + "?client_name=second&raw=true") as second:
+            rejection = json.loads(await second.recv())
+            assert rejection["error"] == "Server busy"
+
+        await first.send(codec.encode(b"datapoint"))
+        assert await asyncio.wait_for(received.get(), timeout=2) == b"datapoint"
+        assert sensor.name == "first"
 
     sensor.stop()
 

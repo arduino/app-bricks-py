@@ -45,6 +45,9 @@ class RemoteSensor:
     to identify themselves. This name will be sanitized to allow only alphanumeric chars,
     whitespace, hyphens, and underscores, and limit its length to 64 characters.
 
+    The "connected" status is reported when the first valid message from the client
+    arrives, not when the WebSocket connection opens.
+
     Each message is handed to the registered callback via the on_datapoint method.
     """
 
@@ -337,11 +340,9 @@ class RemoteSensor:
                         self.logger.warning("Client requested raw mode but security is enabled, ignoring.")
             except Exception as e:
                 self.logger.debug(f"Failed to extract URL parameters: {e}")
-            finally:
-                self.name = client_name
-                self._client_raw = client_raw
 
         client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
+        client_info = {"client_address": client_addr, "client_name": client_name}
 
         async with self._client_lock:
             if self._client is not None:
@@ -349,7 +350,7 @@ class RemoteSensor:
                 self.logger.warning(f"Rejecting client {client_addr}: only one client allowed at a time")
                 try:
                     rejection = json.dumps({"error": "Server busy", "message": "Only one client connection allowed at a time", "code": 1000})
-                    await self._send_to_client(rejection, client=conn)
+                    await self._send_to_client(rejection, client=conn, raw=client_raw)
                     await conn.close(code=1000, reason="Server busy, only one client allowed")
                 except Exception as e:
                     self.logger.warning(f"Failed to send rejection message to {client_addr}: {e}")
@@ -357,8 +358,9 @@ class RemoteSensor:
 
             # Accept the client
             self._client = conn
+            self._client_raw = client_raw
+            self.name = client_name
 
-        self._set_status("connected", {"client_address": client_addr, "client_name": client_name})
         self.logger.debug(f"Client connected: {client_addr}")
 
         try:
@@ -376,7 +378,13 @@ class RemoteSensor:
             # Handle incoming messages
             async for message in conn:
                 datapoint = self._parse_message(message)
-                if datapoint is None or self._on_datapoint_cb is None or self._loop is None:
+                if datapoint is None:
+                    continue
+
+                # A client is connected once its first valid message arrives
+                self._set_status("connected", client_info)
+
+                if self._on_datapoint_cb is None or self._loop is None:
                     continue
 
                 try:
@@ -393,7 +401,7 @@ class RemoteSensor:
                 if self._client == conn:
                     self._client = None
                     self._client_raw = False
-                    self._set_status("disconnected", {"client_address": client_addr, "client_name": client_name})
+                    self._set_status("disconnected", client_info)
                     self.logger.debug(f"Client removed: {client_addr}")
 
     def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict[str, Any] | None = None) -> None:
@@ -486,12 +494,14 @@ class RemoteSensor:
         if self._server:
             self._server.close()
 
-    async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None) -> None:
-        """Send a message to the connected client."""
+    async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None, raw: bool | None = None) -> None:
+        """Send a message to the connected client, or to another one with its own raw setting."""
         if isinstance(message, str):
             message = message.encode()
 
-        data = message if self._client_raw else self.codec.encode(message)
+        if raw is None:
+            raw = self._client_raw
+        data = message if raw else self.codec.encode(message)
 
         # Keep a ref to current client to avoid locking
         client = client or self._client
