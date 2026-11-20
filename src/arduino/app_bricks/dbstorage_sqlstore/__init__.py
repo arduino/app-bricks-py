@@ -173,7 +173,7 @@ class SQLStore:
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error dropping table {table}: {e}")
 
-    def store(self, table: str, data: dict[str, Any], create_table: bool = True) -> None:
+    def store(self, table: str, data: dict[str, Any], create_table: bool = True) -> int:
         """Store data in the specified table with automatic table creation. By default, it creates the table if it doesn't exist.
 
         Args:
@@ -182,6 +182,10 @@ class SQLStore:
                 Supported types: int (INTEGER), float (REAL), str (TEXT), bytes (BLOB).
             create_table (bool, optional): If True, create the table if it doesn't exist
                 using automatic type inference. Defaults to True.
+
+        Returns:
+            int: The row id of the inserted record. In a table with an `INTEGER PRIMARY KEY` column it
+                is the value of that column, so a record stored without it gets its id back.
 
         Raises:
             DBStorageSQLStoreError: If there is an error inserting data or creating the table.
@@ -214,8 +218,10 @@ class SQLStore:
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 cursor.execute(sql, tuple(data.values()))
+                row_id = cursor.lastrowid or 0
                 conn.commit()
             logger.debug(f"Inserted data into {table}: {data}")
+            return row_id
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error inserting data into {table}: {e}")
 
@@ -273,7 +279,7 @@ class SQLStore:
                 return []
             raise DBStorageSQLStoreError(f"Error reading data from {table}: {e}")
 
-    def update(self, table: str, data: dict[str, Any], condition: str | None = "") -> None:
+    def update(self, table: str, data: dict[str, Any], condition: str | None = "") -> int:
         """Update data or records in the specified table.
 
         Args:
@@ -281,6 +287,9 @@ class SQLStore:
             data (dict[str, Any]): Dictionary of column names and their new values.
             condition (Optional[str], optional): WHERE clause for filtering which records
                 to update (e.g., "id = 1"). If empty, updates all records. Defaults to "".
+
+        Returns:
+            int: The number of records updated, 0 if none matched the condition.
 
         Raises:
             DBStorageSQLStoreError: If there is error updating data in the table.
@@ -299,18 +308,23 @@ class SQLStore:
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 cursor.execute(sql, tuple(data.values()))
+                updated = cursor.rowcount
                 conn.commit()
             logger.debug(f"Updated data in {table}: {data} where {condition}")
+            return updated
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error updating data in {table}: {e}")
 
-    def delete(self, table: str, condition: str | None = "") -> None:
+    def delete(self, table: str, condition: str | None = "") -> int:
         """Delete data from the specified table. If no condition is provided, this will delete ALL records from the table.
 
         Args:
             table (str): Name of the table to delete from.
             condition (Optional[str], optional): WHERE clause for filtering which records
                 to delete (e.g., "age < 18"). If empty, deletes all records. Defaults to "".
+
+        Returns:
+            int: The number of records deleted, 0 if none matched the condition.
 
         Raises:
             DBStorageSQLStoreError: If there is an error deleting data from the table.
@@ -328,8 +342,10 @@ class SQLStore:
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 cursor.execute(sql)
+                deleted = cursor.rowcount
                 conn.commit()
             logger.debug(f"Deleted data from {table} where {condition}")
+            return deleted
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error deleting data from {table}: {e}")
 

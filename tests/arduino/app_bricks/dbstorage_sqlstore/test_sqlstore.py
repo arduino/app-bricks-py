@@ -784,3 +784,29 @@ def test_read_with_no_limit(open_sqlstore_database: SQLStore):
 
     assert len(db.read("limit_table", limit=None)) == 2
     assert len(db.read("limit_table", limit=-1)) == 2
+
+
+def test_store_returns_the_row_id(open_sqlstore_database: SQLStore):
+    """store() returns the id of the new record, also when the database assigns it."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+
+    assert db.store("test_table", {"name": "first"}) == 1
+    assert db.store("test_table", {"name": "second"}) == 2
+    assert db.store("test_table", {"id": 10, "name": "explicit"}) == 10
+    assert db.read("test_table", condition="id = 2")[0]["name"] == "second"
+
+
+def test_update_and_delete_return_the_affected_rows(open_sqlstore_database: SQLStore):
+    """update() and delete() tell how many records they changed."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    for name in ("a", "b", "c"):
+        db.store("test_table", {"name": name})
+
+    assert db.update("test_table", {"name": "x"}, condition="id = 1") == 1
+    assert db.update("test_table", {"name": "y"}, condition="id = 99") == 0
+    assert db.update("test_table", {"name": "z"}) == 3
+    assert db.delete("test_table", condition="id = 99") == 0
+    assert db.delete("test_table", condition="id > 1") == 2
+    assert db.delete("test_table") == 1

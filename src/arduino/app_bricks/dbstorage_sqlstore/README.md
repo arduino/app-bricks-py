@@ -58,7 +58,7 @@ data = {
     "name": "Alice",
     "age": 30
 }
-db.store("users", data)
+user_id = db.store("users", data)  # the id the database assigned to the new record
 ```
 
 Query, update and delete records:
@@ -67,11 +67,13 @@ Query, update and delete records:
 # Read rows (columns, condition, order_by and limit are optional)
 rows = db.read("users", condition="age > 18", order_by="name ASC", limit=10)
 
-# Update rows matching a condition
-db.update("users", {"age": 31}, condition="name = 'Alice'")
+# Update rows matching a condition: the result is the number of rows updated
+updated = db.update("users", {"age": 31}, condition="name = 'Alice'")
+if updated == 0:
+    print("No user named Alice")
 
 # Delete rows matching a condition (without a condition ALL records are deleted)
-db.delete("users", condition="name = 'Alice'")
+deleted = db.delete("users", condition="name = 'Alice'")
 
 # Raw SQL for advanced operations
 result = db.execute_sql("SELECT COUNT(*) FROM users")
