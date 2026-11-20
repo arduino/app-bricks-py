@@ -22,6 +22,7 @@ services:
       - LLAMA_ARG_IMAGE_MAX_TOKENS=${LLAMA_ARG_IMAGE_MAX_TOKENS:-128}
       - LLAMA_ARG_THREADS=${LLAMA_ARG_THREADS:-4}
       - OMP_NUM_THREADS=${LLAMA_ARG_THREADS:-4}
+      - GOMP_SPINCOUNT=${GOMP_SPINCOUNT:-300000}
       - XDG_CACHE_HOME=/models
     working_dir: /models
     ports:
