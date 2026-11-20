@@ -15,3 +15,6 @@ variables:
 - name: LLAMA_ARG_CTX_SIZE
   description: Context size
   default_value: 8192
+- name: LLAMA_ARG_THREADS
+  description: CPU threads used by the model
+  default_value: 4
