@@ -118,9 +118,64 @@ async def test_connected_at_first_valid_message(secret, encrypt):
 
         await ws.send(codec.encode(b"{}"))
         await asyncio.wait_for(connected.wait(), timeout=2)
-        assert sensor.status == "connected"
+        assert sensor.status == "streaming"
 
     sensor.stop()
+
+
+@pytest.mark.asyncio
+async def test_stream_is_paused_when_idle_and_resumes(codec):
+    """Test that the stream is paused when no datapoint arrives for the idle timeout and resumes at the next one."""
+    loop = asyncio.get_running_loop()
+    events = []
+    reached = {"paused": asyncio.Event(), "streaming": asyncio.Event()}
+
+    def status_callback(status: str, info: dict):
+        events.append((status, info.get("client_name")))
+        if status in reached:
+            loop.call_soon_threadsafe(reached[status].set)
+
+    sensor = RemoteSensor(port=0, idle_timeout=0.05)
+    sensor.on_status_changed(status_callback)
+    sensor.start()
+
+    async with websockets.connect(sensor.url + "?client_name=phone") as ws:
+        await ws.recv()  # Welcome
+
+        await ws.send(codec.encode(b"{}"))
+        await asyncio.wait_for(reached["paused"].wait(), timeout=2)
+
+        reached["streaming"].clear()
+        await ws.send(codec.encode(b"{}"))
+        await asyncio.wait_for(reached["streaming"].wait(), timeout=2)
+
+    sensor.stop()
+
+    assert [status for status, _ in events[:4]] == ["connected", "streaming", "paused", "streaming"]
+    assert events[-1][0] == "disconnected"
+    assert all(client_name == "phone" for _, client_name in events)
+
+
+@pytest.mark.asyncio
+async def test_stream_is_not_paused_while_datapoints_arrive(codec):
+    """Test that a client sending more often than the idle timeout is never paused."""
+    events = []
+
+    sensor = RemoteSensor(port=0, idle_timeout=0.2)
+    sensor.on_status_changed(lambda status, info: events.append(status))
+    sensor.start()
+
+    async with websockets.connect(sensor.url) as ws:
+        await ws.recv()  # Welcome
+
+        # Keep sending for twice the idle timeout
+        for _ in range(8):
+            await ws.send(codec.encode(b"{}"))
+            await asyncio.sleep(0.05)
+
+    sensor.stop()
+
+    assert events == ["connected", "streaming", "disconnected"]
 
 
 @pytest.mark.asyncio

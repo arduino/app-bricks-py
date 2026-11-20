@@ -46,7 +46,8 @@ class RemoteSensor:
     whitespace, hyphens, and underscores, and limit its length to 64 characters.
 
     The "connected" status is reported when the first valid message from the client
-    arrives, not when the WebSocket connection opens.
+    arrives, not when the WebSocket connection opens. It is followed by "streaming",
+    which turns into "paused" when no message arrives for idle_timeout seconds.
 
     Each message is handed to the registered callback via the on_datapoint method.
     """
@@ -60,6 +61,7 @@ class RemoteSensor:
         secret: str | None = None,
         encrypt: bool = False,
         auto_reconnect: bool = True,
+        idle_timeout: float = 3.0,
     ) -> None:
         """
         Initialize RemoteSensor WebSocket server.
@@ -77,6 +79,8 @@ class RemoteSensor:
             encrypt (bool): Enable ChaCha20-Poly1305 encryption. Requires a
                 non-None secret; raises RuntimeError otherwise. Default: False.
             auto_reconnect (bool): Enable automatic reconnection on failure
+            idle_timeout (float): Seconds without a datapoint after which the stream
+                is reported as paused. Default: 3.0.
         """
         if encrypt and secret is None:
             raise RuntimeError("Encryption requires a secret key.")
@@ -109,6 +113,9 @@ class RemoteSensor:
         if timeout <= 0:
             raise RemoteSensorConfigError(f"Invalid timeout value: {timeout}")
         self.timeout = timeout
+        if idle_timeout <= 0:
+            raise RemoteSensorConfigError(f"Invalid idle timeout value: {idle_timeout}")
+        self.idle_timeout = idle_timeout
 
         # TLS configuration
         if self.use_tls:
@@ -140,7 +147,7 @@ class RemoteSensor:
 
     @property
     def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:
-        """Read-only property for camera status."""
+        """Read-only property for the sensor status."""
         return self._status
 
     @property
@@ -206,28 +213,27 @@ class RemoteSensor:
         return self._is_started
 
     def on_status_changed(self, callback: Callable[[str, dict[str, Any]], None] | None) -> None:
-        """Registers or removes a callback to be triggered on camera lifecycle events.
+        """Registers or removes a callback to be triggered when the sensor status changes.
 
-        When a camera status changes, the provided callback function will be invoked.
         If None is provided, the callback will be removed.
 
         Args:
             callback (Callable[[str, dict], None]): A callback that will be called every time the
-                camera status changes with the new status and any associated data. The status names
-                depend on the actual camera implementation being used. Some common events are:
-                - 'connected': The camera has been reconnected.
-                - 'disconnected': The camera has been disconnected.
-                - 'streaming': The stream is streaming.
-                - 'paused': The stream has been paused and is temporarily unavailable.
+                sensor status changes, with the new status and the name and address of the client.
+                The statuses are:
+                - 'connected': The first valid datapoint of a client has arrived.
+                - 'streaming': Datapoints are arriving.
+                - 'paused': No datapoint has arrived for idle_timeout seconds.
+                - 'disconnected': The client has disconnected.
             callback (None): To unregister the current callback, if any.
 
         Example:
             def on_status(status: str, data: dict):
-                print(f"Camera is now: {status}")
+                print(f"Sensor is now: {status}")
                 print(f"Data: {data}")
                 # Here you can add your code to react to the event
 
-            camera.on_status_changed(on_status)
+            sensor.on_status_changed(on_status)
         """
         if callback is None:
             self._on_status_changed_cb = None
@@ -363,6 +369,7 @@ class RemoteSensor:
 
         self.logger.debug(f"Client connected: {client_addr}")
 
+        idle_timer: asyncio.TimerHandle | None = None
         try:
             # Send welcome message
             try:
@@ -383,6 +390,11 @@ class RemoteSensor:
 
                 # A client is connected once its first valid message arrives
                 self._set_status("connected", client_info)
+                self._set_status("streaming", client_info)
+
+                if idle_timer is not None:
+                    idle_timer.cancel()
+                idle_timer = asyncio.get_running_loop().call_later(self.idle_timeout, self._set_status, "paused", client_info)
 
                 if self._on_datapoint_cb is None or self._loop is None:
                     continue
@@ -397,6 +409,9 @@ class RemoteSensor:
         except Exception as e:
             self.logger.warning(f"Error handling client {client_addr}: {e}")
         finally:
+            if idle_timer is not None:
+                idle_timer.cancel()
+
             async with self._client_lock:
                 if self._client == conn:
                     self._client = None

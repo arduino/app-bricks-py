@@ -33,6 +33,15 @@ sensor.start()
 sensor.stop()
 ```
 
+## Connection status
+
+Register a callback with `on_status_changed` to follow the client. It receives the new status and the name and address of the client.
+
+- `connected`: the first valid datapoint of a client has arrived. Opening the WebSocket is not enough.
+- `streaming`: datapoints are arriving.
+- `paused`: no datapoint has arrived for `idle_timeout` seconds, 3 by default. The connection stays open and the status goes back to `streaming` at the next datapoint.
+- `disconnected`: the client has disconnected.
+
 ## Client Protocol
 
 Clients can send data in three formats:

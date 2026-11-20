@@ -19,6 +19,7 @@ def test_remote_sensor_initialization():
     assert sensor.url == "ws://0.0.0.0:8090"
     assert sensor.port == 8090
     assert sensor.timeout == 3
+    assert sensor.idle_timeout == 3
     assert sensor.secret is None
     assert sensor.encrypt is False
     assert sensor.auto_reconnect is True
@@ -28,10 +29,11 @@ def test_remote_sensor_initialization():
 
 def test_remote_sensor_custom_parameters():
     """Test RemoteSensor can be initialized with custom parameters."""
-    sensor = RemoteSensor(port=9000, timeout=5, secret="yolo", encrypt=True, auto_reconnect=False)
+    sensor = RemoteSensor(port=9000, timeout=5, secret="yolo", encrypt=True, auto_reconnect=False, idle_timeout=10)
     assert sensor.url == "ws://0.0.0.0:9000"
     assert sensor.port == 9000
     assert sensor.timeout == 5
+    assert sensor.idle_timeout == 10
     assert sensor.secret == "yolo"
     assert sensor.encrypt is True
     assert sensor.auto_reconnect is False
@@ -54,6 +56,15 @@ def test_remote_sensor_invalid_timeout():
 
     with pytest.raises(RemoteSensorConfigError):
         RemoteSensor(timeout=-5)
+
+
+def test_remote_sensor_invalid_idle_timeout():
+    """Test RemoteSensor raises error for invalid idle timeout values."""
+    with pytest.raises(RemoteSensorConfigError):
+        RemoteSensor(idle_timeout=0)
+
+    with pytest.raises(RemoteSensorConfigError):
+        RemoteSensor(idle_timeout=-5)
 
 
 def test_remote_sensor_start_stop():
