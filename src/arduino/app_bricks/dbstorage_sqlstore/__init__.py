@@ -5,6 +5,8 @@
 import sqlite3
 import os
 import threading
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any, Literal
 
 from arduino.app_utils import brick, Logger
@@ -49,6 +51,7 @@ class SQLStore:
             self.database_name = f"{self.database_name}.db"
         self.conn: sqlite3.Connection | None = None
         self.conn_lock = threading.RLock()
+        self._transaction_depth = 0  # > 0 inside transaction(): changed only with conn_lock held
 
     def _connect(self) -> None:
         """Establish a thread-safe connection to the SQLite database.
@@ -92,6 +95,53 @@ class SQLStore:
             if self.conn is None:
                 raise DBStorageSQLStoreError("SQLite connection is not available")
             return self.conn
+
+    def _commit(self, conn: sqlite3.Connection) -> None:
+        """Commit the changes of an operation, unless a transaction is open: it commits at its end."""
+        if self._transaction_depth == 0:
+            conn.commit()
+
+    @contextmanager
+    def transaction(self) -> Generator[None]:
+        """Group several operations so that they are saved together, or not at all.
+
+        Use it as a context manager. The changes made inside the block are committed when the
+        block ends; if the block raises an exception they are all undone and the exception
+        continues. While the block runs, the other threads wait before reading or writing the
+        database, so they never see half of the changes. Keep the block short.
+
+        Saving the changes together is also faster than saving them one by one, since the
+        database is written to disk once.
+
+        Transactions can be nested: the changes are committed when the outermost block ends.
+        `create_or_replace_table()` cannot be used inside a transaction.
+
+        Example:
+            with db.transaction():
+                db.update("accounts", {"balance": 50}, condition="id = ?", args=(1,))
+                db.update("accounts", {"balance": 150}, condition="id = ?", args=(2,))
+
+        Raises:
+            DBStorageSQLStoreError: If there is an error committing the changes.
+        """
+        with self.conn_lock:
+            conn = self._get_connection()
+            self._transaction_depth += 1
+            try:
+                yield
+            except BaseException:
+                if self._transaction_depth == 1:
+                    conn.rollback()
+                raise
+            else:
+                if self._transaction_depth == 1:
+                    try:
+                        conn.commit()
+                    except sqlite3.Error as e:
+                        conn.rollback()
+                        raise DBStorageSQLStoreError(f"Error committing the transaction: {e}")
+            finally:
+                self._transaction_depth -= 1
 
     def start(self) -> None:
         """Open the SQLite database connection.
@@ -143,7 +193,7 @@ class SQLStore:
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 cursor.execute(sql)
-                conn.commit()
+                self._commit(conn)
             logger.debug(f"Created table {table} with columns {columns}")
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error creating table {table}: {e}")
@@ -168,7 +218,7 @@ class SQLStore:
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 cursor.execute(sql)
-                conn.commit()
+                self._commit(conn)
             logger.debug(f"Dropped table {table}")
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error dropping table {table}: {e}")
@@ -234,7 +284,7 @@ class SQLStore:
                 cursor.execute(sql, tuple(data.values()))
                 # An ignored record inserts no row: lastrowid would still be the one of an earlier insert
                 row_id = (cursor.lastrowid or 0) if cursor.rowcount > 0 else 0
-                conn.commit()
+                self._commit(conn)
             logger.debug(f"Inserted data into {table}: {data}")
             return row_id
         except sqlite3.Error as e:
@@ -332,7 +382,7 @@ class SQLStore:
                 cursor = conn.cursor()
                 cursor.execute(sql, tuple(data.values()) + tuple(args or ()))
                 updated = cursor.rowcount
-                conn.commit()
+                self._commit(conn)
             logger.debug(f"Updated data in {table}: {data} where {condition}")
             return updated
         except sqlite3.Error as e:
@@ -369,7 +419,7 @@ class SQLStore:
                 cursor = conn.cursor()
                 cursor.execute(sql, args or ())
                 deleted = cursor.rowcount
-                conn.commit()
+                self._commit(conn)
             logger.debug(f"Deleted data from {table} where {condition}")
             return deleted
         except sqlite3.Error as e:
@@ -402,11 +452,11 @@ class SQLStore:
 
                 first_row = cursor.fetchone()
                 if first_row is None:
-                    conn.commit()
+                    self._commit(conn)
                     return None
                 else:
                     rows = [first_row] + cursor.fetchall()
-                    conn.commit()
+                    self._commit(conn)
                     col_names = [description[0] for description in cursor.description]
             return [dict(zip(col_names, row)) for row in rows]
         except sqlite3.Error as e:
@@ -435,6 +485,9 @@ class SQLStore:
             DBStorageSQLStoreError: If there is an error creating or updating the table. All changes are rolled back.
         """
         with self.conn_lock:
+            if self._transaction_depth > 0:
+                # It opens its own transaction and may roll it back, which would undo the caller's changes too
+                raise DBStorageSQLStoreError("create_or_replace_table() cannot be used inside a transaction")
             if not self.conn:
                 self._connect()
 

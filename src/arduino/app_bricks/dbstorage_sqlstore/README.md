@@ -96,6 +96,14 @@ db.update("users", {"age": 42}, condition="name = ?", args=(name,))
 db.delete("users", condition="name = ? AND age < ?", args=(name, 18))
 ```
 
+To make several changes that belong together, such as renumbering a list of records, group them in a transaction. They are saved together when the block ends, or not at all if the block raises an exception, and saving them together is faster than one by one:
+
+```python
+with db.transaction():
+    for position, user_id in enumerate(ordered_ids, start=1):
+        db.update("users", {"position": position}, condition="id = ?", args=(user_id,))
+```
+
 ## Understanding Database Operations
 
 The SQLStore automatically creates the database file inside the `/app/data` directory of your application. The brick supports automatic type inference when creating tables, mapping Python types (*int*, *float*, *str*, *bytes*) to corresponding SQLite column types (*INTEGER*, *REAL*, *TEXT*, *BLOB*).

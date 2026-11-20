@@ -885,3 +885,117 @@ def test_store_conflict_is_an_error_by_default(open_sqlstore_database: SQLStore)
     with pytest.raises(DBStorageSQLStoreError):
         db.store("test_table", {"id": 3, "name": "x"}, on_conflict="update")  # type: ignore[arg-type]
     assert db.read("test_table") == [{"id": 1, "name": "first"}]
+
+
+def test_transaction_commits_all_changes(open_sqlstore_database: SQLStore):
+    """The changes made inside a transaction are saved together when the block ends."""
+    db = open_sqlstore_database
+    db.create_table("accounts", {"id": "INTEGER PRIMARY KEY", "balance": "INTEGER"})
+    db.store("accounts", {"id": 1, "balance": 100})
+    db.store("accounts", {"id": 2, "balance": 100})
+
+    with db.transaction():
+        db.update("accounts", {"balance": 50}, condition="id = ?", args=(1,))
+        db.update("accounts", {"balance": 150}, condition="id = ?", args=(2,))
+        new_id = db.store("accounts", {"balance": 0})
+        assert db.read("accounts", condition="id = 1")[0]["balance"] == 50  # visible inside the block
+
+    assert new_id == 3
+    assert [r["balance"] for r in db.read("accounts", order_by="id")] == [50, 150, 0]
+    # A second connection sees the committed data
+    import sqlite3
+
+    other = sqlite3.connect(db.database_name)
+    assert other.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 3
+    other.close()
+
+
+def test_transaction_rolls_back_on_error(open_sqlstore_database: SQLStore):
+    """An exception inside the block undoes every change of the block and continues."""
+    db = open_sqlstore_database
+    db.create_table("accounts", {"id": "INTEGER PRIMARY KEY", "balance": "INTEGER"})
+    db.store("accounts", {"id": 1, "balance": 100})
+
+    with pytest.raises(RuntimeError):
+        with db.transaction():
+            db.update("accounts", {"balance": 0}, condition="id = 1")
+            db.store("accounts", {"id": 2, "balance": 5})
+            db.execute_sql("DELETE FROM accounts WHERE id = 1")
+            raise RuntimeError("boom")
+
+    assert db.read("accounts") == [{"id": 1, "balance": 100}]
+    # The store works normally afterwards
+    db.store("accounts", {"id": 2, "balance": 7})
+    assert len(db.read("accounts")) == 2
+
+
+def test_transaction_rolls_back_on_database_error(open_sqlstore_database: SQLStore):
+    """A failed operation inside the block undoes the ones before it."""
+    db = open_sqlstore_database
+    db.create_table("accounts", {"id": "INTEGER PRIMARY KEY", "balance": "INTEGER"})
+
+    with pytest.raises(DBStorageSQLStoreError):
+        with db.transaction():
+            db.store("accounts", {"id": 1, "balance": 1})
+            db.store("accounts", {"id": 1, "balance": 2})  # duplicate key
+
+    assert db.read("accounts") == []
+
+
+def test_nested_transactions_commit_at_the_end_of_the_outer_one(open_sqlstore_database: SQLStore):
+    """A nested block joins the outer transaction: an error in the outer block undoes it too."""
+    db = open_sqlstore_database
+    db.create_table("accounts", {"id": "INTEGER PRIMARY KEY", "balance": "INTEGER"})
+
+    with pytest.raises(RuntimeError):
+        with db.transaction():
+            with db.transaction():
+                db.store("accounts", {"id": 1, "balance": 1})
+            raise RuntimeError("boom")
+    assert db.read("accounts") == []
+
+    with db.transaction():
+        with db.transaction():
+            db.store("accounts", {"id": 1, "balance": 1})
+        db.store("accounts", {"id": 2, "balance": 2})
+    assert len(db.read("accounts")) == 2
+
+
+def test_transaction_keeps_other_threads_out(open_sqlstore_database: SQLStore):
+    """Another thread reads only after the transaction is over, so it never sees half of it."""
+    import threading
+
+    db = open_sqlstore_database
+    db.create_table("accounts", {"id": "INTEGER PRIMARY KEY", "balance": "INTEGER"})
+    db.store("accounts", {"id": 1, "balance": 100})
+    db.store("accounts", {"id": 2, "balance": 100})
+
+    seen: list[int] = []
+    inside = threading.Event()
+
+    def reader():
+        inside.wait(5)
+        seen.append(sum(r["balance"] for r in db.read("accounts")))
+
+    thread = threading.Thread(target=reader)
+    thread.start()
+    with db.transaction():
+        db.update("accounts", {"balance": 0}, condition="id = 1")
+        inside.set()
+        time.sleep(0.2)  # the reader is waiting for the lock here
+        db.update("accounts", {"balance": 200}, condition="id = 2")
+    thread.join(5)
+
+    assert seen == [200]
+
+
+def test_create_or_replace_table_is_refused_inside_a_transaction(open_sqlstore_database: SQLStore):
+    """create_or_replace_table() manages its own transaction and cannot join another one."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+
+    with pytest.raises(DBStorageSQLStoreError):
+        with db.transaction():
+            db.store("test_table", {"id": 1, "name": "kept out"})
+            db.create_or_replace_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT", "age": "INTEGER"})
+    assert db.read("test_table") == []
