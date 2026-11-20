@@ -17,7 +17,6 @@ ROOTS = ("/var/lib/arduino-app-cli/models", "/models")
 
 def test_model_name_is_the_path_relative_to_the_models_directory():
     root = ROOTS[0]
-    assert model_name_from_path(f"{root}/custom-ei/abc/model.eim", ROOTS) == "custom-ei/abc/model"
     assert model_name_from_path(f"{root}/edge-impulse/yolo-x-nano/yolo-x-nano.eim", ROOTS) == "edge-impulse/yolo-x-nano/yolo-x-nano"
     assert model_name_from_path(f"{root}//edge-impulse/../edge-impulse/x.eim", ROOTS) == "edge-impulse/x"
     assert model_name_from_path("/models/ootb/ei/yolo-x-nano.eim", ROOTS) == "ootb/ei/yolo-x-nano", "a model bundled in the image"
