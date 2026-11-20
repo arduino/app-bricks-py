@@ -999,3 +999,74 @@ def test_create_or_replace_table_is_refused_inside_a_transaction(open_sqlstore_d
             db.store("test_table", {"id": 1, "name": "kept out"})
             db.create_or_replace_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT", "age": "INTEGER"})
     assert db.read("test_table") == []
+
+
+@pytest.fixture
+def sqlstore_factory():
+    """Fixture to create SQLStore databases with options, all on the same file in a temporary directory."""
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
+        opened: list[SQLStore] = []
+
+        def create(**options) -> SQLStore:
+            with patch("os.makedirs"):
+                db = SQLStore(database_name="test", **options)
+            db.database_name = os.path.join(tmpdir, "test.db")
+            opened.append(db)
+            return db
+
+        yield create
+        for db in opened:
+            db.stop()
+        gc.collect()
+
+
+def _pragma(db: SQLStore, name: str):
+    res = db.execute_sql(f"PRAGMA {name}")
+    assert res is not None
+    return res[0][name]
+
+
+def test_default_journal_mode_and_synchronous(sqlstore_factory):
+    """Without options the database keeps the SQLite defaults: rollback journal, flush at every change."""
+    db = sqlstore_factory()
+    assert _pragma(db, "journal_mode") == "delete"
+    assert _pragma(db, "synchronous") == 2  # FULL
+
+
+def test_wal_journal_mode_with_normal_synchronous(sqlstore_factory):
+    """journal_mode="wal" and synchronous="normal" are applied when the database is opened."""
+    db = sqlstore_factory(journal_mode="wal", synchronous="normal")
+    assert _pragma(db, "journal_mode") == "wal"
+    assert _pragma(db, "synchronous") == 1  # NORMAL
+
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    assert db.store("test_table", {"name": "saved"}) == 1
+    assert os.path.exists(db.database_name + "-wal")
+    assert db.read("test_table") == [{"id": 1, "name": "saved"}]
+
+
+def test_journal_mode_is_saved_in_the_database_file(sqlstore_factory):
+    """The journal mode stays in the file until another one is set; synchronous does not."""
+    first = sqlstore_factory(journal_mode="wal", synchronous="normal")
+    first.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    first.stop()
+
+    reopened = sqlstore_factory()
+    assert _pragma(reopened, "journal_mode") == "wal"
+    assert _pragma(reopened, "synchronous") == 2  # FULL again: it is a setting of the connection
+    reopened.stop()
+
+    back = sqlstore_factory(journal_mode="delete")
+    assert _pragma(back, "journal_mode") == "delete"
+
+
+def test_invalid_journal_options(sqlstore_factory):
+    """Unknown values are rejected, and so is synchronous="normal" without write-ahead logging."""
+    with pytest.raises(DBStorageSQLStoreError):
+        sqlstore_factory(journal_mode="memory")
+    with pytest.raises(DBStorageSQLStoreError):
+        sqlstore_factory(synchronous="off")
+    with pytest.raises(DBStorageSQLStoreError):
+        sqlstore_factory(synchronous="normal")
+    with pytest.raises(DBStorageSQLStoreError):
+        sqlstore_factory(journal_mode="delete", synchronous="normal")
