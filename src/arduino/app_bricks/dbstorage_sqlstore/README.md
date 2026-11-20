@@ -61,6 +61,14 @@ data = {
 user_id = db.store("users", data)  # the id the database assigned to the new record
 ```
 
+To save a value that may already be there, such as a setting stored under its name, tell `store()` what to do with a record that has the same key:
+
+```python
+db.create_table("settings", {"key": "TEXT PRIMARY KEY", "value": "TEXT"})
+db.store("settings", {"key": "theme", "value": "dark"}, on_conflict="replace")   # insert, or replace the old value
+db.store("settings", {"key": "theme", "value": "light"}, on_conflict="ignore")   # insert only if missing
+```
+
 Query, update and delete records:
 
 ```python

@@ -5,7 +5,7 @@
 import sqlite3
 import os
 import threading
-from typing import Any
+from typing import Any, Literal
 
 from arduino.app_utils import brick, Logger
 
@@ -173,7 +173,13 @@ class SQLStore:
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error dropping table {table}: {e}")
 
-    def store(self, table: str, data: dict[str, Any], create_table: bool = True) -> int:
+    def store(
+        self,
+        table: str,
+        data: dict[str, Any],
+        create_table: bool = True,
+        on_conflict: Literal["replace", "ignore"] | None = None,
+    ) -> int:
         """Store data in the specified table with automatic table creation. By default, it creates the table if it doesn't exist.
 
         Args:
@@ -182,10 +188,15 @@ class SQLStore:
                 Supported types: int (INTEGER), float (REAL), str (TEXT), bytes (BLOB).
             create_table (bool, optional): If True, create the table if it doesn't exist
                 using automatic type inference. Defaults to True.
+            on_conflict (Optional[str], optional): What to do when the record has the same
+                primary key, or the same value in a `UNIQUE` column, as a record already in the
+                table. "replace" stores the new record in place of the old one, "ignore" keeps the
+                old one. With None, the default, the conflict is an error.
 
         Returns:
             int: The row id of the inserted record. In a table with an `INTEGER PRIMARY KEY` column it
                 is the value of that column, so a record stored without it gets its id back.
+                0 if the record was ignored because of a conflict.
 
         Raises:
             DBStorageSQLStoreError: If there is an error inserting data or creating the table.
@@ -211,14 +222,18 @@ class SQLStore:
 
         columns = ", ".join(data.keys())
         placeholders = ", ".join(["?"] * len(data))
-        sql = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+        if on_conflict not in (None, "replace", "ignore"):
+            raise DBStorageSQLStoreError(f"Unsupported on_conflict value: {on_conflict!r}, use 'replace' or 'ignore'")
+        insert = f"INSERT OR {on_conflict.upper()}" if on_conflict else "INSERT"
+        sql = f"{insert} INTO {table} ({columns}) VALUES ({placeholders})"
 
         try:
             with self.conn_lock:
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 cursor.execute(sql, tuple(data.values()))
-                row_id = cursor.lastrowid or 0
+                # An ignored record inserts no row: lastrowid would still be the one of an earlier insert
+                row_id = (cursor.lastrowid or 0) if cursor.rowcount > 0 else 0
                 conn.commit()
             logger.debug(f"Inserted data into {table}: {data}")
             return row_id

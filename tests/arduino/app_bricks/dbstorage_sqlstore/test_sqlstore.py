@@ -849,3 +849,39 @@ def test_condition_with_wrong_number_of_parameters(open_sqlstore_database: SQLSt
         db.read("test_table", condition="id = ?")
     with pytest.raises(DBStorageSQLStoreError):
         db.update("test_table", {"name": "x"}, condition="id = ?", args=(1, 2))
+
+
+def test_store_on_conflict_replace(open_sqlstore_database: SQLStore):
+    """on_conflict="replace" stores the record in place of the one with the same key."""
+    db = open_sqlstore_database
+    db.create_table("settings", {"key": "TEXT PRIMARY KEY", "value": "TEXT"})
+
+    db.store("settings", {"key": "matrix", "value": "uno_q"}, on_conflict="replace")
+    db.store("settings", {"key": "matrix", "value": "modulino"}, on_conflict="replace")
+    db.store("settings", {"key": "other", "value": "1"}, on_conflict="replace")
+
+    assert db.read("settings", order_by="key") == [{"key": "matrix", "value": "modulino"}, {"key": "other", "value": "1"}]
+
+
+def test_store_on_conflict_ignore(open_sqlstore_database: SQLStore):
+    """on_conflict="ignore" keeps the record already in the table and returns 0."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+
+    assert db.store("test_table", {"id": 1, "name": "first"}, on_conflict="ignore") == 1
+    assert db.store("test_table", {"id": 1, "name": "second"}, on_conflict="ignore") == 0
+    assert db.store("test_table", {"id": 2, "name": "third"}, on_conflict="ignore") == 2
+    assert [r["name"] for r in db.read("test_table", order_by="id")] == ["first", "third"]
+
+
+def test_store_conflict_is_an_error_by_default(open_sqlstore_database: SQLStore):
+    """Without on_conflict a duplicate key is still an error, and unknown values are rejected."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    db.store("test_table", {"id": 1, "name": "first"})
+
+    with pytest.raises(DBStorageSQLStoreError):
+        db.store("test_table", {"id": 1, "name": "second"})
+    with pytest.raises(DBStorageSQLStoreError):
+        db.store("test_table", {"id": 3, "name": "x"}, on_conflict="update")  # type: ignore[arg-type]
+    assert db.read("test_table") == [{"id": 1, "name": "first"}]
