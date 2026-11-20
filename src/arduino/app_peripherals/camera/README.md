@@ -140,13 +140,16 @@ For hosting a WebSocket server that receives frames from a single client at a ti
 **Features:**
 - **Single client limitation**: Only one client can connect at a time
 - Stream data from any client with WebSockets support
-- Base64, binary, and JSON frame formats
+- Binary frames, or text frames encoded in Base64
 - Supports 8-bit images (e.g. JPEG, PNG 8-bit)
+- Optional authentication and encryption of the frames with a pre-shared `secret`
 
 ```python
 camera = Camera("ws://0.0.0.0:8080", timeout=5)
 camera = WebSocketCamera(8080, timeout=5)
 ```
+
+By default the camera expects every frame wrapped in its own message framing, which the client has to implement. A client that sends plain frames must add `raw=true` to the address, which is honored only when the camera has no `secret`.
 
 Client implementation example:
 ```python
@@ -159,7 +162,7 @@ import websockets.exceptions as wsexc
 
 # Open camera
 camera = cv2.VideoCapture(0)
-with wsclient.connect("ws://<board-address>:8080") as websocket:
+with wsclient.connect("ws://<board-address>:8080?raw=true") as websocket:
     while True:
         time.sleep(1.0 / 15.0)  # 15 FPS
         ret, frame = camera.read()
