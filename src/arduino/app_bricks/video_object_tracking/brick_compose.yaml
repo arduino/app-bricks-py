@@ -15,7 +15,7 @@ services:
     volumes:
       # The .eim models installed by the app CLI, next to the out-of-the-box ones of the image (/models/ootb/ei)
       - ${MODELS_PATH:-/var/lib/arduino-app-cli/models}/edge-impulse:/models/edge-impulse:ro
-      - ${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks/models/custom-ei}:/models/custom:ro
+      - ${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks}:/models/custom:ro
       # The socket the brick connects to, /app/.cache/video_object_tracking/ei.sock in the app container
       - "${APP_HOME:-.}/.cache/video_object_tracking:/ipc"
       # Mount hexagon firmware

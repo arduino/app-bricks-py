@@ -19,7 +19,7 @@ variables:
 - name: CUSTOM_MODEL_PATH
   description: Path to the custom model directory
   hidden: true
-  default_value: /home/arduino/.arduino-bricks/models/custom-ei
+  default_value: /home/arduino/.arduino-bricks/ei-models
 - name: BIND_ADDRESS
   description: Bind address
   hidden: true
