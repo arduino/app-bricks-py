@@ -21,6 +21,8 @@ It provides thread-safe database operations using SQLite as the underlying datab
 - Automatic table creation with type inference from data
 - Flexible data querying with `WHERE`, `ORDER BY`, and `LIMIT` clauses
 - Schema management with column addition and removal capabilities
+- Transactions to save several changes together
+- Optional write-ahead logging for faster writes
 - Raw SQL execution for advanced operations
 - Named column access using `sqlite3.Row` factory
 
@@ -58,7 +60,15 @@ data = {
     "name": "Alice",
     "age": 30
 }
-db.store("users", data)
+user_id = db.store("users", data)  # the id the database assigned to the new record
+```
+
+To save a value that may already be there, such as a setting stored under its name, tell `store()` what to do with a record that has the same key:
+
+```python
+db.create_table("settings", {"key": "TEXT PRIMARY KEY", "value": "TEXT"})
+db.store("settings", {"key": "theme", "value": "dark"}, on_conflict="replace")   # insert, or replace the old value
+db.store("settings", {"key": "theme", "value": "light"}, on_conflict="ignore")   # insert only if missing
 ```
 
 Query, update and delete records:
@@ -67,15 +77,51 @@ Query, update and delete records:
 # Read rows (columns, condition, order_by and limit are optional)
 rows = db.read("users", condition="age > 18", order_by="name ASC", limit=10)
 
-# Update rows matching a condition
-db.update("users", {"age": 31}, condition="name = 'Alice'")
+# Update rows matching a condition: the result is the number of rows updated
+updated = db.update("users", {"age": 31}, condition="name = 'Alice'")
+if updated == 0:
+    print("No user named Alice")
 
 # Delete rows matching a condition (without a condition ALL records are deleted)
-db.delete("users", condition="name = 'Alice'")
+deleted = db.delete("users", condition="name = 'Alice'")
+
+# Count or summarize rows: a column can be an SQL expression, named with AS
+stats = db.read("users", columns=["COUNT(*) AS total", "MAX(age) AS oldest"])[0]
+print(stats["total"], stats["oldest"])
 
 # Raw SQL for advanced operations
 result = db.execute_sql("SELECT COUNT(*) FROM users")
 ```
+
+When a condition contains a value that comes from outside your code, such as text typed by a user or a field of a web request, write `?` in the condition and pass the value in `args`. The value is then never read as SQL, so it cannot change the query:
+
+```python
+name = "O'Brien"  # e.g. received from a web page
+rows = db.read("users", condition="name = ?", args=(name,))
+db.update("users", {"age": 42}, condition="name = ?", args=(name,))
+db.delete("users", condition="name = ? AND age < ?", args=(name, 18))
+```
+
+To make several changes that belong together, such as renumbering a list of records, group them in a transaction. They are saved together when the block ends, or not at all if the block raises an exception, and saving them together is faster than one by one:
+
+```python
+with db.transaction():
+    for position, user_id in enumerate(ordered_ids, start=1):
+        db.update("users", {"position": position}, condition="id = ?", args=(user_id,))
+```
+
+## Faster writes for apps that save often
+
+By default every change is written and flushed to disk before the call returns. It survives even a power loss right after it, but each change waits for the storage of the board, a few milliseconds or more. An app that saves at every user action, such as an editor that stores each stroke, can ask for faster writes:
+
+```python
+db = SQLStore("example.db", journal_mode="wal", synchronous="normal")
+```
+
+- `journal_mode="wal"` turns on SQLite's write-ahead logging: changes are appended to an `example.db-wal` file next to the database. The mode is saved in the database file and stays in use until another one is set.
+- `synchronous="normal"` flushes the changes to disk at intervals instead of at every change. It requires `journal_mode="wal"`.
+
+What you give up: the last changes made before a **power loss or a system crash** can be lost. The database is never corrupted, and nothing is lost when only the app stops or crashes. Keep the defaults when a record must be on disk as soon as it is stored, for example a measurement you cannot take again.
 
 ## Understanding Database Operations
 
