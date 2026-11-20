@@ -1070,3 +1070,20 @@ def test_invalid_journal_options(sqlstore_factory):
         sqlstore_factory(synchronous="normal")
     with pytest.raises(DBStorageSQLStoreError):
         sqlstore_factory(journal_mode="delete", synchronous="normal")
+
+
+def test_read_with_expressions_as_columns(open_sqlstore_database: SQLStore):
+    """The columns of read() can be SQL expressions, named with AS."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "age": "INTEGER"})
+
+    # On an empty table an aggregate still answers one row, with NULL values
+    assert db.read("test_table", columns=["COUNT(*) AS total", "MAX(id) AS last_id"]) == [{"total": 0, "last_id": None}]
+
+    for age in (30, 17, 41):
+        db.store("test_table", {"age": age})
+    assert db.read("test_table", columns=["COUNT(*) AS total", "MAX(id) AS last_id", "MIN(age) AS youngest"]) == [
+        {"total": 3, "last_id": 3, "youngest": 17}
+    ]
+    assert db.read("test_table", columns=["COUNT(*) AS adults"], condition="age >= ?", args=(18,)) == [{"adults": 2}]
+    assert db.read("test_table", columns=["id", "age * 2 AS doubled"], order_by="id", limit=1) == [{"id": 1, "doubled": 60}]

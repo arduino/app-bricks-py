@@ -85,6 +85,10 @@ if updated == 0:
 # Delete rows matching a condition (without a condition ALL records are deleted)
 deleted = db.delete("users", condition="name = 'Alice'")
 
+# Count or summarize rows: a column can be an SQL expression, named with AS
+stats = db.read("users", columns=["COUNT(*) AS total", "MAX(age) AS oldest"])[0]
+print(stats["total"], stats["oldest"])
+
 # Raw SQL for advanced operations
 result = db.execute_sql("SELECT COUNT(*) FROM users")
 ```

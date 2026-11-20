@@ -346,6 +346,8 @@ class SQLStore:
         Args:
             table (str): Name of the table to read from.
             columns (Optional[list[str]], optional): List of column names to select.
+                An item can also be an SQL expression, such as "COUNT(*) AS total" or
+                "MAX(id) AS last_id": name it with AS to read it from the result.
                 If None, selects all columns. Defaults to None.
             condition (Optional[str], optional): WHERE clause for filtering results
                 (e.g., "age > 18"). Use `?` for the values and pass them in `args`
