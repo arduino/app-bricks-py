@@ -147,7 +147,7 @@ class SQLStore:
     def transaction(self) -> Generator[None]:
         """Group several operations so that they are saved together, or not at all.
 
-        Use it as a context manager. The changes made inside the block are committed when the
+        Use it as a context manager, `with db.transaction():`. The changes made inside the block are committed when the
         block ends; if the block raises an exception they are all undone and the exception
         continues. While the block runs, the other threads wait before reading or writing the
         database, so they never see half of the changes. Keep the block short.
@@ -157,11 +157,6 @@ class SQLStore:
 
         Transactions can be nested: the changes are committed when the outermost block ends.
         `create_or_replace_table()` cannot be used inside a transaction.
-
-        Example:
-            with db.transaction():
-                db.update("accounts", {"balance": 50}, condition="id = ?", args=(1,))
-                db.update("accounts", {"balance": 150}, condition="id = ?", args=(2,))
 
         Raises:
             DBStorageSQLStoreError: If there is an error committing the changes.
