@@ -460,6 +460,29 @@ class TestWebSocketClientEvents:
         assert "disconnected" in events[1][0]
 
 
+class TestWebSocketRestart:
+    """Test a WebSocket microphone that is stopped and started again."""
+
+    @pytest.mark.asyncio
+    async def test_status_is_reported_after_restart(self):
+        """Test that status changes are still reported after the microphone is stopped and started again."""
+        loop = asyncio.get_running_loop()
+        connected = asyncio.Event()
+
+        mic = WebSocketMicrophone(port=0)
+        mic.on_status_changed(lambda status, info: loop.call_soon_threadsafe(connected.set) if status == "connected" else None)
+        mic.start()
+        mic.stop()
+        mic.start()
+
+        async with websockets.connect(mic.url) as ws:
+            await ws.recv()  # Welcome
+            await ws.send(BPPCodec().encode(np.zeros(128, dtype=np.int16).tobytes()))
+            await asyncio.wait_for(connected.wait(), timeout=2)
+
+        mic.stop()
+
+
 class TestWebSocketClientDisconnection:
     """Test WebSocket client disconnection handling."""
 

@@ -95,6 +95,26 @@ async def test_tls_connectivity():
 
 
 @pytest.mark.asyncio
+async def test_status_is_reported_after_restart(codec):
+    """Test that status changes are still reported after the sensor is stopped and started again."""
+    loop = asyncio.get_running_loop()
+    connected = asyncio.Event()
+
+    sensor = RemoteSensor(port=0)
+    sensor.on_status_changed(lambda status, info: loop.call_soon_threadsafe(connected.set) if status == "connected" else None)
+    sensor.start()
+    sensor.stop()
+    sensor.start()
+
+    async with websockets.connect(sensor.url) as ws:
+        await ws.recv()  # Welcome
+        await ws.send(codec.encode(b"{}"))
+        await asyncio.wait_for(connected.wait(), timeout=2)
+
+    sensor.stop()
+
+
+@pytest.mark.asyncio
 async def test_client_reconnection(codec):
     """Test that a client can reconnect after disconnecting."""
     received_data = []
