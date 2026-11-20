@@ -606,6 +606,9 @@ class SQLStore:
                         conn.rollback()
                     logger.error(f"Error adding column {col} to {table}: {e}")
                     raise DBStorageSQLStoreError(f"Error adding column {col} to {table}: {e}")
+            # Save the new schema: until the commit it is only pending on this connection
+            with self.conn_lock:
+                conn.commit()
             logger.debug(f"Table {table} schema aligned. Added columns: {list(to_add.keys())}, dropped: {dropped}")
         except Exception as exc:
             logger.error(f"Schema change failed for table {table}: {exc}")
@@ -617,5 +620,7 @@ class SQLStore:
                 self.drop_table(table)
                 self.create_table(table, columns)
                 logger.debug(f"Table {table} dropped and recreated with new schema: {columns}")
+            elif isinstance(exc, sqlite3.Error):
+                raise DBStorageSQLStoreError(f"Error updating the schema of table {table}: {exc}") from exc
             else:
                 raise

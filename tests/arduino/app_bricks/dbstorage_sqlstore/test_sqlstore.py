@@ -1136,3 +1136,54 @@ def test_failed_operation_inside_a_transaction_is_left_to_the_block(open_sqlstor
         db.store("test_table", {"id": 2, "name": "second"})
 
     assert [r["name"] for r in db.read("test_table", order_by="id")] == ["first", "second"]
+
+
+def test_create_or_replace_table_commits_the_schema_change(open_sqlstore_database: SQLStore):
+    """The new schema is saved when the call returns, without waiting for another write."""
+    import sqlite3
+
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER", "name": "TEXT"})
+    db.store("test_table", {"id": 1, "name": "first"})
+
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER"})
+
+    assert db.conn is not None and not db.conn.in_transaction
+    # A second connection sees the new column, as the app would after a restart
+    other = sqlite3.connect(db.database_name)
+    assert [row[1] for row in other.execute("PRAGMA table_info(test_table)")] == ["id", "name", "age"]
+    other.close()
+
+
+def test_create_or_replace_table_twice_in_a_row(open_sqlstore_database: SQLStore):
+    """Schema changes can follow each other, also when one of them changes nothing."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER", "name": "TEXT"})
+
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER"})
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER"})  # nothing to change
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER", "city": "TEXT"})
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "city": "TEXT"})
+
+    db.store("test_table", {"id": 1, "city": "Turin"})
+    assert db.read("test_table") == [{"id": 1, "city": "Turin"}]
+    assert db.conn is not None and not db.conn.in_transaction
+
+
+def test_create_or_replace_table_refused_change_leaves_no_open_transaction(open_sqlstore_database: SQLStore):
+    """A refused schema change is rolled back and reported with the brick's own error."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER", "name": "TEXT"})
+
+    with pytest.raises(DBStorageSQLStoreError):
+        db.create_or_replace_table("test_table", {"id": "TEXT", "name": "TEXT"})
+    assert db.conn is not None and not db.conn.in_transaction
+
+    # An SQLite error while changing the schema is not raised as it is
+    with patch.object(db, "conn_lock"), patch.object(db, "conn") as conn:
+        import sqlite3
+
+        conn.cursor.return_value.fetchone.return_value = ("test_table",)
+        conn.execute.side_effect = sqlite3.OperationalError("cannot start a transaction within a transaction")
+        with pytest.raises(DBStorageSQLStoreError):
+            db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER"})
