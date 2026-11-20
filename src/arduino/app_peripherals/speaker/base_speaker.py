@@ -86,7 +86,7 @@ class BaseSpeaker(ABC):
         # Status handling
         self._status: Literal["disconnected", "connected"] = "disconnected"
         self._on_status_changed_cb: Callable[[str, dict[str, Any]], None] | None = None
-        self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="SpeakerCallbacksRunner")
+        self._event_executor = self._new_event_executor()
 
     @property
     def volume(self) -> int:
@@ -148,6 +148,11 @@ class BaseSpeaker(ABC):
                     )
                     time.sleep(delay)
 
+    @staticmethod
+    def _new_event_executor() -> ThreadPoolExecutor:
+        """Create the executor that runs the status callbacks one at a time, in order."""
+        return ThreadPoolExecutor(max_workers=1, thread_name_prefix="SpeakerCallbacksRunner")
+
     def stop(self) -> None:
         """Stop the speaker and release resources."""
         with self._spkr_lock:
@@ -158,7 +163,9 @@ class BaseSpeaker(ABC):
 
             try:
                 self._close_speaker()
+                # A shut down executor cannot run the status callbacks of the next start
                 self._event_executor.shutdown()
+                self._event_executor = self._new_event_executor()
                 self._is_started = False
                 self.logger.info(f"Successfully stopped {self.name}")
             except Exception as e:

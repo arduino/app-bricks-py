@@ -87,7 +87,7 @@ class BaseMicrophone(ABC):
         # Status handling
         self._status: Literal["disconnected", "connected", "streaming", "paused"] = "disconnected"
         self._on_status_changed_cb: Callable[[str, dict[str, Any]], None] | None = None
-        self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MicrophoneCallbacksRunner")
+        self._event_executor = self._new_event_executor()
 
     @property
     def volume(self) -> int:
@@ -154,6 +154,11 @@ class BaseMicrophone(ABC):
                     )
                     time.sleep(delay)
 
+    @staticmethod
+    def _new_event_executor() -> ThreadPoolExecutor:
+        """Create the executor that runs the status callbacks one at a time, in order."""
+        return ThreadPoolExecutor(max_workers=1, thread_name_prefix="MicrophoneCallbacksRunner")
+
     def stop(self) -> None:
         """Stop the microphone and release resources."""
         with self._mic_lock:
@@ -164,7 +169,9 @@ class BaseMicrophone(ABC):
 
             try:
                 self._close_microphone()
+                # A shut down executor cannot run the status callbacks of the next start
                 self._event_executor.shutdown()
+                self._event_executor = self._new_event_executor()
                 self._is_started = False
                 self.logger.debug(f"Successfully stopped {self.name}")
             except Exception as e:
