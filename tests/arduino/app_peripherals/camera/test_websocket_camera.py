@@ -185,6 +185,31 @@ async def test_websocket_camera_single_client():
 
 
 @pytest.mark.asyncio
+async def test_websocket_camera_rejected_client_leaves_active_client_untouched(bpp_frame_binary):
+    """Test that a rejected client changes neither the name nor the frames of the active one."""
+    loop = asyncio.get_running_loop()
+    connected = asyncio.Event()
+
+    camera = WebSocketCamera(port=0)
+    camera.on_status_changed(lambda status, info: loop.call_soon_threadsafe(connected.set) if status == "connected" else None)
+    camera.start()
+
+    async with websockets.connect(camera.url + "?client_name=first") as first:
+        await first.recv()  # Welcome
+
+        async with websockets.connect(camera.url + "?client_name=second&raw=true") as second:
+            rejection = json.loads(await second.recv())
+            assert rejection["error"] == "Server busy"
+
+        await first.send(bpp_frame_binary)
+        await asyncio.wait_for(connected.wait(), timeout=2)
+        assert camera.capture() is not None
+        assert camera.name == "first"
+
+    camera.stop()
+
+
+@pytest.mark.asyncio
 async def test_websocket_camera_welcome_message():
     """Test that welcome message is sent to connected client (BPP-wrapped)."""
     codec = BPPCodec("", enable_encryption=False)
@@ -308,7 +333,7 @@ def test_websocket_camera_with_adjustments(sample_frame):
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_client_events():
+async def test_websocket_camera_client_events(bpp_frame_binary):
     """
     Test that WebSocket camera emits connection and disconnection events depending on client activity.
     """
@@ -340,8 +365,8 @@ async def test_websocket_camera_client_events():
 
     # This should emit connection and disconnection events
     async def client_task():
-        async with websockets.connect(camera.url + "?client_name=test_client"):
-            pass
+        async with websockets.connect(camera.url + "?client_name=test_client") as ws:
+            await ws.send(bpp_frame_binary)
 
     # Run client concurrently to properly test event handling
     client = asyncio.create_task(client_task())
@@ -401,7 +426,7 @@ async def test_websocket_camera_start_stop_events():
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_stop_event():
+async def test_websocket_camera_stop_event(bpp_frame_binary):
     """
     Test that WebSocket camera emits a disconnection event when stopped if
     there's an active client connection.
@@ -423,8 +448,8 @@ async def test_websocket_camera_stop_event():
 
     # This should emit a connection event but no disconnection event
     async def client_task():
-        async with websockets.connect(camera.url):
-            pass
+        async with websockets.connect(camera.url) as ws:
+            await ws.send(bpp_frame_binary)
         await can_close.wait()
 
     asyncio.create_task(client_task())
@@ -444,6 +469,69 @@ async def test_websocket_camera_stop_event():
 
 
 TEST_SECRET = "test-secret-key"
+JPEG_FRAME = cv2.imencode(".jpg", np.zeros((8, 8, 3), dtype=np.uint8))[1].tobytes()
+SECURITY_MODES = [(None, False), (TEST_SECRET, False), (TEST_SECRET, True)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("secret, encrypt", SECURITY_MODES)
+async def test_connected_at_first_valid_message(secret, encrypt):
+    """Test that the client is connected when its first valid message arrives, not when the socket opens."""
+    loop = asyncio.get_running_loop()
+    connected = asyncio.Event()
+    codec = BPPCodec(secret or "", encrypt)
+
+    camera = WebSocketCamera(port=0, secret=secret, encrypt=encrypt)
+    camera.on_status_changed(lambda status, info: loop.call_soon_threadsafe(connected.set) if status == "connected" else None)
+    camera.start()
+
+    async with websockets.connect(camera.url) as ws:
+        await ws.recv()  # Welcome
+        assert camera.status == "disconnected"
+
+        await ws.send(codec.encode(JPEG_FRAME))
+        await asyncio.wait_for(connected.wait(), timeout=2)
+        assert camera.status == "connected"
+
+    camera.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("secret, encrypt", SECURITY_MODES)
+async def test_silent_client_is_not_connected(secret, encrypt):
+    """Test that a client that opens the socket and sends nothing causes no status change."""
+    events = []
+
+    camera = WebSocketCamera(port=0, secret=secret, encrypt=encrypt)
+    camera.on_status_changed(lambda status, info: events.append(status))
+    camera.start()
+
+    async with websockets.connect(camera.url) as ws:
+        await ws.recv()  # Welcome
+
+    camera.stop()
+
+    assert events == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("encrypt", [False, True])
+async def test_wrong_secret_client_is_not_connected(encrypt):
+    """Test that a client sending messages with a wrong secret causes no status change."""
+    events = []
+    wrong_codec = BPPCodec("wrong-secret", encrypt)
+
+    camera = WebSocketCamera(port=0, secret=TEST_SECRET, encrypt=encrypt)
+    camera.on_status_changed(lambda status, info: events.append(status))
+    camera.start()
+
+    async with websockets.connect(camera.url) as ws:
+        await ws.recv()  # Welcome
+        await ws.send(wrong_codec.encode(JPEG_FRAME))
+
+    camera.stop()
+
+    assert events == []
 
 
 @pytest.mark.asyncio
