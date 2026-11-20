@@ -232,6 +232,7 @@ class SQLStore:
         condition: str | None = None,
         order_by: str | None = None,
         limit: int | None = -1,
+        args: tuple[Any, ...] | None = None,
     ) -> list[dict[str, Any]]:
         """Get data from the specified table with flexible filtering options. If the table does not exist, it returns an empty list.
 
@@ -240,11 +241,15 @@ class SQLStore:
             columns (Optional[list[str]], optional): List of column names to select.
                 If None, selects all columns. Defaults to None.
             condition (Optional[str], optional): WHERE clause for filtering results
-                (e.g., "age > 18"). Defaults to None.
+                (e.g., "age > 18"). Use `?` for the values and pass them in `args`
+                (e.g., "age > ?"). Defaults to None.
             order_by (Optional[str], optional): ORDER BY clause for sorting results
                 (e.g., "name ASC"). Defaults to None.
             limit (Optional[int], optional): Maximum number of rows to return.
                 Use -1 or None for no limit. Defaults to -1.
+            args (Optional[tuple], optional): Values for the `?` placeholders of the condition,
+                in order. Values passed this way are never read as SQL, so text coming from a
+                user or a request cannot change the query. Defaults to None.
 
         Returns:
             list[dict[str, Any]]: List of dictionaries representing the rows, where each
@@ -270,7 +275,7 @@ class SQLStore:
             with self.conn_lock:
                 conn = self._get_connection()
                 cursor = conn.cursor()
-                cursor.execute(sql)
+                cursor.execute(sql, args or ())
                 col_names = [description[0] for description in cursor.description]
                 rows = cursor.fetchall()
             return [dict(zip(col_names, row)) for row in rows]
@@ -279,14 +284,17 @@ class SQLStore:
                 return []
             raise DBStorageSQLStoreError(f"Error reading data from {table}: {e}")
 
-    def update(self, table: str, data: dict[str, Any], condition: str | None = "") -> int:
+    def update(self, table: str, data: dict[str, Any], condition: str | None = "", args: tuple[Any, ...] | None = None) -> int:
         """Update data or records in the specified table.
 
         Args:
             table (str): Name of the table to update.
             data (dict[str, Any]): Dictionary of column names and their new values.
             condition (Optional[str], optional): WHERE clause for filtering which records
-                to update (e.g., "id = 1"). If empty, updates all records. Defaults to "".
+                to update (e.g., "id = 1", or "id = ?" with the value in `args`).
+                If empty, updates all records. Defaults to "".
+            args (Optional[tuple], optional): Values for the `?` placeholders of the condition,
+                in order. Defaults to None.
 
         Returns:
             int: The number of records updated, 0 if none matched the condition.
@@ -307,7 +315,7 @@ class SQLStore:
             with self.conn_lock:
                 conn = self._get_connection()
                 cursor = conn.cursor()
-                cursor.execute(sql, tuple(data.values()))
+                cursor.execute(sql, tuple(data.values()) + tuple(args or ()))
                 updated = cursor.rowcount
                 conn.commit()
             logger.debug(f"Updated data in {table}: {data} where {condition}")
@@ -315,13 +323,16 @@ class SQLStore:
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error updating data in {table}: {e}")
 
-    def delete(self, table: str, condition: str | None = "") -> int:
+    def delete(self, table: str, condition: str | None = "", args: tuple[Any, ...] | None = None) -> int:
         """Delete data from the specified table. If no condition is provided, this will delete ALL records from the table.
 
         Args:
             table (str): Name of the table to delete from.
             condition (Optional[str], optional): WHERE clause for filtering which records
-                to delete (e.g., "age < 18"). If empty, deletes all records. Defaults to "".
+                to delete (e.g., "age < 18", or "age < ?" with the value in `args`).
+                If empty, deletes all records. Defaults to "".
+            args (Optional[tuple], optional): Values for the `?` placeholders of the condition,
+                in order. Defaults to None.
 
         Returns:
             int: The number of records deleted, 0 if none matched the condition.
@@ -341,7 +352,7 @@ class SQLStore:
             with self.conn_lock:
                 conn = self._get_connection()
                 cursor = conn.cursor()
-                cursor.execute(sql)
+                cursor.execute(sql, args or ())
                 deleted = cursor.rowcount
                 conn.commit()
             logger.debug(f"Deleted data from {table} where {condition}")

@@ -810,3 +810,42 @@ def test_update_and_delete_return_the_affected_rows(open_sqlstore_database: SQLS
     assert db.delete("test_table", condition="id = 99") == 0
     assert db.delete("test_table", condition="id > 1") == 2
     assert db.delete("test_table") == 1
+
+
+def test_condition_with_parameters(open_sqlstore_database: SQLStore):
+    """read(), update() and delete() take the values of their condition as parameters."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT", "age": "INTEGER"})
+    for name, age in (("Alice", 30), ("Bob", 17), ("O'Brien", 41)):
+        db.store("test_table", {"name": name, "age": age})
+
+    assert [r["name"] for r in db.read("test_table", condition="age > ?", args=(18,), order_by="id")] == ["Alice", "O'Brien"]
+    # A quote in the value needs no escaping
+    assert db.read("test_table", condition="name = ?", args=("O'Brien",))[0]["age"] == 41
+    assert db.update("test_table", {"age": 18}, condition="name = ?", args=("Bob",)) == 1
+    assert db.read("test_table", condition="name = ? AND age = ?", args=("Bob", 18))[0]["id"] == 2
+    assert db.delete("test_table", condition="id IN (?, ?)", args=(1, 2)) == 2
+    assert [r["name"] for r in db.read("test_table")] == ["O'Brien"]
+
+
+def test_condition_parameters_are_not_read_as_sql(open_sqlstore_database: SQLStore):
+    """Text passed as a parameter cannot change the query."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    db.store("test_table", {"name": "Alice"})
+    db.store("test_table", {"name": "Bob"})
+
+    hostile = "x' OR '1'='1"
+    assert db.read("test_table", condition="name = ?", args=(hostile,)) == []
+    assert db.delete("test_table", condition="name = ?", args=(hostile,)) == 0
+    assert len(db.read("test_table")) == 2
+
+
+def test_condition_with_wrong_number_of_parameters(open_sqlstore_database: SQLStore):
+    """A condition whose placeholders do not match the parameters is an error."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    with pytest.raises(DBStorageSQLStoreError):
+        db.read("test_table", condition="id = ?")
+    with pytest.raises(DBStorageSQLStoreError):
+        db.update("test_table", {"name": "x"}, condition="id = ?", args=(1, 2))

@@ -79,6 +79,15 @@ deleted = db.delete("users", condition="name = 'Alice'")
 result = db.execute_sql("SELECT COUNT(*) FROM users")
 ```
 
+When a condition contains a value that comes from outside your code, such as text typed by a user or a field of a web request, write `?` in the condition and pass the value in `args`. The value is then never read as SQL, so it cannot change the query:
+
+```python
+name = "O'Brien"  # e.g. received from a web page
+rows = db.read("users", condition="name = ?", args=(name,))
+db.update("users", {"age": 42}, condition="name = ?", args=(name,))
+db.delete("users", condition="name = ? AND age < ?", args=(name, 18))
+```
+
 ## Understanding Database Operations
 
 The SQLStore automatically creates the database file inside the `/app/data` directory of your application. The brick supports automatic type inference when creating tables, mapping Python types (*int*, *float*, *str*, *bytes*) to corresponding SQLite column types (*INTEGER*, *REAL*, *TEXT*, *BLOB*).
