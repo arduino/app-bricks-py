@@ -639,6 +639,13 @@ class DecisionModel:
     state with calibrated probabilities. It is faster and more predictable than a chat LLM for routing,
     classification, grading and checks. A multimodal model (installed with its vision projector) also reads
     an image that comes with the state.
+
+    On the UNO Q the model runs on the CPU with one thread per core, the fastest setting as long as the
+    rest of the app is light on the CPU. An app that keeps another CPU-heavy task busy while the model
+    answers (for example object detection or video encoding on every camera frame) sets `LLAMA_ARG_THREADS`
+    to `3` in the `variables` of the Brick in `app.yaml`: one core is left to that task, and the model
+    answers faster than with four threads that share a core with it. The value applies to the whole
+    llama.cpp runner, so an app with more than one Brick on a `llamacpp:` model sets it on each of them.
     """
 
     LLAMACPP_MODEL = "llamacpp"
