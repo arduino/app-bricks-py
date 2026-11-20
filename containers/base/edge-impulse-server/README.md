@@ -23,7 +23,8 @@ without the extension, subdirectories included. The images bundle the out-of-the
 brick moving to these images adds its models to the matching folder, the first one in a folder with the
 `COPY` line of its image too, since a `COPY` matching no file fails the build. The compose file mounts the
 models the app CLI installs next to them,
-`edge-impulse/<dir>/<name>` and `custom-ei/<id>/model`.
+`edge-impulse/<dir>/<name>` and `custom-ei/<id>/model`, and the folder of the custom model selected for the
+brick, `custom/model`.
 
 ## Server arguments
 
