@@ -1087,3 +1087,52 @@ def test_read_with_expressions_as_columns(open_sqlstore_database: SQLStore):
     ]
     assert db.read("test_table", columns=["COUNT(*) AS adults"], condition="age >= ?", args=(18,)) == [{"adults": 2}]
     assert db.read("test_table", columns=["id", "age * 2 AS doubled"], order_by="id", limit=1) == [{"id": 1, "doubled": 60}]
+
+
+def test_failed_operation_leaves_no_open_transaction(open_sqlstore_database: SQLStore):
+    """A failed operation is rolled back at once: nothing stays pending on the connection."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    db.store("test_table", {"id": 1, "name": "first"})
+
+    failing = [
+        lambda: db.store("test_table", {"id": 1, "name": "duplicate"}),
+        lambda: db.update("test_table", {"missing_column": 1}),
+        lambda: db.delete("test_table", condition="missing_column = 1"),
+        lambda: db.execute_sql("INSERT INTO test_table (id, name) VALUES (1, 'duplicate')"),
+        lambda: db.execute_sql("UPDATE missing_table SET a = 1"),
+    ]
+    for operation in failing:
+        with pytest.raises(DBStorageSQLStoreError):
+            operation()
+        assert db.conn is not None and not db.conn.in_transaction
+
+    assert db.read("test_table") == [{"id": 1, "name": "first"}]
+
+
+def test_schema_change_after_a_failed_operation(open_sqlstore_database: SQLStore):
+    """create_or_replace_table() works right after an operation that failed."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER", "name": "TEXT"})
+    db.execute_sql("CREATE UNIQUE INDEX test_table_id ON test_table (id)")
+    db.store("test_table", {"id": 1, "name": "first"})
+    with pytest.raises(DBStorageSQLStoreError):
+        db.store("test_table", {"id": 1, "name": "duplicate"})
+
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER"})
+
+    assert db.read("test_table") == [{"id": 1, "name": "first", "age": None}]
+
+
+def test_failed_operation_inside_a_transaction_is_left_to_the_block(open_sqlstore_database: SQLStore):
+    """Inside transaction() a failed operation undoes nothing by itself: the block can handle the error and go on."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+
+    with db.transaction():
+        db.store("test_table", {"id": 1, "name": "first"})
+        with pytest.raises(DBStorageSQLStoreError):
+            db.store("test_table", {"id": 1, "name": "duplicate"})
+        db.store("test_table", {"id": 2, "name": "second"})
+
+    assert [r["name"] for r in db.read("test_table", order_by="id")] == ["first", "second"]

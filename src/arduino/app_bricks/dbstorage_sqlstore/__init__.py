@@ -143,6 +143,17 @@ class SQLStore:
         if self._transaction_depth == 0:
             conn.commit()
 
+    def _rollback_failed(self) -> None:
+        """Undo what a failed operation left pending, so that it cannot be committed by a later one.
+
+        SQLite opens a transaction at the first change and keeps it open until a commit or a
+        rollback: without this, the transaction of a failed operation would stay open. Inside
+        transaction() nothing is undone here: the block decides at its end.
+        """
+        with self.conn_lock:
+            if self.conn is not None and self._transaction_depth == 0:
+                self.conn.rollback()
+
     @contextmanager
     def transaction(self) -> Generator[None]:
         """Group several operations so that they are saved together, or not at all.
@@ -233,6 +244,7 @@ class SQLStore:
                 self._commit(conn)
             logger.debug(f"Created table {table} with columns {columns}")
         except sqlite3.Error as e:
+            self._rollback_failed()
             raise DBStorageSQLStoreError(f"Error creating table {table}: {e}")
 
     def drop_table(self, table: str) -> None:
@@ -258,6 +270,7 @@ class SQLStore:
                 self._commit(conn)
             logger.debug(f"Dropped table {table}")
         except sqlite3.Error as e:
+            self._rollback_failed()
             raise DBStorageSQLStoreError(f"Error dropping table {table}: {e}")
 
     def store(
@@ -325,6 +338,7 @@ class SQLStore:
             logger.debug(f"Inserted data into {table}: {data}")
             return row_id
         except sqlite3.Error as e:
+            self._rollback_failed()
             raise DBStorageSQLStoreError(f"Error inserting data into {table}: {e}")
 
     def read(
@@ -425,6 +439,7 @@ class SQLStore:
             logger.debug(f"Updated data in {table}: {data} where {condition}")
             return updated
         except sqlite3.Error as e:
+            self._rollback_failed()
             raise DBStorageSQLStoreError(f"Error updating data in {table}: {e}")
 
     def delete(self, table: str, condition: str | None = "", args: tuple[Any, ...] | None = None) -> int:
@@ -462,6 +477,7 @@ class SQLStore:
             logger.debug(f"Deleted data from {table} where {condition}")
             return deleted
         except sqlite3.Error as e:
+            self._rollback_failed()
             raise DBStorageSQLStoreError(f"Error deleting data from {table}: {e}")
 
     def execute_sql(self, sql: str, args: tuple[Any, ...] | None = None) -> list[dict[str, Any]] | None:
@@ -499,6 +515,7 @@ class SQLStore:
                     col_names = [description[0] for description in cursor.description]
             return [dict(zip(col_names, row)) for row in rows]
         except sqlite3.Error as e:
+            self._rollback_failed()
             raise DBStorageSQLStoreError(f"Error executing SQL command: {e}")
 
     def create_or_replace_table(self, table: str, columns: dict[str, str], force_drop_table: bool = False) -> None:
