@@ -299,3 +299,27 @@ def test_prepare_fails_when_third_party_brick_requirements_cannot_be_installed(t
     brick = _third_party_brick(tmp_path, "a1b2c3", "camera", "no-such-package==9.9.9\n")
     _run(app, tmp_path, command="prepare", uv_fails_on=f"-r {brick}/requirements.txt", expect_failure=True)
     assert not (app / ".cache" / "third-party-bricks" / "camera" / "installed_requirements.txt").exists()
+
+
+def test_the_conflict_check_is_skipped_for_an_app_without_custom_or_third_party_bricks(tmp_path: Path):
+    app = _app(tmp_path, {"python/requirements.txt": "numpy\n"})
+    calls = _run(app, tmp_path)
+    assert not any("check_brick_conflicts" in c for c in calls), "no brick, no extra start of the interpreter"
+    assert calls[-1].startswith(f"python {app}/python/main.py")
+
+
+@pytest.mark.parametrize("bricks", ["custom", "third-party", "both"])
+def test_the_conflict_check_runs_right_before_the_app_when_it_has_bricks(tmp_path: Path, bricks: str):
+    app = _app(tmp_path, {"bricks/mine/__init__.py": ""} if bricks != "third-party" else None)
+    if bricks != "custom":
+        _third_party_brick(tmp_path, "a1b2c3", "camera")
+    calls = _run(app, tmp_path)
+    checks = [c for c in calls if "check_brick_conflicts" in c]
+    assert checks == [f"python -I /check_brick_conflicts.py {app}/python {app}/bricks {_third_party_dir(tmp_path)} VIRTUAL_ENV=none"]
+    assert calls[-2:] == [checks[0], f"python {app}/python/main.py VIRTUAL_ENV=none"]
+
+
+def test_the_conflict_check_does_not_run_at_prepare(tmp_path: Path):
+    app = _app(tmp_path, {"bricks/mine/__init__.py": ""})
+    _third_party_brick(tmp_path, "a1b2c3", "camera")
+    assert not any("check_brick_conflicts" in c for c in _run(app, tmp_path, command="prepare"))
