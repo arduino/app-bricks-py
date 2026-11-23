@@ -194,7 +194,7 @@ class ALSAMicrophone(BaseMicrophone):
                 pass  # A device name or path, resolved below
             case int() | str():
                 # An ordinal index selects the n-th plugged microphone
-                identifier = _nth_plugged_microphone(int(identifier))  # -> "usb:X" / "jack:X"
+                return _nth_plugged_microphone(int(identifier))
             case _:
                 raise MicrophoneConfigError(f"Invalid device type: {type(identifier)}")
 
@@ -537,20 +537,21 @@ def _nth_plugged_microphone(idx: int) -> str:
         idx (int): Index of the microphone to select (0-based).
 
     Returns:
-        str: Identifier of the n-th plugged microphone, "usb:X" or "jack:X",
-            where X is the 1-based ordinal index within its type.
+        str: Stable reference of the n-th plugged microphone, as listed by
+            list_usb_devices() or list_jack_devices().
 
     Raises:
         MicrophoneOpenError: If no microphone is plugged at the given index.
     """
-    # Count the very lists the "usb:X" / "jack:X" identifiers are resolved against
-    usb_count = len(ALSAMicrophone.list_usb_devices())
+    usb_devices = ALSAMicrophone.list_usb_devices()
+    usb_count = len(usb_devices)
     if idx < usb_count:
-        return f"usb:{idx + 1}"
+        return usb_devices[idx]
 
-    jack_count = len(ALSAMicrophone.list_jack_devices())  # Empty without media carrier
+    jack_devices = ALSAMicrophone.list_jack_devices()  # Empty without media carrier
+    jack_count = len(jack_devices)
     if idx - usb_count < jack_count:
-        return f"jack:{idx - usb_count + 1}"
+        return jack_devices[idx - usb_count]
 
     raise MicrophoneOpenError(
         f"No microphone found at index {idx}: only {usb_count + jack_count} microphone(s) plugged",

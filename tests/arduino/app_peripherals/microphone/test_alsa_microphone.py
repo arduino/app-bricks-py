@@ -432,6 +432,16 @@ class TestALSAMicrophoneUsbDiscovery:
 
         assert ALSAMicrophone(device=0).device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
 
+    def test_default_device_warns_once_when_pipewire_does_not_expose_it(self, mock_pw_dump, mock_usb_cards):
+        mock_pw_dump(usb_ids=())
+        mock_usb_cards(0)
+
+        with patch("arduino.app_peripherals.microphone.alsa_microphone.logger.warning") as warning:
+            ALSAMicrophone(device=0)
+
+        warnings = [call for call in warning.call_args_list if "not exposed by PipeWire" in call.args[0]]
+        assert len(warnings) == 1
+
     def test_alsa_microphones_follow_pipewire_ones_without_duplicates(self, mock_pw_dump, mock_usb_cards):
         mock_pw_dump(usb_ids=(50,))  # SomeCard only
         mock_usb_cards(0, 1)
@@ -615,7 +625,7 @@ class TestNthPluggedMicrophone:
     def test_usb_first_without_carrier(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
-        assert _nth_plugged_microphone(0) == "usb:1"
+        assert _nth_plugged_microphone(0) == "plughw:CARD=SomeCard,DEV=0"
 
     def test_out_of_range_without_carrier_raises(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
@@ -628,31 +638,31 @@ class TestNthPluggedMicrophone:
         mock_pw_dump(usb_ids=(50,))
         mock_usb_cards(0, 1)
 
-        assert _nth_plugged_microphone(1) == "usb:2"
+        assert _nth_plugged_microphone(1) == "plughw:CARD=AnotherCard,DEV=0"
 
     def test_usb_precedence_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
-        assert _nth_plugged_microphone(0) == "usb:1"
+        assert _nth_plugged_microphone(0) == "plughw:CARD=SomeCard,DEV=0"
 
     def test_jack_fallback_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
-        assert _nth_plugged_microphone(0) == "jack:1"
+        assert _nth_plugged_microphone(0) == "pipewire:NODE=alsa_input.platform-sound.Source-52"
 
     def test_index_spans_usb_then_jack_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
-        assert _nth_plugged_microphone(1) == "jack:1"
+        assert _nth_plugged_microphone(1) == "pipewire:NODE=alsa_input.platform-sound.Source-52"
 
     def test_second_jack_is_addressable_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
         mock_pw_dump(usb_ids=(), builtin_ids=(52, 54))
 
-        assert _nth_plugged_microphone(1) == "jack:2"
+        assert _nth_plugged_microphone(1) == "pipewire:NODE=alsa_input.platform-sound.Source-54"
 
     def test_out_of_range_jack_index_raises_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
