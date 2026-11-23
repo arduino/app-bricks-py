@@ -48,5 +48,5 @@ services:
     # The image's entrypoint runs as PID 1 and drops SIGTERM, so a stop would end in SIGKILL with
     # exit code 137 instead of a clean shutdown. Stopping hypercorn directly first makes it exit with 0.
     pre_stop:
-      - command: ["sh", "-c", "pid=$$(pgrep -o hypercorn) && kill -TERM $$pid || true"]
+      - command: ["sh", "-c", "pkill -TERM -o hypercorn || true"]
     command: ["hypercorn", "openapi_server.main:app", "--bind", "0.0.0.0:${GENAI_PORT:-9001}"]
