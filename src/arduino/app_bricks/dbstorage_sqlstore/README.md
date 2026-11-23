@@ -22,7 +22,7 @@ It provides thread-safe database operations using SQLite as the underlying datab
 - Flexible data querying with `WHERE`, `ORDER BY`, and `LIMIT` clauses
 - Schema management with column addition and removal capabilities
 - Transactions to save several changes together
-- Optional write-ahead logging for faster writes
+- Optional faster writes for apps that save often
 - Raw SQL execution for advanced operations
 - Named column access using `sqlite3.Row` factory
 
@@ -112,16 +112,15 @@ with db.transaction():
 
 ## Faster writes for apps that save often
 
-By default every change is written and flushed to disk before the call returns. It survives even a power loss right after it, but each change waits for the storage of the board, a few milliseconds or more. An app that saves at every user action, such as an editor that stores each stroke, can ask for faster writes:
+By default every change is flushed to disk before the call returns. It survives even a power loss right after it, but each change waits for the storage of the board, a few milliseconds or more. An app that saves at every user action, such as an editor that stores each stroke, can ask for faster writes:
 
 ```python
-db = SQLStore("example.db", journal_mode="wal", synchronous="normal")
+db = SQLStore("example.db", power_loss_safe=False)
 ```
 
-- `journal_mode="wal"` turns on SQLite's write-ahead logging: changes are appended to an `example.db-wal` file next to the database. The mode is saved in the database file and stays in use until another one is set.
-- `synchronous="normal"` flushes the changes to disk at intervals instead of at every change. It requires `journal_mode="wal"`.
+What you give up: the last changes made before a **power loss or a system crash** can be lost. The database is never corrupted, and nothing is lost when only the app stops or crashes. Keep the default when a record must be on disk as soon as it is stored, for example a measurement you cannot take again.
 
-What you give up: the last changes made before a **power loss or a system crash** can be lost. The database is never corrupted, and nothing is lost when only the app stops or crashes. Keep the defaults when a record must be on disk as soon as it is stored, for example a measurement you cannot take again.
+With fast writes the brick keeps a second file next to the database, `example.db-wal`, where the changes are appended. You can go back to the default at any start of the app: the database is safe again, and keeps its data.
 
 ## Understanding Database Operations
 

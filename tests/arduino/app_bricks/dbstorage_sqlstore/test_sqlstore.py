@@ -1026,16 +1026,17 @@ def _pragma(db: SQLStore, name: str):
     return res[0][name]
 
 
-def test_default_journal_mode_and_synchronous(sqlstore_factory):
-    """Without options the database keeps the SQLite defaults: rollback journal, flush at every change."""
+def test_power_loss_safe_is_the_default(sqlstore_factory):
+    """By default every change is flushed to disk, and the journal of the file is left as it is."""
     db = sqlstore_factory()
-    assert _pragma(db, "journal_mode") == "delete"
+    assert db.power_loss_safe is True
     assert _pragma(db, "synchronous") == 2  # FULL
+    assert _pragma(db, "journal_mode") == "delete"
 
 
-def test_wal_journal_mode_with_normal_synchronous(sqlstore_factory):
-    """journal_mode="wal" and synchronous="normal" are applied when the database is opened."""
-    db = sqlstore_factory(journal_mode="wal", synchronous="normal")
+def test_fast_writes_without_power_loss_safety(sqlstore_factory):
+    """power_loss_safe=False turns on write-ahead logging with the relaxed flush policy."""
+    db = sqlstore_factory(power_loss_safe=False)
     assert _pragma(db, "journal_mode") == "wal"
     assert _pragma(db, "synchronous") == 1  # NORMAL
 
@@ -1045,31 +1046,48 @@ def test_wal_journal_mode_with_normal_synchronous(sqlstore_factory):
     assert db.read("test_table") == [{"id": 1, "name": "saved"}]
 
 
-def test_journal_mode_is_saved_in_the_database_file(sqlstore_factory):
-    """The journal mode stays in the file until another one is set; synchronous does not."""
-    first = sqlstore_factory(journal_mode="wal", synchronous="normal")
-    first.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
-    first.stop()
+def test_safe_store_on_a_database_used_with_fast_writes(sqlstore_factory):
+    """A database that was used with fast writes is safe again when reopened with the default."""
+    fast = sqlstore_factory(power_loss_safe=False)
+    fast.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    fast.store("test_table", {"name": "written fast"})
+    fast.stop()
 
-    reopened = sqlstore_factory()
-    assert _pragma(reopened, "journal_mode") == "wal"
-    assert _pragma(reopened, "synchronous") == 2  # FULL again: it is a setting of the connection
-    reopened.stop()
+    safe = sqlstore_factory()
+    # The file keeps write-ahead logging, which is safe once every change is flushed
+    assert _pragma(safe, "journal_mode") == "wal"
+    assert _pragma(safe, "synchronous") == 2  # FULL
+    assert safe.store("test_table", {"name": "written safe"}) == 2
+    assert [r["name"] for r in safe.read("test_table", order_by="id")] == ["written fast", "written safe"]
+    safe.stop()
 
-    back = sqlstore_factory(journal_mode="delete")
-    assert _pragma(back, "journal_mode") == "delete"
+    fast_again = sqlstore_factory(power_loss_safe=False)
+    assert _pragma(fast_again, "synchronous") == 1  # NORMAL
+    assert len(fast_again.read("test_table")) == 2
 
 
-def test_invalid_journal_options(sqlstore_factory):
-    """Unknown values are rejected, and so is synchronous="normal" without write-ahead logging."""
-    with pytest.raises(DBStorageSQLStoreError):
-        sqlstore_factory(journal_mode="memory")
-    with pytest.raises(DBStorageSQLStoreError):
-        sqlstore_factory(synchronous="off")
-    with pytest.raises(DBStorageSQLStoreError):
-        sqlstore_factory(synchronous="normal")
-    with pytest.raises(DBStorageSQLStoreError):
-        sqlstore_factory(journal_mode="delete", synchronous="normal")
+def test_fast_writes_fall_back_to_safe_without_write_ahead_logging(sqlstore_factory):
+    """Where write-ahead logging is not available the relaxed flush policy is not used: it would not be safe."""
+    db = sqlstore_factory(power_loss_safe=False)
+    db.database_name = ":memory:"  # an in-memory database cannot use write-ahead logging
+
+    assert _pragma(db, "journal_mode") == "memory"
+    assert _pragma(db, "synchronous") == 2  # FULL
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    assert db.store("test_table", {"id": 1}) == 1
+
+
+def test_settings_changed_with_raw_sql_still_apply(sqlstore_factory):
+    """An app that tunes SQLite itself with execute_sql, as before this option existed, keeps working."""
+    db = sqlstore_factory()
+    db.start()
+    db.execute_sql("PRAGMA journal_mode=WAL")
+    db.execute_sql("PRAGMA synchronous=NORMAL")
+
+    assert _pragma(db, "journal_mode") == "wal"
+    assert _pragma(db, "synchronous") == 1  # NORMAL
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    assert db.store("test_table", {"id": 1}) == 1
 
 
 def test_read_with_expressions_as_columns(open_sqlstore_database: SQLStore):

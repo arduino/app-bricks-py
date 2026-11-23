@@ -34,51 +34,24 @@ class SQLStore:
     It is designed to be thread-safe and can be used in multi-threaded applications.
     """
 
-    def __init__(
-        self,
-        database_name: str = "arduino.db",
-        journal_mode: Literal["delete", "wal"] | None = None,
-        synchronous: Literal["full", "normal"] | None = None,
-    ) -> None:
+    def __init__(self, database_name: str = "arduino.db", power_loss_safe: bool = True) -> None:
         """Initialize the SQLStore client with automatic directory setup.
 
         Creates the database file in the `/app/data`. If the filename doesn't end with `.db`, the extension
         is automatically added.
 
-        By default every change is written and flushed to disk before the call returns: it survives
-        even a power loss right after it, but each change waits for the storage of the board, a few
-        milliseconds or more. An app that saves often (e.g. at every user action) can trade part of that
-        guarantee for speed with `journal_mode="wal"` and `synchronous="normal"`.
-
         Args:
             database_name (str, optional): Name of the SQLite database file.
                 Defaults to "arduino.db".
-            journal_mode (Optional[str], optional): How SQLite keeps a change safe while writing it.
-                "delete" is the SQLite default, a rollback journal. "wal" (write-ahead logging)
-                appends the changes to a `<database>-wal` file, which is faster and lets the other
-                programs that open the file read while one writes. The mode is saved in the database
-                file: it stays in use until another mode is set. With None, the default, the mode
-                of the file is left as it is.
-            synchronous (Optional[str], optional): When a change is flushed to disk. "full" is the
-                SQLite default: at every change. "normal" requires `journal_mode="wal"` and flushes
-                at intervals: changes are much faster and the database cannot be corrupted, but the
-                last changes made before a power loss or a system crash can be lost. Changes are
-                not lost when only the app stops or crashes. With None, the default, SQLite's
-                default is used.
-
-        Raises:
-            DBStorageSQLStoreError: If an option has an unsupported value, or "normal" is asked
-                without write-ahead logging.
+            power_loss_safe (bool, optional): Whether a change must be safe on disk as soon as it is
+                made. With True, the default, every change is flushed to disk before the call
+                returns: it survives even a power loss right after it, but each change waits for
+                the storage of the board, a few milliseconds or more. With False changes are much
+                faster, which suits an app that saves often (e.g. at every user action): the last
+                changes made before a power loss or a system crash can be lost, but the database is
+                never corrupted, and nothing is lost when only the app stops or crashes.
         """
-        if journal_mode not in (None, "delete", "wal"):
-            raise DBStorageSQLStoreError(f"Unsupported journal_mode: {journal_mode!r}, use 'delete' or 'wal'")
-        if synchronous not in (None, "full", "normal"):
-            raise DBStorageSQLStoreError(f"Unsupported synchronous: {synchronous!r}, use 'full' or 'normal'")
-        if synchronous == "normal" and journal_mode != "wal":
-            # Without write-ahead logging a power loss could corrupt the database, not just lose the last changes
-            raise DBStorageSQLStoreError("synchronous='normal' requires journal_mode='wal'")
-        self.journal_mode = journal_mode
-        self.synchronous = synchronous
+        self.power_loss_safe = bool(power_loss_safe)
         data_dir = "/app/data"
         os.makedirs(data_dir, exist_ok=True)
         self.database_name = f"{data_dir}/{database_name}"
@@ -108,16 +81,34 @@ class SQLStore:
             with self.conn_lock:
                 self.conn = sqlite3.connect(self.database_name, check_same_thread=False)
                 self.conn.row_factory = sqlite3.Row  # Enable named access to columns
-                if self.journal_mode:
-                    # The pragma answers with the mode in use: some filesystems cannot do write-ahead logging
-                    mode = self.conn.execute(f"PRAGMA journal_mode={self.journal_mode}").fetchone()[0]
-                    if mode != self.journal_mode:
-                        logger.warning(f"Journal mode '{self.journal_mode}' not available for {self.database_name}, using '{mode}'")
-                if self.synchronous:
-                    self.conn.execute(f"PRAGMA synchronous={self.synchronous}")
+                self._apply_power_loss_safety(self.conn)
             logger.info(f"Connected to SQLite database: {self.database_name}")
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Failed to connect to SQLite database: {e}")
+
+    def _apply_power_loss_safety(self, conn: sqlite3.Connection) -> None:
+        """Set how changes reach the disk on a new connection, as asked with power_loss_safe.
+
+        Fast writes need two SQLite settings together: write-ahead logging, which is saved in the
+        database file, and a relaxed flush policy, which belongs to the connection. The relaxed
+        policy is safe only with write-ahead logging: if that cannot be turned on, changes keep
+        being flushed one by one. A safe store only needs the flush at every change, whatever the
+        journal of the file: a database that was used with fast writes stays in write-ahead
+        logging, which is just as safe once every change is flushed.
+        """
+        if self.power_loss_safe:
+            conn.execute("PRAGMA synchronous=FULL")
+            return
+        try:
+            # The pragma answers with the mode in use: some filesystems cannot do write-ahead logging
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+        except sqlite3.Error as e:
+            mode = f"unchanged ({e})"
+        if mode == "wal":
+            conn.execute("PRAGMA synchronous=NORMAL")
+        else:
+            conn.execute("PRAGMA synchronous=FULL")
+            logger.warning(f"Fast writes not available for {self.database_name} (journal mode: {mode}): changes are flushed one by one")
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get the SQLite connection object. If the connection does not exist, it will create one.
