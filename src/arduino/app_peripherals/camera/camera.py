@@ -302,16 +302,17 @@ def _nth_plugged_camera(idx: int) -> str:
         idx (int): Index of the camera to select (0-based).
 
     Returns:
-        str: Identifier of the n-th plugged camera ("usb:X" or "csi:X").
+        str: Identifier of the n-th plugged camera, "usb:<stable link>" or "csi:X".
 
     Raises:
         CameraOpenError: If no camera is plugged at the given index.
     """
     from .v4l_camera import V4LCamera
 
-    usb_count = len(V4LCamera.list_devices())
+    usb_paths = [camera["location"] for camera in V4LCamera.list_cameras()]
+    usb_count = len(usb_paths)
     if idx < usb_count:
-        return f"usb:{idx}"
+        return f"usb:{usb_paths[idx]}"
 
     from .csi_camera import CSICamera
 

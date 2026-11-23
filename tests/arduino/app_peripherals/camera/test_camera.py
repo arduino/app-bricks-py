@@ -235,10 +235,6 @@ def plugged_cameras(monkeypatch):
         usb_paths = [f"/dev/v4l/by-id/usb-Cam{i}-video-index0" for i in range(usb)]
         csi_names = [f"CAMERA{i}" for i in range(csi)]
         monkeypatch.setattr(
-            "arduino.app_peripherals.camera.v4l_camera.V4LCamera.list_devices",
-            staticmethod(lambda: list(range(usb))),
-        )
-        monkeypatch.setattr(
             "arduino.app_peripherals.camera.v4l_camera.V4LCamera.list_cameras",
             staticmethod(lambda: [{"name": "Cam", "location": path} for path in usb_paths]),
         )
@@ -304,9 +300,9 @@ class TestNthPluggedCamera:
     """Positional device resolution used by explicit selection, unaware of claims."""
 
     def test_usb_takes_precedence_over_csi(self, plugged_cameras):
-        plugged_cameras(usb=1, csi=1)
+        usb_paths, _ = plugged_cameras(usb=1, csi=1)
 
-        assert _nth_plugged_camera(0) == "usb:0"
+        assert _nth_plugged_camera(0) == f"usb:{usb_paths[0]}"
 
     def test_index_spans_usb_cameras_first_then_csi(self, plugged_cameras):
         plugged_cameras(usb=1, csi=2)
@@ -315,10 +311,10 @@ class TestNthPluggedCamera:
         assert _nth_plugged_camera(2) == "csi:1"
 
     def test_ignores_claims(self, plugged_cameras):
-        plugged_cameras(usb=1)
+        usb_paths, _ = plugged_cameras(usb=1)
 
         _claim_first_available_camera()
-        assert _nth_plugged_camera(0) == "usb:0"
+        assert _nth_plugged_camera(0) == f"usb:{usb_paths[0]}"
 
     def test_out_of_range_index_raises(self, plugged_cameras):
         plugged_cameras(usb=1)
