@@ -30,7 +30,7 @@ import numpy as np
 from . import protocol as P
 
 # The models directory of the service: the out-of-the-box models of the image under ootb/ei, the ones the app CLI
-# installs mounted under edge-impulse and custom-ei, the folder of the custom model selected for the brick under custom.
+# installs mounted under edge-impulse, the folder of the custom model selected for the brick under custom.
 # Model names are paths relative to it, without the extension.
 IMAGE_MODELS_DIR = "/models"
 DEFAULT_MODELS_DIR = os.getenv("MODELS_PATH", "/var/lib/arduino-app-cli/models")
@@ -42,8 +42,8 @@ def model_name_from_path(
 ) -> str:
     """The service name of an ``.eim`` file, its path relative to the models directory holding it.
 
-    ``/var/lib/arduino-app-cli/models/custom-ei/abc/model.eim`` and ``/models/ootb/ei/yolo-x-nano.eim`` become
-    ``custom-ei/abc/model`` and ``ootb/ei/yolo-x-nano``, ``model.eim`` in the folder of the custom model ``custom/model``.
+    ``/var/lib/arduino-app-cli/models/edge-impulse/abc/model.eim`` and ``/models/ootb/ei/yolo-x-nano.eim`` become
+    ``edge-impulse/abc/model`` and ``ootb/ei/yolo-x-nano``, ``model.eim`` in the folder of the custom model ``custom/model``.
 
     Args:
         model_path (str): Path of the ``.eim`` file as the app CLI configures it, on the host or in the image.
