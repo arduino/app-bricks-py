@@ -48,6 +48,13 @@ class LargeLanguageModel(CloudLLM):
     It provides a simplified, unified interface for chatting with models like Qwenm, LLama,
     Gemma. It supports both synchronous 'one-shot' responses and streaming output,
     with optional conversational memory.
+
+    On the UNO Q the model runs on the CPU with one thread per core, the fastest setting as long as the
+    rest of the app is light on the CPU. An app that keeps another CPU-heavy task busy while the model
+    answers (for example object detection or video encoding on every camera frame) sets `LLAMA_ARG_THREADS`
+    to `3` in the `variables` of the Brick in `app.yaml`: one core is left to that task, and the model
+    answers faster than with four threads that share a core with it. The value applies to the whole
+    llama.cpp runner, so an app with more than one Brick on a `llamacpp:` model sets it on each of them.
     """
 
     _logger = logger
