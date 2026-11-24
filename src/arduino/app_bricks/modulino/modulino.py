@@ -94,15 +94,16 @@ class Modulino:
 
 
 class ModulinoThermo(Modulino):
-    """Class to handle a Modulino 'thermo' for temperature and humidity sensing."""
-    def __init__(self, i2c_address = 0x44, hub_port = None) -> None:
-        """Initialize a ModulinoThermo with the given I2C address.
+    """Class to handle a Modulino Thermo (temperature and humidity sensor, I2C address 0x44)."""
+    I2C_ADDRESS = 0x44
+
+    def __init__(self, hub_port = None) -> None:
+        """Initialize the ModulinoThermo.
 
         Args:
-            i2c_address (int): The I2C address of the ModulinoThermo. Defaults to 0x44.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
-        super().__init__("thermo", i2c_address, hub_port)
+        super().__init__("thermo", self.I2C_ADDRESS, hub_port)
 
     @override
     def start(self) -> None:
