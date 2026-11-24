@@ -1,4 +1,4 @@
-From b3b466511673f0231640a075261f93ee1e3dc121 Mon Sep 17 00:00:00 2001
+From 7e25e8537705698106792bd4760228402229d181 Mon Sep 17 00:00:00 2001
 From: Marco Colombo <ing.marco.colombo@gmail.com>
 Date: Wed, 11 Nov 2026 14:41:36 +0100
 Subject: [PATCH] ggml-cpu: process SSM_CONV in row blocks
@@ -9,10 +9,10 @@ Assisted-by: Claude Fable 5.2
  1 file changed, 48 insertions(+), 21 deletions(-)
 
 diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
-index eed5d69e3..adc92dd2c 100644
+index 72dd3e691..6d3d4d3d5 100644
 --- a/ggml/src/ggml-cpu/ops.cpp
 +++ b/ggml/src/ggml-cpu/ops.cpp
-@@ -9818,7 +9818,6 @@ static void ggml_compute_forward_ssm_conv_f32(
+@@ -10085,7 +10085,6 @@ static void ggml_compute_forward_ssm_conv_f32(
      const int nth = params->nth;
  
      const int nc  = src1->ne[0]; // d_conv
@@ -20,7 +20,7 @@ index eed5d69e3..adc92dd2c 100644
      const int nr  = src0->ne[1]; // d_inner
      const int n_t =  dst->ne[1]; // tokens per sequence
      const int n_s =  dst->ne[2]; // number of sequences in the batch
-@@ -9834,28 +9833,56 @@ static void ggml_compute_forward_ssm_conv_f32(
+@@ -10101,28 +10100,56 @@ static void ggml_compute_forward_ssm_conv_f32(
      // row range for this thread
      const int ir0 = dr*ith;
      const int ir1 = MIN(ir0 + dr, nr);
@@ -97,3 +97,6 @@ index eed5d69e3..adc92dd2c 100644
              }
          }
      }
+-- 
+2.34.1
+

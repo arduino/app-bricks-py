@@ -1,4 +1,4 @@
-From 503b81323e10e2577f88ed19527e6b0e83a25644 Mon Sep 17 00:00:00 2001
+From 96d3ab8c66b53c71b7904be48810b34a835a390a Mon Sep 17 00:00:00 2001
 From: Marco Colombo <ing.marco.colombo@gmail.com>
 Date: Mon, 9 Nov 2026 17:58:28 +0100
 Subject: [PATCH] feat: optimized kernels for ARM v8.0 (without dotprod)
@@ -9,7 +9,7 @@ Subject: [PATCH] feat: optimized kernels for ARM v8.0 (without dotprod)
  2 files changed, 252 insertions(+)
 
 diff --git a/ggml/src/ggml-cpu/arch/arm/repack.cpp b/ggml/src/ggml-cpu/arch/arm/repack.cpp
-index b60eff9d5..9d7b937c0 100644
+index b60eff9d53..9d7b937c02 100644
 --- a/ggml/src/ggml-cpu/arch/arm/repack.cpp
 +++ b/ggml/src/ggml-cpu/arch/arm/repack.cpp
 @@ -66,6 +66,59 @@ static inline int8x16_t ggml_q1_0_unpack_pair(uint8_t bits0, uint8_t bits1) {
@@ -284,7 +284,7 @@ index b60eff9d5..9d7b937c0 100644
  }
  
 diff --git a/ggml/src/ggml-cpu/repack.cpp b/ggml/src/ggml-cpu/repack.cpp
-index 9282ca299..f67cb875b 100644
+index 9282ca299b..f67cb875b2 100644
 --- a/ggml/src/ggml-cpu/repack.cpp
 +++ b/ggml/src/ggml-cpu/repack.cpp
 @@ -4992,6 +4992,14 @@ static const ggml::cpu::tensor_traits * ggml_repack_get_optimal_repack_type(cons
@@ -317,3 +317,6 @@ index 9282ca299..f67cb875b 100644
          if (ggml_cpu_has_riscv_v()) {
              #if defined __riscv_zvfh
              switch (__riscv_vlenb() * 8) {
+-- 
+2.34.1
+
