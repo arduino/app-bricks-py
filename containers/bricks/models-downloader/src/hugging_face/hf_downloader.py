@@ -114,6 +114,7 @@ declares, the output-dir-relative path for ad-hoc downloads.
 """
 
 import fnmatch
+import functools
 import os
 import re
 import shutil
@@ -1349,11 +1350,20 @@ def pattern_selects(path: str, pattern: str) -> bool:
     return matches_pattern(path, pattern) and (is_mmproj_file(pattern) or not is_mmproj_file(path))
 
 
+@functools.cache
+def repo_files(repo_id: str) -> tuple[RepoFile, ...]:
+    """Every file of *repo_id* at the tip of its default branch.
+
+    The Hub is asked once per run: settling the quantizations, sizing the download and
+    fetching the files all read the same listing, and each round trip is time the caller
+    spends waiting before the first byte.
+    """
+    return tuple(item for item in HfApi().list_repo_tree(repo_id=repo_id, recursive=True) if isinstance(item, RepoFile))
+
+
 def list_repo_matches(repo_id: str, patterns: list[str], ignore_pattern: str | None = None) -> list[RepoFile]:
     """Return the files of *repo_id* matching any of *patterns*, minus *ignore_pattern*."""
-    api = HfApi()
-    all_files = [item for item in api.list_repo_tree(repo_id=repo_id, recursive=True) if isinstance(item, RepoFile)]
-    matched = [f for f in all_files if not unsupported_quantization(f.path) and any(matches_pattern(f.path, p) for p in patterns)]
+    matched = [f for f in repo_files(repo_id) if not unsupported_quantization(f.path) and any(matches_pattern(f.path, p) for p in patterns)]
     if ignore_pattern:
         matched = [f for f in matched if not matches_pattern(f.path, ignore_pattern)]
     return matched

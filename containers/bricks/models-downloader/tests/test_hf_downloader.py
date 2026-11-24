@@ -3015,6 +3015,33 @@ def test_the_size_of_a_model_declared_multimodal_counts_its_projector(tmp_path, 
     assert [f["file"] for f in stat["files"]] == [GEMMA_TEXT_FILE, GEMMA_MMPROJ_FILE]
 
 
+@pytest.fixture
+def count_gemma_listings(monkeypatch):
+    """Stub the Hub with the Gemma repository; return the log of its listing requests."""
+    listings: list[str] = []
+
+    class _CountingHfApi:
+        def list_repo_tree(self, *, repo_id, **_kwargs):
+            listings.append(repo_id)
+            return [RepoFile(path=path, size=1, oid="0") for path in (GEMMA_TEXT_FILE, GEMMA_MMPROJ_FILE)]
+
+    def _hub_download(*, repo_id, filename, local_dir, revision=None, tqdm_class=None):
+        Path(local_dir, filename).write_bytes(b"\0")
+
+    monkeypatch.setattr(hf_downloader, "HfApi", _CountingHfApi)
+    monkeypatch.setattr(hf_downloader, "validate_hub_source", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hf_downloader, "hf_hub_download", _hub_download)
+    return listings
+
+
+@pytest.mark.parametrize("action", [["--info"], []], ids=["info", "download"])
+def test_a_run_lists_the_repository_once(tmp_path, monkeypatch, count_gemma_listings, action):
+    """Settling the projector, sizing the request and fetching it read one listing."""
+    _declared_multimodal(monkeypatch, tmp_path / "models", *action)
+
+    assert count_gemma_listings == [GEMMA_REPO]
+
+
 def test_the_size_leaves_out_a_projector_only_the_model_pattern_matches(tmp_path, monkeypatch, capsys):
     """Seen on ggml-org's repositories: a Q8_0 model next to both an f16 and a Q8_0 projector."""
     sizes = {"m-Q8_0.gguf": 300, "mmproj-m-Q8_0.gguf": 50, "mmproj-m-f16.gguf": 100}
