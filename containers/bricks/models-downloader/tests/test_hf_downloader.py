@@ -14,6 +14,7 @@ an installed model, and what the delete path leaves behind.
 import json
 import os
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -3040,6 +3041,38 @@ def test_a_run_lists_the_repository_once(tmp_path, monkeypatch, count_gemma_list
     _declared_multimodal(monkeypatch, tmp_path / "models", *action)
 
     assert count_gemma_listings == [GEMMA_REPO]
+
+
+def _free_space(monkeypatch, free):
+    """Make the filesystem of every path report *free* bytes available."""
+    monkeypatch.setattr(hf_downloader.shutil, "disk_usage", lambda _path: types.SimpleNamespace(free=free))
+
+
+def test_a_download_that_does_not_fit_fails_before_writing(tmp_path, monkeypatch, count_gemma_listings, capsys):
+    """The model and its projector are one byte each, and one byte is free."""
+    models_dir = tmp_path / "models"
+    _free_space(monkeypatch, 1)
+
+    with pytest.raises(SystemExit):
+        _declared_multimodal(monkeypatch, models_dir)
+
+    assert not (models_dir / GEMMA_REPO).exists()
+    error = read_events(capsys)[-1]
+    assert error["event"] == "error"
+    assert error["code"] == "insufficient_storage"
+    assert error["description"].startswith(f"Not enough free space to download '{GEMMA_REPO}'")
+
+
+def test_only_the_files_still_to_fetch_have_to_fit(tmp_path, monkeypatch, count_gemma_listings):
+    """Over its installed text model, a multimodal model needs room for the projector alone."""
+    models_dir = tmp_path / "models"
+    monkeypatch.setenv("model_url", GEMMA_TEXT_URL)
+    _run_main(monkeypatch, "--model-url", GEMMA_TEXT_URL, "--output-dir", str(models_dir))
+    _free_space(monkeypatch, 1)
+
+    _declared_multimodal(monkeypatch, models_dir)
+
+    assert (models_dir / GEMMA_REPO / GEMMA_MMPROJ_FILE).is_file()
 
 
 def test_the_size_leaves_out_a_projector_only_the_model_pattern_matches(tmp_path, monkeypatch, capsys):

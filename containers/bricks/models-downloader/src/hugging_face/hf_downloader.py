@@ -315,6 +315,7 @@ ERR_MODEL_INCOMPATIBLE = "model_incompatible"
 ERR_NO_COMPATIBLE_FILE = "no_compatible_file"
 ERR_NO_MULTIMODAL_PROJECTOR = "no_multimodal_projector"
 ERR_HUB_UNREACHABLE = "hub_unreachable"
+ERR_INSUFFICIENT_STORAGE = "insufficient_storage"
 
 
 class ModelSourceError(ValueError):
@@ -1524,6 +1525,14 @@ def requested_repo_files(repo_id: str, patterns: list[str]) -> list[RepoFile]:
     return [f for f in list_repo_matches(repo_id, patterns) if any(pattern_selects(f.path, pattern) for pattern in patterns)]
 
 
+def free_bytes(path: str) -> int:
+    """The bytes free on the filesystem *path* is on, or will be created on."""
+    existing = Path(path).resolve()
+    while not existing.exists():
+        existing = existing.parent
+    return shutil.disk_usage(existing).free
+
+
 def expected_size_bytes(repo_id: str, patterns: list[str]) -> int | None:
     """The bytes the files matching *patterns* will take once downloaded, or None.
 
@@ -2124,6 +2133,18 @@ def main():
         # still describe the whole model.
         fetch = [pattern for pattern in patterns if not matching_files(output_dir, [pattern])]
         model_bytes = expected_size_bytes(repo_id, patterns)
+        fetch_bytes = model_bytes if fetch == patterns else expected_size_bytes(repo_id, fetch)
+
+        # What is still to fetch has to fit, and a transfer that cannot end is not started:
+        # nothing is written, so there is nothing to discard. A size the Hub does not give
+        # is not checked.
+        free = free_bytes(args.output_dir)
+        if fetch_bytes is not None and fetch_bytes > free:
+            emit_json_error(
+                f"Not enough free space to download '{repo_id}': {size_mb(fetch_bytes)} MiB needed, {size_mb(free)} MiB free.",
+                code=ERR_INSUFFICIENT_STORAGE,
+            )
+            raise SystemExit(1)
 
         os.makedirs(output_dir, exist_ok=True)
         write_marker(
@@ -2155,7 +2176,7 @@ def main():
         try:
             # The files still missing are reported as one transfer, so the host's progress
             # runs from 0 to 100% once however many files the model is made of.
-            with JsonProgress.one_transfer(model_bytes if fetch == patterns else expected_size_bytes(repo_id, fetch)):
+            with JsonProgress.one_transfer(fetch_bytes):
                 # The model first, then its projector. Each is fetched the way it was named,
                 # whatever the other came as: a URL pins one file at one commit, anything
                 # else is a pattern matched against the tip of the default branch.
