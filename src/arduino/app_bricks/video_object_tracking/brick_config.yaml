@@ -18,3 +18,8 @@ ai_frameworks_compatibility:
 supported_boards: ["ventunoq"]
 model_configuration_variables:
   - EI_V_OBJ_TRACKING_MODEL
+variables:
+- name: CUSTOM_MODEL_PATH
+  description: Path to the custom model directory
+  hidden: true
+  default_value: /home/arduino/.arduino-bricks/ei-models

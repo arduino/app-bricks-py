@@ -265,7 +265,11 @@ case "$1" in
   *)
     install_streamlit
     if check_streamlit_ui; then
-      exec streamlit run --server.port 7000 "$PYTHON_SCRIPT"
+      # Streamlit exits with 0 when stopped: the shell stays to pass the stop on and end as stopped by the signal
+      trap 'kill -TERM $!; wait $!; exit 143' TERM
+      streamlit run --server.port 7000 "$PYTHON_SCRIPT" &
+      wait $!
+      exit $?
     fi
 
     echo "======== App is starting ============================"

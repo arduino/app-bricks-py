@@ -22,11 +22,12 @@ jobs:
     env:
       TASKFILE_PATH: '/home/runner/go/bin'
     steps:
-      # patch: tests/containers applies the source patches of python-apps-base, as its image build
-      - name: Install git and patch
+      # patch and binutils: tests/containers applies the source patches of python-apps-base and strips
+      # a compiled extension, as its image build
+      - name: Install git, patch and binutils
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends --no-install-suggests git ca-certificates curl patch
+          apt-get install -y --no-install-recommends --no-install-suggests git ca-certificates curl patch binutils
           git config --global --add safe.directory '*'
 
       - name: Checkout repository

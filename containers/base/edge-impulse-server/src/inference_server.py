@@ -84,7 +84,7 @@ def check_npu_access(accel: str) -> None:
     if not devices:
         sys.exit("No /dev/fastrpc-*: the NPU is not accessible from the container")
     for dev in devices:
-        if not os.access(dev, os.R_OK | os.W_OK):
+        if not os.access(dev, os.R_OK):
             sys.exit(f"Missing permissions on {dev} (check group_add)")
     if not os.environ.get("ADSP_LIBRARY_PATH"):
         log.warning("ADSP_LIBRARY_PATH is not set")

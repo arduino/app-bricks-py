@@ -30,21 +30,27 @@ import numpy as np
 from . import protocol as P
 
 # The models directory of the service: the out-of-the-box models of the image under ootb/ei, the ones the app CLI
-# installs mounted under edge-impulse and custom-ei. Model names are paths relative to it, without the extension.
+# installs mounted under edge-impulse, the folder of the custom model selected for the brick under custom.
+# Model names are paths relative to it, without the extension.
 IMAGE_MODELS_DIR = "/models"
 DEFAULT_MODELS_DIR = os.getenv("MODELS_PATH", "/var/lib/arduino-app-cli/models")
+CUSTOM_MODEL_MOUNT = "custom"
 
 
-def model_name_from_path(model_path: str, models_dirs: tuple[str, ...] = (DEFAULT_MODELS_DIR, IMAGE_MODELS_DIR)) -> str:
+def model_name_from_path(
+    model_path: str, models_dirs: tuple[str, ...] = (DEFAULT_MODELS_DIR, IMAGE_MODELS_DIR), custom_model_dir: str | None = None
+) -> str:
     """The service name of an ``.eim`` file, its path relative to the models directory holding it.
 
-    ``/var/lib/arduino-app-cli/models/custom-ei/abc/model.eim`` and ``/models/ootb/ei/yolo-x-nano.eim`` become
-    ``custom-ei/abc/model`` and ``ootb/ei/yolo-x-nano``.
+    ``/var/lib/arduino-app-cli/models/edge-impulse/abc/model.eim`` and ``/models/ootb/ei/yolo-x-nano.eim`` become
+    ``edge-impulse/abc/model`` and ``ootb/ei/yolo-x-nano``, ``model.eim`` in the folder of the custom model ``custom/model``.
 
     Args:
         model_path (str): Path of the ``.eim`` file as the app CLI configures it, on the host or in the image.
         models_dirs (tuple[str, ...]): The directories the service serves models from, the app CLI models directory
             (MODELS_PATH variable) and the models directory of the image.
+        custom_model_dir (str | None): The folder of the custom model selected for the brick (CUSTOM_MODEL_PATH
+            variable), served under ``custom``.
 
     Returns:
         str: The model name to open on the service.
@@ -52,11 +58,15 @@ def model_name_from_path(model_path: str, models_dirs: tuple[str, ...] = (DEFAUL
     Raises:
         ValueError: If the path is not an ``.eim`` file under one of the directories.
     """
-    for models_dir in models_dirs:
-        relative = os.path.relpath(os.path.normpath(model_path), os.path.normpath(models_dir))
+    served = [(models_dir, "") for models_dir in models_dirs]
+    if custom_model_dir:
+        served.insert(0, (custom_model_dir, CUSTOM_MODEL_MOUNT))
+    for directory, mount in served:
+        relative = os.path.relpath(os.path.normpath(model_path), os.path.normpath(directory))
         if not relative.startswith("..") and not os.path.isabs(relative) and relative.endswith(".eim"):
-            return relative[: -len(".eim")].replace(os.sep, "/")
-    raise ValueError(f"'{model_path}' is not a .eim file under {' or '.join(models_dirs)}: the inference service only loads models from there")
+            return os.path.join(mount, relative)[: -len(".eim")].replace(os.sep, "/")
+    directories = " or ".join(directory for directory, _ in served)
+    raise ValueError(f"'{model_path}' is not a .eim file under {directories}: the inference service only loads models from there")
 
 
 class ServerError(Exception):

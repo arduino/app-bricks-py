@@ -24,11 +24,11 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 
 | Container | Group | Built `FROM` | Purpose |
 |---|---|---|---|
-| `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
+| `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else, without `pip`: the images built on it install their packages with `uv` |
 | `edge-impulse-server` | base | `scratch` | Layer, never run or published: the Edge Impulse multi-model inference server and its locked packages, added by `edge-impulse-runner` and `edge-impulse-npu-runner` |
 | `edge-impulse-runner` | ai | `python-slim` | Edge Impulse inference server, CPU image of the `edge-impulse-server` layer |
 | `edge-impulse-npu-runner` | ai | `qairt-common-base` | Edge Impulse inference server, Hexagon NPU (QNN) image of the `edge-impulse-server` layer |
-| `python-base` | base | `python-slim` | System deps, non-root user, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages |
+| `python-base` | base | `python-slim` | System deps, non-root user, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages. `cv2` always comes from this build: the installs of an App skip the OpenCV packages (`conf/uv-excludes.txt`) |
 | `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
 | `aihub-framework` | base | `scratch` | Layer, never run or published: the `aihub` runner framework and the app skeleton, added by `aihub-litert-models-runner` and `aihub-onnx-models-runner` |
 | `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config, patches FastAPI to build its OpenAPI models on first use |

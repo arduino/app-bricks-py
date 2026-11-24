@@ -5,7 +5,7 @@
 """Model registry with reference counting and per-model instances.
 
 The available models are the <name>.eim files in the models directory, in subdirectories too: the
-name of /models/custom-ei/abc/model.eim is custom-ei/abc/model.
+name of /models/edge-impulse/abc/model.eim is edge-impulse/abc/model.
 
   - pinned (--pinned-models): loaded at startup, never terminated;
   - all the others: loaded when the first connection opens them, shared

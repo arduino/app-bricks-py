@@ -10,8 +10,10 @@ their requirements are installed like the ones of the custom bricks and their fo
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -39,6 +41,13 @@ echo "streamlit $*" >> "$FAKE_LOG"
 """,
 }
 
+# Streamlit as it serves: it stays up and exits with 0 when stopped
+SERVING_STREAMLIT = """#!/bin/sh
+echo "streamlit $*" >> "$FAKE_LOG"
+trap 'echo "streamlit stopped" >> "$FAKE_LOG"; exit 0' TERM
+while :; do sleep 0.05; done
+"""
+
 WEB_APP_YAML = "name: t\nbricks:\n- arduino:web_ui: {}\n"
 STREAMLIT_APP_YAML = "name: t\nbricks:\n- arduino:streamlit_ui: {}\n"
 
@@ -48,8 +57,10 @@ def _third_party_dir(tmp_path: Path) -> Path:
     return tmp_path / "third-party-bricks"
 
 
-def _run(app: Path, tmp_path: Path, command: str | None = None, uv_fails_on: str = "", expect_failure: bool = False) -> list[str]:
-    """Run run.sh against an app folder with the tools replaced by loggers; return the commands they saw."""
+def _command(
+    app: Path, tmp_path: Path, command: str | None = None, uv_fails_on: str = "", streamlit: str | None = None
+) -> tuple[list[str], dict[str, str], Path]:
+    """Prepare run.sh against an app folder with the tools replaced by loggers; return its command line, its environment and the log of the tools."""
     # The script serves /app, where the container mounts the app: a copy pointed at the test folder stands in
     script = RUN_SH.read_text().replace("\r\n", "\n")
     assert script.count('BASE_DIR="/app"\n') == 1, "run.sh no longer sets BASE_DIR the way this test rewrites it"
@@ -60,7 +71,7 @@ def _run(app: Path, tmp_path: Path, command: str | None = None, uv_fails_on: str
     run_sh.write_text(script.replace('BASE_DIR="/app"\n', f'BASE_DIR="{app}"\n'))
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    for name, body in FAKE_TOOLS.items():
+    for name, body in {**FAKE_TOOLS, **({"streamlit": streamlit} if streamlit else {})}.items():
         tool = bin_dir / name
         tool.write_text(body)
         tool.chmod(0o755)
@@ -78,7 +89,13 @@ def _run(app: Path, tmp_path: Path, command: str | None = None, uv_fails_on: str
         "FAKE_LOG": str(log),
         "FAKE_UV_FAILS_ON": uv_fails_on,
     }
-    result = subprocess.run(["sh", str(run_sh), *([command] if command else [])], env=env, capture_output=True, text=True, timeout=120)
+    return ["sh", str(run_sh), *([command] if command else [])], env, log
+
+
+def _run(app: Path, tmp_path: Path, command: str | None = None, uv_fails_on: str = "", expect_failure: bool = False) -> list[str]:
+    """Run run.sh against an app folder with the tools replaced by loggers; return the commands they saw."""
+    argv, env, log = _command(app, tmp_path, command, uv_fails_on)
+    result = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=120)
     if expect_failure:
         assert result.returncode != 0, result.stdout + result.stderr
     else:
@@ -171,6 +188,27 @@ def test_streamlit_apps_get_a_venv(tmp_path: Path):
     assert _venv_created(app, calls), calls
     assert any("uv pip install" in c and "streamlit" in c for c in calls), calls
     assert calls[-1].startswith("streamlit run")
+
+
+def test_a_stopped_streamlit_app_ends_as_stopped_by_the_signal(tmp_path: Path):
+    argv, env, log = _command(_app(tmp_path, app_yaml=STREAMLIT_APP_YAML), tmp_path, streamlit=SERVING_STREAMLIT)
+    process = subprocess.Popen(argv, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        deadline = time.monotonic() + 30
+        while "streamlit run" not in log.read_text():
+            assert time.monotonic() < deadline and process.poll() is None, "streamlit never started"
+            time.sleep(0.01)
+        process.send_signal(signal.SIGTERM)
+        assert process.wait(timeout=10) == 128 + signal.SIGTERM, "streamlit itself exits with 0 when stopped"
+        assert log.read_text().splitlines()[-1] == "streamlit stopped", "the stop is passed on to streamlit"
+    finally:
+        process.kill()
+
+
+def test_a_streamlit_app_ending_on_its_own_keeps_its_exit_code(tmp_path: Path):
+    failing = '#!/bin/sh\necho "streamlit $*" >> "$FAKE_LOG"\nexit 3\n'
+    argv, env, _ = _command(_app(tmp_path, app_yaml=STREAMLIT_APP_YAML), tmp_path, streamlit=failing)
+    assert subprocess.run(argv, env=env, capture_output=True, timeout=120).returncode == 3
 
 
 def test_without_third_party_bricks_the_python_path_has_only_the_custom_bricks(tmp_path: Path):

@@ -17,10 +17,17 @@ ROOTS = ("/var/lib/arduino-app-cli/models", "/models")
 
 def test_model_name_is_the_path_relative_to_the_models_directory():
     root = ROOTS[0]
-    assert model_name_from_path(f"{root}/custom-ei/abc/model.eim", ROOTS) == "custom-ei/abc/model"
     assert model_name_from_path(f"{root}/edge-impulse/yolo-x-nano/yolo-x-nano.eim", ROOTS) == "edge-impulse/yolo-x-nano/yolo-x-nano"
     assert model_name_from_path(f"{root}//edge-impulse/../edge-impulse/x.eim", ROOTS) == "edge-impulse/x"
     assert model_name_from_path("/models/ootb/ei/yolo-x-nano.eim", ROOTS) == "ootb/ei/yolo-x-nano", "a model bundled in the image"
+
+
+def test_model_name_of_a_file_in_the_folder_of_the_custom_model():
+    folder = "/home/arduino/.arduino-bricks/models/custom-ei/ei-model-1-2"
+    assert model_name_from_path(f"{folder}/model.eim", ROOTS, folder) == "custom/model"
+    assert model_name_from_path(f"{ROOTS[0]}/edge-impulse/x.eim", ROOTS, folder) == "edge-impulse/x", "the models directories still apply"
+    with pytest.raises(ValueError, match="inference service"):
+        model_name_from_path("/home/arduino/.arduino-bricks/models/custom-ei/ei-model-3-4/model.eim", ROOTS, folder)
 
 
 @pytest.mark.parametrize(

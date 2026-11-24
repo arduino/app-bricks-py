@@ -95,8 +95,8 @@ COPY pyproject.toml uv.lock /tmp/deps/
 # uv is only mounted while installing, it is not part of the image
 RUN --mount=from=uv,source=/uv,target=/bin/uv \
     set -ex; \
-    # Make the venv the default for child images. No pip in it: uv installs the packages,
-    # and a second copy of pip (~13 MB) is never run.
+    # Make the venv the default for child images. No pip in it, as in python-slim: uv installs the packages,
+    # and venv would unpack a copy of pip (~13 MB) that is never run.
     python -m venv --system-site-packages --without-pip /opt/venv; \
     # --no-deps: the export is the whole locked closure, and without it uv would resolve the
     # dependencies the wheels declare again, the ones overridden out of the lock included

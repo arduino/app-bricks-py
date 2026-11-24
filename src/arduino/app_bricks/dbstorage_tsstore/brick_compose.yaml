@@ -1,6 +1,8 @@
 services:
   dbstorage-influx:
     image: influxdb:2.9-alpine
+    # As the first process influxd ends with 2 on a stop, which shows a stopped app as failed
+    init: true
     logging:
       driver: "json-file"
       options:

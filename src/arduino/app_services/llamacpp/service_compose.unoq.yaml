@@ -20,10 +20,11 @@ services:
       - LLAMA_ARG_REASONING=${LLAMA_ARG_REASONING:-off}
       - LLAMA_ARG_THINK_BUDGET=${LLAMA_ARG_THINK_BUDGET:-0}
       - LLAMA_ARG_IMAGE_MAX_TOKENS=${LLAMA_ARG_IMAGE_MAX_TOKENS:-128}
+      # One thread per core is the fastest setting while the cores are free. A thread that shares its core with
+      # another busy process holds the others back: LLAMA_ARG_THREADS=3 leaves one core to a second CPU-heavy task.
       - LLAMA_ARG_THREADS=${LLAMA_ARG_THREADS:-4}
       - OMP_NUM_THREADS=${LLAMA_ARG_THREADS:-4}
-      - OMP_WAIT_POLICY=passive
-      - GOMP_SPINCOUNT=0
+      - GOMP_SPINCOUNT=${GOMP_SPINCOUNT:-300000}
       - XDG_CACHE_HOME=/models
     working_dir: /models
     ports:

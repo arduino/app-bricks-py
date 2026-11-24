@@ -433,6 +433,21 @@ def test_events():
     assert "disconnected" in events[4][0]
 
 
+def test_events_after_restart():
+    """Test that status changes are still reported after the camera is stopped and started again."""
+    camera = MockedCamera(fps=5)
+    events = []
+    camera.on_status_changed(lambda event, data: events.append(event))
+
+    camera.start()
+    camera.stop()
+    camera.start()
+    camera.capture()
+    camera.stop()  # Returns once the pending callbacks have run
+
+    assert events == ["connected", "disconnected", "connected", "streaming", "disconnected"]
+
+
 def test_record_zero_duration():
     camera = MockedCamera()
     camera.start()
