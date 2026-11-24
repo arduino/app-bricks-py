@@ -519,6 +519,8 @@ class ModelShape(NamedTuple):
     npu_weight_bytes: int
     kv_layers: tuple[KvLayer, ...]
     state_bytes: int
+    # First layer that reads another layer's KV cache, 0 when none does (see first_shared_kv_layer()).
+    kv_shared_from: int = 0
 
     def kv_cache_bytes(self, ctx_size: int) -> int:
         return sum(layer.bytes(ctx_size) for layer in self.kv_layers)
@@ -550,6 +552,27 @@ class ModelShape(NamedTuple):
     def fits(self, ctx_size: int) -> bool:
         """Whether the model fits the budget on any number of sessions at all."""
         return self.session_bytes(ctx_size, MAX_SESSIONS) <= SESSION_BUDGET
+
+    def strands_shared_layers(self, sessions: int) -> bool:
+        """Whether *sessions* sessions put layers that share a KV cache away from the layers that own it.
+
+        llama.cpp splits the n_layer + 1 layers (the output counts as one) evenly over the
+        sessions, and a shared layer reads the cache of one of the two layers before
+        kv_shared_from. A session that holds shared layers without those two reserves a
+        compute buffer the allowance does not cover: NVIDIA-Nemotron-3.5-Bolt-E4B on three
+        sessions put 1166 MiB on HTP2 (200-338 on the others) and never loaded, at 16k or
+        8k, while two, where HTP1 holds layers 22-41, load; gemma-4-E2B does not load on
+        two either. Four sessions strand them too, and loaded the Nemotron at 16k with
+        842 MiB on HTP3: that is what the server falls back to when no count keeps them
+        together.
+        """
+        if not self.kv_shared_from:
+            return False
+
+        def session_of(layer: int) -> int:
+            return layer * sessions // (self.n_layer + 1)
+
+        return session_of(self.kv_shared_from - 2) != session_of(self.n_layer - 1)
 
     def describe(self, ctx_size: int) -> str:
         """How this model was sized, for the diagnostics."""
@@ -602,6 +625,10 @@ class FileSizeSizing(NamedTuple):
                 return count
         return 1
 
+    def strands_shared_layers(self, sessions: int) -> bool:
+        """Never: without a header there is no layer layout to keep together."""
+        return False
+
     def describe(self, ctx_size: int) -> str:
         pinned = any(name in self.name for name, _ in FALLBACK_PINS)
         return f"{self.gguf_bytes / GB:.2f} GB on disk, {'pinned by name' if pinned else 'sized by file size'}"
@@ -648,15 +675,24 @@ def kv_layer_indices(metadata, tensors) -> list[int]:
     Falls back to every layer when nothing matches, which is the safe direction: an
     unrecognised naming scheme then sizes as if every layer cached.
     """
-    shared = metadata.get(f"{metadata.get('general.architecture', '')}.attention.shared_kv_layers", 0)
-    first_shared = block_count(metadata) - int(shared) if isinstance(shared, int) and shared > 0 else None
+    owners = first_shared_kv_layer(metadata) or block_count(metadata)
     for pattern in (K_PROJECTION, FUSED_QKV_PROJECTION):
-        indices = sorted({int(m.group(1)) for tensor in tensors if (m := pattern.match(tensor.name))})
-        if first_shared is not None:
-            indices = [index for index in indices if index < first_shared]
+        indices = sorted({int(m.group(1)) for tensor in tensors if (m := pattern.match(tensor.name)) and int(m.group(1)) < owners})
         if indices:
             return indices
-    return list(range(block_count(metadata) if first_shared is None else first_shared))
+    return list(range(owners))
+
+
+def first_shared_kv_layer(metadata) -> int:
+    """Index of the first layer that reads another layer's KV cache, 0 when none does.
+
+    The gemmas that declare ``attention.shared_kv_layers`` give their last layers no cache
+    of their own: llama.cpp points each of them at one of the two layers before.
+    """
+    shared = metadata.get(f"{metadata.get('general.architecture', '')}.attention.shared_kv_layers", 0)
+    if not isinstance(shared, int) or shared <= 0:
+        return 0
+    return max(0, block_count(metadata) - shared)
 
 
 def block_count(metadata) -> int:
@@ -727,6 +763,7 @@ def read_model_shape(path: Path) -> ModelShape:
         npu_weight_bytes=npu_weight_bytes(tensors),
         kv_layers=layers,
         state_bytes=RECURRENT_STATE_ALLOWANCE if recurrent else 0,
+        kv_shared_from=first_shared_kv_layer(metadata),
     )
 
 
@@ -793,15 +830,31 @@ def model_sizings(models):
 
 
 def detect_hexagon_sessions(models, ctx_size: int) -> int:
-    """Return the number of Hexagon sessions the installed models need at *ctx_size*."""
+    """Return the number of Hexagon sessions the installed models need at *ctx_size*.
+
+    The fewest that holds the hungriest model and splits the shared KV layers of no model
+    that needs more than one session from the layers that own the cache (see
+    ModelShape.strands_shared_layers()), every session when no count below that does. A
+    model that fits one session takes no part: it is split over whatever the others need,
+    and no count above one keeps gemma-4-E2B together anyway.
+    """
     needed = 1
+    split = []
     for name, sizing in model_sizings(models):
         required = sizing.sessions_needed(ctx_size)
         verdict = "fits 1 session" if required == 1 else f"requires {sessions(required)}"
         print(f"  {name}: {sizing.describe(ctx_size)}, {verdict}", file=sys.stderr)
         needed = max(needed, required)
+        if required > 1:
+            split.append((name, sizing))
 
-    return needed
+    for count in range(needed, MAX_SESSIONS):
+        stranded = [name for name, sizing in split if sizing.strands_shared_layers(count)]
+        if not stranded:
+            return count
+        for name in stranded:
+            print(f"  {name}: {sessions(count)} would split its shared KV layers from their cache", file=sys.stderr)
+    return MAX_SESSIONS
 
 
 def detect_ctx_size(models, ctx_size: int) -> int:
