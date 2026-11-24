@@ -347,6 +347,52 @@ def test_layers_that_share_a_cache_cost_no_recurrent_state(tmp_path):
     assert shape.state_bytes == 0
 
 
+def nemotron_bolt_e4b(path: Path) -> Path:
+    """The header of NVIDIA-Nemotron-3.5-Bolt-E4B (gemma4): its 18 shared layers keep
+    a K projection, unlike Google's gemma-4 conversions."""
+    pattern = [layer % 6 != 5 for layer in range(42)]
+    return write_gguf(
+        path,
+        {
+            "general.architecture": "gemma4",
+            "gemma4.block_count": 42,
+            "gemma4.attention.head_count": 8,
+            "gemma4.attention.head_count_kv": 2,
+            "gemma4.attention.key_length": 512,
+            "gemma4.attention.value_length": 512,
+            "gemma4.attention.key_length_swa": 256,
+            "gemma4.attention.value_length_swa": 256,
+            "gemma4.attention.sliding_window": 512,
+            "gemma4.attention.sliding_window_pattern": pattern,
+            "gemma4.attention.shared_kv_layers": 18,
+        },
+        [(f"blk.{layer}.attn_k.weight", (512,), Q4_0) for layer in range(42)],
+    )
+
+
+def test_the_shared_kv_layers_cache_nothing_even_with_a_k_projection(tmp_path, monkeypatch):
+    """Measured on 21linux 2026-11-24 at 16k: llama-server allocated 192 + 64 MiB of full
+    and 95 + 5 MiB of windowed cache over two sessions, the first 24 layers' worth. Counting
+    all 42 came to 623 MiB, put the model 5 MiB over the budget on two sessions and sized
+    it for three, where it never loaded."""
+    monkeypatch.delenv("LLAMA_ARG_UBATCH", raising=False)
+    shape = read_model_shape(nemotron_bolt_e4b(tmp_path / "m.gguf"))
+
+    assert len(shape.kv_layers) == 24
+    assert shape.kv_cache_bytes(16384) == (192 + 64 + 95 + 5) * MIB
+
+
+@pytest.mark.parametrize("npu_weight_mib", [3298, 3023], ids=["unsloth-UD-Q4_K_XL", "nvidia-Q4_K_M"])
+def test_nemotron_bolt_e4b_gets_the_two_sessions_it_loads_on(npu_weight_mib, tmp_path, monkeypatch):
+    """Both conversions loaded and answered on two sessions and failed on three, with a
+    1166 MiB compute buffer on HTP2 (21linux 2026-11-24, n_ubatch 512, MBUF 256,256)."""
+    monkeypatch.delenv("LLAMA_ARG_UBATCH", raising=False)
+    kv = read_model_shape(nemotron_bolt_e4b(tmp_path / "m.gguf")).kv_layers
+    shape = ModelShape(n_layer=42, npu_weight_bytes=npu_weight_mib * MIB, kv_layers=kv, state_bytes=0)
+
+    assert shape.sessions_needed(16384) == 2
+
+
 def test_an_unreadable_header_is_not_a_model(tmp_path):
     (tmp_path / "m.gguf").write_bytes(b"not a gguf file")
 

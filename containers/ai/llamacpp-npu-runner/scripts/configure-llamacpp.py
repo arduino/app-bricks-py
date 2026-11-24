@@ -640,14 +640,23 @@ def kv_layer_indices(metadata, tensors) -> list[int]:
     instead, but only when no layer has a separate K projection at all — Qwen3.5 gives
     its recurrent layers a fused projection too, and those cache nothing.
 
+    A gemma that declares ``attention.shared_kv_layers`` caches in the layers before
+    those only, as llama.cpp reads it, whether or not the shared layers keep a K
+    projection of their own: Nemotron-3.5-Bolt-E4B keeps one in all 42 layers and caches
+    in the first 24.
+
     Falls back to every layer when nothing matches, which is the safe direction: an
     unrecognised naming scheme then sizes as if every layer cached.
     """
+    shared = metadata.get(f"{metadata.get('general.architecture', '')}.attention.shared_kv_layers", 0)
+    first_shared = block_count(metadata) - int(shared) if isinstance(shared, int) and shared > 0 else None
     for pattern in (K_PROJECTION, FUSED_QKV_PROJECTION):
         indices = sorted({int(m.group(1)) for tensor in tensors if (m := pattern.match(tensor.name))})
+        if first_shared is not None:
+            indices = [index for index in indices if index < first_shared]
         if indices:
             return indices
-    return list(range(block_count(metadata)))
+    return list(range(block_count(metadata) if first_shared is None else first_shared))
 
 
 def block_count(metadata) -> int:
