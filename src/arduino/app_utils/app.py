@@ -12,6 +12,7 @@ from collections import deque
 import time
 
 from . import peripheral_registry
+from .errors import report_exception
 from .logger import Logger
 from collections.abc import Callable
 from types import FrameType
@@ -241,6 +242,10 @@ class AppController:
         """Starts all registered bricks and keeps the main thread alive, waiting for a shutdown signal (Ctrl+C).
 
         If a user_loop callable is provided, it will be executed instead of the default infinite loop.
+        Raising StopIteration from user_loop stops the app as a stop request does: the bricks are
+        shut down and the process exits with code 143 (128 + SIGTERM), without returning from
+        run(). Any other exception stops the app too: it is reported on stderr and the process
+        exits with code 1.
 
         When running inside a framework that manages the process lifecycle (e.g. Streamlit),
         bricks are started but the blocking loop is skipped. The framework is responsible for
@@ -409,9 +414,9 @@ class AppController:
 
         Returns:
             int: The exit code describing why the loop terminated:
-                - 0 for a clean termination
+                - 128 + SIGTERM when user_loop raised StopIteration, the same code as a stop request
                 - 128 + signal number for termination signals
-                - a code < 128 for other errors
+                - 1 when user_loop raised any other exception
         """
 
         class SignalReceived(BaseException):
@@ -435,15 +440,17 @@ class AppController:
                     time.sleep(10)
         except StopIteration:
             logger.debug("StopIteration received from user loop")
-            return 0
+            # A code above 128 is what the launcher reads as a stopped app; any other code, 0
+            # included, marks the app as failed.
+            return min(128 + signal.SIGTERM, 255)
         except KeyboardInterrupt:
             logger.debug("KeyboardInterrupt received")
             return min(128 + signal.SIGINT, 255)
         except SignalReceived as signal_received:
             logger.debug(f"Termination signal {signal_received.signum} received")
             return min(128 + signal_received.signum, 255)
-        except Exception:
-            logger.exception("Unhandled exception in application loop")
+        except Exception as e:
+            report_exception(e, "App stopped by an error")
             return 1
 
     def _start_managed_bricks(self) -> None:
