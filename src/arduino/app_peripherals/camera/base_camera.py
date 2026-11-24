@@ -88,7 +88,7 @@ class BaseCamera(ABC):
 
         # Event handling
         self._on_status_changed_cb: Callable[[str, dict[str, Any]], None] | None = None
-        self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="CameraEvent")
+        self._event_executor = self._new_event_executor()
 
         # Sharing with the other handles of the same device. The hub is only weakly referenced so
         # that the camera falls back to direct access once all the other handles are gone.
@@ -174,6 +174,11 @@ class BaseCamera(ABC):
                     )
                     time.sleep(delay)
 
+    @staticmethod
+    def _new_event_executor() -> ThreadPoolExecutor:
+        """Create the executor that runs the status callbacks one at a time, in order."""
+        return ThreadPoolExecutor(max_workers=1, thread_name_prefix="CameraEvent")
+
     def stop(self) -> None:
         """
         Stop the camera and release resources.
@@ -203,7 +208,9 @@ class BaseCamera(ABC):
 
             try:
                 self._close_camera()
+                # A shut down executor cannot run the status callbacks of the next start
                 self._event_executor.shutdown()
+                self._event_executor = self._new_event_executor()
                 self._is_started = False
                 self.logger.info(f"Successfully stopped {self.name}")
             except Exception as e:
