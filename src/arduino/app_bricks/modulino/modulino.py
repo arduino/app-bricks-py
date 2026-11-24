@@ -108,8 +108,10 @@ class ModulinoThermo(Modulino):
     def start(self) -> None:
         """Start the ModulinoThermo."""
         try:
-            Bridge.call(f"{self.name}:begin")
+            ok = Bridge.call(f"{self.name}:begin")
         except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
 
@@ -175,9 +177,10 @@ class ModulinoMovement(Modulino):
     def start(self) -> None:
         """Start the ModulinoMovement."""
         try:
-
-            Bridge.call(f"{self.name}:begin")
+            ok = Bridge.call(f"{self.name}:begin")
         except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
     @override
@@ -244,8 +247,10 @@ class ModulinoButtons(Modulino):
     def start(self) -> None:
         """Start the ModulinoButtons."""
         try:
-            Bridge.call(f"{self.name}:begin")
+            ok = Bridge.call(f"{self.name}:begin")
         except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
     @override
@@ -316,8 +321,10 @@ class ModulinoJoystick(Modulino):
     def start(self) -> None:
         """Start the joystick modulino."""
         try:
-            Bridge.call(f"{self.name}:begin")
+            ok = Bridge.call(f"{self.name}:begin")
         except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
     @override
@@ -377,8 +384,10 @@ class ModulinoKnob(Modulino):
     def start(self) -> None:
         """Start the knob modulino."""
         try:
-            Bridge.call(f"{self.name}:begin")
+            ok = Bridge.call(f"{self.name}:begin")
         except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
     @override
@@ -554,8 +563,10 @@ class ModulinoBuzzer(Modulino):
     def start(self) -> None:
         """Start the buzzer modulino."""
         try:
-            Bridge.call(f"{self.name}:begin")
+            ok = Bridge.call(f"{self.name}:begin")
         except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
     @override
@@ -604,8 +615,10 @@ class ModulinoPixels(Modulino):
     def start(self) -> None:
         """Start the pixels modulino."""
         try:
-            Bridge.call(f"{self.name}:begin")
+            ok = Bridge.call(f"{self.name}:begin")
         except:
+            raise ModulinoError(f"cannot start modulino {self.name}")
+        if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
     @override
