@@ -78,8 +78,8 @@ class Modulino:
         # The name is also the key the MCU uses in delete_modulino and poll_subscribe/unsubscribe.
         try:
             self.name = Bridge.call("create_modulino", type, i2c_address, self.hub_address, self.port)
-        except Exception:
-            self.name = ""
+        except Exception as e:
+            raise ModulinoError(f"cannot create modulino {type} at 0x{i2c_address:x}{self._location()}") from e
         if not self.name:
             raise ModulinoError(f"cannot create modulino {type} at 0x{i2c_address:x}{self._location()}")
 
@@ -110,8 +110,8 @@ class ModulinoThermo(Modulino):
         """Start the ModulinoThermo."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
@@ -121,8 +121,8 @@ class ModulinoThermo(Modulino):
         """Stop the ModulinoThermo."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     def get_humidity(self) -> float:
         """Get the humidity from the ModulinoThermo.
@@ -132,8 +132,8 @@ class ModulinoThermo(Modulino):
         """
         try:
             hum_float = Bridge.call(f"{self.name}:getHumidity")
-        except:
-            raise ModulinoError(f"cannot get humidity from modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot get humidity from modulino {self.name}") from e
 
         return hum_float
 
@@ -145,23 +145,29 @@ class ModulinoThermo(Modulino):
         """
         try:
             temp_float = Bridge.call(f"{self.name}:getTemperature")
-        except:
-            raise ModulinoError(f"cannot get temperature from modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot get temperature from modulino {self.name}") from e
 
         return temp_float
 
-class MovementSample:
-    """Class to contain a movement sample with x, y, z, roll, pitch, and yaw values.
-    The values are typically obtained from a Modulino 'movement' sensor.
-    Access the values through the attributes x, y, z, roll, pitch, and yaw.
+class MovementSample(NamedTuple):
+    """A movement sample of a Modulino Movement.
+
+    It is a tuple `(x, y, z, roll, pitch, yaw)`, so it can be unpacked (`x, y, z, roll, pitch, yaw = sample`)
+    or read by field (`sample.x`).
     """
-    def __init__(self, x, y, z, roll, pitch, yaw):
-        self.x = x
-        self.y = y
-        self.z = z
-        self.roll = roll
-        self.pitch = pitch
-        self.yaw = yaw
+    x: float
+    """Acceleration on the X axis, in g."""
+    y: float
+    """Acceleration on the Y axis, in g."""
+    z: float
+    """Acceleration on the Z axis, in g."""
+    roll: float
+    """Angular rate around the X axis, in degrees per second."""
+    pitch: float
+    """Angular rate around the Y axis, in degrees per second."""
+    yaw: float
+    """Angular rate around the Z axis, in degrees per second."""
 
 class ModulinoMovement(Modulino):
     """Class to handle a Modulino 'movement' sensor."""
@@ -179,8 +185,8 @@ class ModulinoMovement(Modulino):
         """Start the ModulinoMovement."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
@@ -189,8 +195,8 @@ class ModulinoMovement(Modulino):
         """Stop the ModulinoMovement."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     def get_sample(self) -> MovementSample:
         """Get a movement sample from the ModulinoMovement.
@@ -206,8 +212,8 @@ class ModulinoMovement(Modulino):
             roll = Bridge.call(f"{self.name}:getRoll")
             pitch = Bridge.call(f"{self.name}:getPitch")
             yaw = Bridge.call(f"{self.name}:getYaw")
-        except:
-            raise ModulinoError(f"cannot get movement sample from modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot get movement sample from modulino {self.name}") from e
 
         return MovementSample(x,y,z, roll, pitch, yaw)
 
@@ -216,22 +222,31 @@ class ModulinoMovement(Modulino):
         The callback function will be called with each movement sample as an argument
         at the specified interval.
         To stop sampling, call the `stop_sample` method.
-        The callback must accept 6 arguments: x, y, z, roll, pitch, and yaw.
+        The callback runs on the bridge thread: it must not call the methods of the Modulini,
+        signal the app instead (e.g. with a `threading.Event`).
 
         Args:
             ms (int): The sampling interval in milliseconds (minimum 100 ms).
-            callback (Callable): The callback function to be called with each sample
-              The callback function should have the following signature:
-                  def callback(x: float, y: float, z: float, roll: float, pitch: float, yaw: float) -> None:
+            callback (Callable[[MovementSample], None]): Called with each sample:
+                  def callback(sample: MovementSample) -> None:
         """
         if ms < 100:
             raise ModulinoError("sample rate too small")
-        Bridge.provide(f"{self.name}_callback", callback)
-        Bridge.notify("poll_subscribe", self.name, ms)
+        if not callable(callback):
+            raise ModulinoError("callback must be callable")
+        try:
+            # The MCU notifies the 6 values of the sample
+            Bridge.provide(f"{self.name}_callback", lambda *values: callback(MovementSample(*values)))
+            Bridge.notify("poll_subscribe", self.name, ms)
+        except Exception as e:
+            raise ModulinoError(f"cannot start sampling on modulino {self.name}") from e
 
     def stop_sample(self) -> None:
         """Stop sampling movement data."""
-        Bridge.notify("poll_unsubscribe", self.name)
+        try:
+            Bridge.notify("poll_unsubscribe", self.name)
+        except Exception as e:
+            raise ModulinoError(f"cannot stop sampling on modulino {self.name}") from e
 
 class ModulinoButtons(Modulino):
     """Class to handle a Modulino Buttons."""
@@ -239,7 +254,7 @@ class ModulinoButtons(Modulino):
         """Initialize the ModulinoButtons with the specified I2C address.
 
         Args:
-            i2c_address (int): The I2C address of the ModulinoButtons. Defaults it will autoscan for the address.
+            i2c_address (int, optional): The I2C address of the buttons modulino. Defaults to 0xFF: the address is found by autoscan.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         super().__init__("buttons", i2c_address, hub_port)
@@ -249,8 +264,8 @@ class ModulinoButtons(Modulino):
         """Start the ModulinoButtons."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
@@ -259,8 +274,8 @@ class ModulinoButtons(Modulino):
         """Stop the ModulinoButtons."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     def set_leds(self, led_a, led_b, led_c) -> None:
         """Set the state of the LEDs on the ModulinoButtons.
@@ -271,31 +286,36 @@ class ModulinoButtons(Modulino):
         """
         try:
             Bridge.call(f"{self.name}:setLeds", led_a, led_b, led_c)
-        except:
-            raise ModulinoError(f"cannot set LEDs for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set LEDs for modulino {self.name}") from e
 
     def set_on_change_callback(self, callback) -> None:
         """Set the callback function to be called when a button state changes.
         The callback will report the current state of each button after the change event (1 pressed, 0 released).
         The callback must accept 3 arguments: button_a, button_b, and button_c.
 
+        The callback runs on the bridge thread: it must not call the methods of the Modulini,
+        signal the app instead (e.g. with a `threading.Event`).
+
         Args:
             callback (Callable): The callback function to be called on button state change.
             The callback function should have the following signature:
                 def callback(button_a: int, button_b: int, button_c: int) -> None:
         """
+        if not callable(callback):
+            raise ModulinoError("callback must be callable")
         try:
             Bridge.provide(f"{self.name}_callback", callback)
             Bridge.notify("poll_subscribe", self.name, 10)
-        except:
-            raise ModulinoError(f"cannot set callback for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set callback for modulino {self.name}") from e
 
     def remove_on_change_callback(self) -> None:
         """Remove the callback function for button state changes."""
         try:
             Bridge.notify("poll_unsubscribe", self.name)
-        except:
-            raise ModulinoError(f"cannot remove callback for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot remove callback for modulino {self.name}") from e
 
     def set_debounce(self, ms) -> None:
         """Set the debounce time for button state changes.
@@ -305,8 +325,8 @@ class ModulinoButtons(Modulino):
         """
         try:
             Bridge.call(f"{self.name}:setDebounce", ms)
-        except:
-            raise ModulinoError(f"cannot set debounce for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set debounce for modulino {self.name}") from e
 
 class ModulinoJoystick(Modulino):
     """Class to handle a Modulino Joystick."""
@@ -314,7 +334,7 @@ class ModulinoJoystick(Modulino):
         """Initialize the ModulinoJoystick with the given I2C address.
 
         Args:
-            i2c_address (int, optional): The I2C address of the joystick modulino. Defaults it will autoscan for the address.
+            i2c_address (int, optional): The I2C address of the joystick modulino. Defaults to 0xFF: the address is found by autoscan.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         super().__init__("joystick", i2c_address, hub_port)
@@ -323,8 +343,8 @@ class ModulinoJoystick(Modulino):
         """Start the joystick modulino."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
@@ -333,8 +353,8 @@ class ModulinoJoystick(Modulino):
         """Stop the joystick modulino."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     def set_on_change_callback(self, callback) -> None:
         """Set the callback function for joystick state changes.
@@ -343,21 +363,26 @@ class ModulinoJoystick(Modulino):
         The callback function should have the following signature:
                 def callback(x: int, y: int, button: int) -> None:
 
+        The callback runs on the bridge thread: it must not call the methods of the Modulini,
+        signal the app instead (e.g. with a `threading.Event`).
+
         Args:
             callback (Callable[[int, int, int], None]): The callback function to be called when the joystick state changes.
         """
+        if not callable(callback):
+            raise ModulinoError("callback must be callable")
         try:
             Bridge.provide(f"{self.name}_callback", callback)
             Bridge.notify("poll_subscribe", self.name, 10)
-        except:
-            raise ModulinoError(f"cannot set callback for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set callback for modulino {self.name}") from e
 
     def remove_on_change_callback(self) -> None:
         """Remove the callback function for joystick state changes."""
         try:
             Bridge.notify("poll_unsubscribe", self.name)
-        except:
-            raise ModulinoError(f"cannot remove callback for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot remove callback for modulino {self.name}") from e
 
     def set_debounce(self, ms) -> None:
         """Set the debounce time for the joystick modulino.
@@ -367,8 +392,8 @@ class ModulinoJoystick(Modulino):
         """
         try:
             Bridge.call(f"{self.name}:setDebounce", ms)
-        except:
-            raise ModulinoError(f"cannot set debounce for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set debounce for modulino {self.name}") from e
 
 class ModulinoKnob(Modulino):
     """Class to handle a Modulino Knob."""
@@ -376,7 +401,7 @@ class ModulinoKnob(Modulino):
         """Initialize the ModulinoKnob with the given I2C address.
 
         Args:
-            i2c_address (int, optional): The I2C address of the knob modulino. Defaults it will autoscan for the address.
+            i2c_address (int, optional): The I2C address of the knob modulino. Defaults to 0xFF: the address is found by autoscan.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         super().__init__("knob", i2c_address, hub_port)
@@ -386,8 +411,8 @@ class ModulinoKnob(Modulino):
         """Start the knob modulino."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
@@ -396,8 +421,8 @@ class ModulinoKnob(Modulino):
         """Stop the knob modulino."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     def set_on_change_callback(self, callback) -> None:
         """Set the callback function for knob state changes.
@@ -407,21 +432,26 @@ class ModulinoKnob(Modulino):
         The callback function should accept three integer arguments: the current knob value, the button state,
         and the direction of the knob rotation.
 
+        The callback runs on the bridge thread: it must not call the methods of the Modulini,
+        signal the app instead (e.g. with a `threading.Event`).
+
         Args:
             callback (Callable[[int, int, int], None]): The callback function to be called when the knob state changes.
         """
+        if not callable(callback):
+            raise ModulinoError("callback must be callable")
         try:
             Bridge.provide(f"{self.name}_callback", callback)
             Bridge.notify("poll_subscribe", self.name, 10)
-        except:
-            raise ModulinoError(f"cannot set callback for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set callback for modulino {self.name}") from e
 
     def remove_on_change_callback(self) -> None:
         """Remove the callback function for knob state changes."""
         try:
             Bridge.notify("poll_unsubscribe", self.name)
-        except:
-            raise ModulinoError(f"cannot remove callback for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot remove callback for modulino {self.name}") from e
 
     def set_debounce(self, ms) -> None:
         """Set the debounce time for the knob modulino.
@@ -431,8 +461,8 @@ class ModulinoKnob(Modulino):
         """
         try:
             Bridge.call(f"{self.name}:setDebounce", ms)
-        except:
-            raise ModulinoError(f"cannot set debounce for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set debounce for modulino {self.name}") from e
 
     def set_start_position(self, position) -> None:
         """Set the start position for the knob modulino.
@@ -442,8 +472,8 @@ class ModulinoKnob(Modulino):
         """
         try:
             Bridge.call(f"{self.name}:setStartPosition", position)
-        except:
-            raise ModulinoError(f"cannot set start position for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set start position for modulino {self.name}") from e
 
 class ModulinoDistance(Modulino):
     """Class to handle a Modulino Distance (time-of-flight sensor, I2C address 0x29)."""
@@ -470,8 +500,8 @@ class ModulinoDistance(Modulino):
         """
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
@@ -480,8 +510,8 @@ class ModulinoDistance(Modulino):
         """Stop the ModulinoDistance."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     def get_distance(self) -> float:
         """Get the last measured distance.
@@ -491,8 +521,8 @@ class ModulinoDistance(Modulino):
         """
         try:
             return Bridge.call(f"{self.name}:getDistance")
-        except:
-            raise ModulinoError(f"cannot get distance from modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot get distance from modulino {self.name}") from e
 
     def set_threshold_callback(self, threshold_mm, callback, hysteresis_mm = 20) -> None:
         """Call a callback when an object enters or leaves the zone closer than a threshold.
@@ -507,6 +537,9 @@ class ModulinoDistance(Modulino):
 
         This runs through the Linux side and is not a safety-rated emergency stop.
 
+        The callback runs on the bridge thread: it must not call the methods of the Modulini,
+        signal the app instead (e.g. with a `threading.Event`).
+
         Args:
             threshold_mm (int): The threshold distance in millimeters.
             callback (Callable[[int, int], None]): Called with the new state (`NEAR` or `FAR`)
@@ -516,25 +549,27 @@ class ModulinoDistance(Modulino):
         """
         if not isinstance(threshold_mm, int) or not isinstance(hysteresis_mm, int) or threshold_mm <= 0 or hysteresis_mm < 0:
             raise ModulinoError("threshold_mm must be a positive integer and hysteresis_mm a non-negative integer")
+        if not callable(callback):
+            raise ModulinoError("callback must be callable")
         try:
             ok = Bridge.call(f"{self.name}:setThreshold", threshold_mm, hysteresis_mm)
-        except:
-            raise ModulinoError(f"cannot set threshold for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set threshold for modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot set threshold for modulino {self.name}")
         try:
             # The MCU notifies 3 integers, the third is unused
             Bridge.provide(f"{self.name}_callback", lambda state, distance, _unused: callback(state, distance))
             Bridge.notify("poll_subscribe", self.name, 20)   # the sensor measures every 20 ms
-        except:
-            raise ModulinoError(f"cannot set callback for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set callback for modulino {self.name}") from e
 
     def remove_threshold_callback(self) -> None:
         """Remove the threshold callback."""
         try:
             Bridge.notify("poll_unsubscribe", self.name)
-        except:
-            raise ModulinoError(f"cannot remove callback for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot remove callback for modulino {self.name}") from e
 
     def set_debounce(self, ms) -> None:
         """Set how long a new state must be stable before the callback is called.
@@ -546,8 +581,8 @@ class ModulinoDistance(Modulino):
         """
         try:
             Bridge.call(f"{self.name}:setDebounce", ms)
-        except:
-            raise ModulinoError(f"cannot set debounce for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set debounce for modulino {self.name}") from e
 
 class ModulinoBuzzer(Modulino):
     """Class to handle a Modulino Buzzer."""
@@ -555,7 +590,7 @@ class ModulinoBuzzer(Modulino):
         """Initialize the ModulinoBuzzer with the given I2C address.
 
         Args:
-            i2c_address (int, optional): The I2C address of the buzzer modulino. Defaults it will autoscan for the address.
+            i2c_address (int, optional): The I2C address of the buzzer modulino. Defaults to 0xFF: the address is found by autoscan.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         super().__init__("buzzer", i2c_address, hub_port)
@@ -565,8 +600,8 @@ class ModulinoBuzzer(Modulino):
         """Start the buzzer modulino."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
@@ -575,8 +610,8 @@ class ModulinoBuzzer(Modulino):
         """Stop the buzzer modulino."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     def tone(self, frequency, duration_ms) -> None:
         """Play a tone on the buzzer.
@@ -589,8 +624,8 @@ class ModulinoBuzzer(Modulino):
             raise ModulinoError("frequency and duration_ms must be non-negative integers")
         try:
             ok = Bridge.call(f"{self.name}:tone", frequency, duration_ms)
-        except:
-            raise ModulinoError(f"cannot play tone on modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot play tone on modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot play tone on modulino {self.name}")
 
@@ -598,8 +633,8 @@ class ModulinoBuzzer(Modulino):
         """Stop the tone currently playing on the buzzer."""
         try:
             Bridge.call(f"{self.name}:noTone")
-        except:
-            raise ModulinoError(f"cannot stop tone on modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot stop tone on modulino {self.name}") from e
 
 class ModulinoPixels(Modulino):
     """Class to handle a Modulino Pixels (8 RGB LEDs)."""
@@ -607,7 +642,7 @@ class ModulinoPixels(Modulino):
         """Initialize the ModulinoPixels with the given I2C address.
 
         Args:
-            i2c_address (int, optional): The I2C address of the pixels modulino. Defaults it will autoscan for the address.
+            i2c_address (int, optional): The I2C address of the pixels modulino. Defaults to 0xFF: the address is found by autoscan.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         super().__init__("pixels", i2c_address, hub_port)
@@ -617,8 +652,8 @@ class ModulinoPixels(Modulino):
         """Start the pixels modulino."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
@@ -627,8 +662,8 @@ class ModulinoPixels(Modulino):
         """Stop the pixels modulino."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     def set(self, idx, r, g, b, brightness = 25) -> None:
         """Set the color and brightness of one LED.
@@ -642,8 +677,8 @@ class ModulinoPixels(Modulino):
         """
         try:
             ok = Bridge.call(f"{self.name}:set", idx, r, g, b, brightness)
-        except:
-            raise ModulinoError(f"cannot set LED {idx} on modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set LED {idx} on modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot set LED {idx} on modulino {self.name}: invalid arguments")
 
@@ -657,8 +692,8 @@ class ModulinoPixels(Modulino):
         """
         try:
             r, g, b = color
-        except (TypeError, ValueError):
-            raise ModulinoError(f"cannot set LED {idx} on modulino {self.name}: the color must be (r, g, b)")
+        except (TypeError, ValueError) as e:
+            raise ModulinoError(f"cannot set LED {idx} on modulino {self.name}: the color must be (r, g, b)") from e
         self.set(idx, r, g, b, brightness)
 
     def clear(self, idx) -> None:
@@ -669,8 +704,8 @@ class ModulinoPixels(Modulino):
         """
         try:
             ok = Bridge.call(f"{self.name}:clear", idx)
-        except:
-            raise ModulinoError(f"cannot clear LED {idx} on modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot clear LED {idx} on modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot clear LED {idx} on modulino {self.name}: invalid index")
 
@@ -678,8 +713,8 @@ class ModulinoPixels(Modulino):
         """Turn off all the LEDs."""
         try:
             Bridge.call(f"{self.name}:clearAll")
-        except:
-            raise ModulinoError(f"cannot clear LEDs on modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot clear LEDs on modulino {self.name}") from e
 
 class ModulinoLight(Modulino):
     """Class to handle a Modulino Light (color and ambient light sensor, I2C address 0x53).
@@ -701,8 +736,8 @@ class ModulinoLight(Modulino):
         """Start the ModulinoLight."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
@@ -711,15 +746,15 @@ class ModulinoLight(Modulino):
         """Stop the ModulinoLight."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     def _read(self, method, what) -> int:
         # The MCU returns -1 when the measure fails
         try:
             value = Bridge.call(f"{self.name}:{method}")
-        except:
-            raise ModulinoError(f"cannot get {what} from modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot get {what} from modulino {self.name}") from e
         if value < 0:
             raise ModulinoError(f"cannot get {what} from modulino {self.name}: measure failed")
         return value
@@ -774,7 +809,7 @@ class ModulinoLatchRelay(Modulino):
         """Initialize the ModulinoLatchRelay with the given I2C address.
 
         Args:
-            i2c_address (int, optional): The I2C address of the latch relay modulino. Defaults it will autoscan for the address.
+            i2c_address (int, optional): The I2C address of the latch relay modulino. Defaults to 0xFF: the address is found by autoscan.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         super().__init__("latch_relay", i2c_address, hub_port)
@@ -784,8 +819,8 @@ class ModulinoLatchRelay(Modulino):
         """Start the latch relay modulino."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
@@ -794,22 +829,22 @@ class ModulinoLatchRelay(Modulino):
         """Stop the latch relay modulino."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     def set(self) -> None:
         """Turn the relay on (close the circuit)."""
         try:
             Bridge.call(f"{self.name}:set")
-        except:
-            raise ModulinoError(f"cannot set modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set modulino {self.name}") from e
 
     def reset(self) -> None:
         """Turn the relay off (open the circuit)."""
         try:
             Bridge.call(f"{self.name}:reset")
-        except:
-            raise ModulinoError(f"cannot reset modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot reset modulino {self.name}") from e
 
     def get_status(self) -> int:
         """Get the relay status.
@@ -819,8 +854,8 @@ class ModulinoLatchRelay(Modulino):
         """
         try:
             return Bridge.call(f"{self.name}:getStatus")
-        except:
-            raise ModulinoError(f"cannot get status from modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot get status from modulino {self.name}") from e
 
 class ModulinoVibro(Modulino):
     """Class to handle a Modulino Vibro (vibration motor)."""
@@ -843,7 +878,7 @@ class ModulinoVibro(Modulino):
         """Initialize the ModulinoVibro with the given I2C address.
 
         Args:
-            i2c_address (int, optional): The I2C address of the vibro modulino. Defaults it will autoscan for the address.
+            i2c_address (int, optional): The I2C address of the vibro modulino. Defaults to 0xFF: the address is found by autoscan.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         super().__init__("vibro", i2c_address, hub_port)
@@ -853,8 +888,8 @@ class ModulinoVibro(Modulino):
         """Start the vibro modulino."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
 
@@ -863,8 +898,8 @@ class ModulinoVibro(Modulino):
         """Stop the vibro modulino."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     def on(self, duration_ms, power = MAXIMUM, block = False) -> None:
         """Vibrate for the given time.
@@ -883,8 +918,8 @@ class ModulinoVibro(Modulino):
             raise ModulinoError(f"power must be an integer between {self.STOP} and {self.MAXIMUM}")
         try:
             ok = Bridge.call(f"{self.name}:on", duration_ms, power)
-        except:
-            raise ModulinoError(f"cannot turn on modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot turn on modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot turn on modulino {self.name}")
         if block:
@@ -895,8 +930,8 @@ class ModulinoVibro(Modulino):
         """Stop the vibration."""
         try:
             Bridge.call(f"{self.name}:off")
-        except:
-            raise ModulinoError(f"cannot turn off modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot turn off modulino {self.name}") from e
 
 class ModulinoMotors(Modulino):
     """Class to handle a Modulino Motors (two DC motors on channels A and B, or one stepper motor).
@@ -920,7 +955,7 @@ class ModulinoMotors(Modulino):
         """Initialize the ModulinoMotors with the given I2C address.
 
         Args:
-            i2c_address (int, optional): The I2C address of the motors modulino. Defaults it will autoscan for the address.
+            i2c_address (int, optional): The I2C address of the motors modulino. Defaults to 0xFF: the address is found by autoscan.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
             steps_per_revolution (int, optional): Full steps per shaft revolution of the stepper motor (1 to 32767).
                 Required only by `move()`. Defaults to None.
@@ -934,8 +969,8 @@ class ModulinoMotors(Modulino):
     def _command(self, what, method, *args) -> None:
         try:
             ok = Bridge.call(f"{self.name}:{method}", *args)
-        except Exception:
-            raise ModulinoError(f"cannot {what} for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot {what} for modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot {what} for modulino {self.name}")
 
@@ -950,8 +985,8 @@ class ModulinoMotors(Modulino):
     def _status(self) -> int:
         try:
             status = Bridge.call(f"{self.name}:getStatus")
-        except Exception:
-            raise ModulinoError(f"cannot get status from modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot get status from modulino {self.name}") from e
         if status < 0:
             raise ModulinoError(f"cannot get status from modulino {self.name}")
         return status
@@ -961,8 +996,8 @@ class ModulinoMotors(Modulino):
         """Start the motors modulino, in DC mode with both motors stopped."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except Exception:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
         self._stepper = False
@@ -971,16 +1006,12 @@ class ModulinoMotors(Modulino):
     def stop(self) -> None:
         """Stop the motors and the motors modulino.
 
-        In DC mode both motors are stopped, in stepper mode the coils are released.
+        The board stops both DC motors and, in stepper mode, releases the coils.
         """
         try:
-            Bridge.call(f"{self.name}:release" if self._stepper else f"{self.name}:stop")
-        except Exception:
-            logger.warning(f"cannot stop the motors of modulino {self.name}")
-        try:
             Bridge.call("delete_modulino", self.name)
-        except Exception:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     # Common methods
 
@@ -1033,8 +1064,8 @@ class ModulinoMotors(Modulino):
     def _current(self, channel) -> float:
         try:
             current = Bridge.call(f"{self.name}:getCurrent", channel)
-        except Exception:
-            raise ModulinoError(f"cannot get current from modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot get current from modulino {self.name}") from e
         if current < 0:
             raise ModulinoError(f"cannot get current from modulino {self.name}")
         return current
@@ -1157,24 +1188,29 @@ class ModulinoMotors(Modulino):
         Set it before calling `move()`. If a new move starts before the previous one completes,
         the callback is called once, at the end of the last move.
 
+        The callback runs on the bridge thread: it must not call the methods of the Modulini,
+        signal the app instead (e.g. with a `threading.Event`).
+
         Args:
             callback (Callable[[], None]): Called with no arguments:
                   def callback() -> None:
         """
         self._require_stepper("set move complete callback")
+        if not callable(callback):
+            raise ModulinoError("callback must be callable")
         try:
             # The MCU notifies 3 integers: busy (always 0) and two unused values
             Bridge.provide(f"{self.name}_callback", lambda _busy, _unused1, _unused2: callback())
             Bridge.notify("poll_subscribe", self.name, 20)
-        except Exception:
-            raise ModulinoError(f"cannot set callback for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set callback for modulino {self.name}") from e
 
     def remove_on_move_complete_callback(self) -> None:
         """Remove the move complete callback."""
         try:
             Bridge.notify("poll_unsubscribe", self.name)
-        except Exception:
-            raise ModulinoError(f"cannot remove callback for modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot remove callback for modulino {self.name}") from e
 
 class ModulinoLEDMatrix(Modulino):
     """Class to handle a Modulino LED Matrix (12x8 LEDs).
@@ -1207,16 +1243,16 @@ class ModulinoLEDMatrix(Modulino):
         """Start the LED matrix, in monochrome mode."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
-        except:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot start modulino {self.name}")
         self._grayscale = False
         try:
             # Always provided: the MCU notifies (3 unused integers) the end of every animation without loop
             Bridge.provide(f"{self.name}_callback", lambda _unused0, _unused1, _unused2: self._animation_ended())
-        except Exception:
-            raise ModulinoError(f"cannot start modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot start modulino {self.name}") from e
 
     def _animation_ended(self) -> None:
         callback = self._on_animation_end
@@ -1228,8 +1264,8 @@ class ModulinoLEDMatrix(Modulino):
         """Stop the LED matrix."""
         try:
             Bridge.call("delete_modulino", self.name)
-        except:
-            raise ModulinoError(f"cannot delete modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot delete modulino {self.name}") from e
 
     @property
     def brightness_levels(self) -> int:
@@ -1255,8 +1291,8 @@ class ModulinoLEDMatrix(Modulino):
         mode = self._MODE_GRAYSCALE if enabled else self._MODE_MONOCHROME
         try:
             ok = Bridge.call(f"{self.name}:setMode", mode)
-        except:
-            raise ModulinoError(f"cannot set the mode of modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot set the mode of modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot set the mode of modulino {self.name}")
         self._grayscale = enabled
@@ -1284,8 +1320,8 @@ class ModulinoLEDMatrix(Modulino):
         pixels = frame.to_bytes(self._GRAYSCALE_LEVELS) if self._grayscale else frame.to_bytes()
         try:
             ok = Bridge.call(f"{self.name}:draw", pixels)
-        except:
-            raise ModulinoError(f"cannot draw on modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot draw on modulino {self.name}") from e
         if not ok:
             raise ModulinoError(f"cannot draw on modulino {self.name}")
 
@@ -1323,23 +1359,23 @@ class ModulinoLEDMatrix(Modulino):
             for entry in entries:
                 Bridge.notify(f"{self.name}:load_frame", entry)
             count = Bridge.call(f"{self.name}:play_animation", loop)
-        except:
-            raise ModulinoError(f"cannot play animation on modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot play animation on modulino {self.name}") from e
         if count != len(entries):
             raise ModulinoError(f"cannot play animation on modulino {self.name}: {count} of {len(entries)} frames loaded")
         try:
             # Starts the playback: the MCU shows the first frame right away, then sets the
             # polling period to the duration of each frame and unsubscribes at the end.
             Bridge.notify("poll_subscribe", self.name, 1)
-        except:
-            raise ModulinoError(f"cannot play animation on modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot play animation on modulino {self.name}") from e
 
     def stop_animation(self) -> None:
         """Stop the animation, the current frame stays on the matrix."""
         try:
             Bridge.call(f"{self.name}:stop_animation")
-        except:
-            raise ModulinoError(f"cannot stop animation on modulino {self.name}")
+        except Exception as e:
+            raise ModulinoError(f"cannot stop animation on modulino {self.name}") from e
 
     def set_on_animation_end_callback(self, callback) -> None:
         """Call a callback each time an animation without loop ends, after the duration of its last frame.

@@ -65,10 +65,13 @@ print(distance.get_distance())
 ```python
 def on_proximity(state, distance_mm):
     if state == ModulinoDistance.NEAR:
-        robot.stop()
+        # Add your code here to stop a movement, e.g. set a threading.Event checked by your app
+        pass
 
-distance.set_threshold_callback(150, on_proximity)   # stop below 15 cm, restart above 17 cm
+distance.set_threshold_callback(150, on_proximity)   # NEAR below 15 cm, FAR again above 17 cm
 ```
+
+The callback runs on the bridge thread, where the Modulino methods can't be called: to act on another Modulino (for example to stop the motors), signal your app and do it from there.
 
 The sensor measures every 20 ms. By default a new state is notified after the next measure confirms it: a single measure below `threshold_mm` followed by one at or above it does not raise `NEAR`. Calling `set_threshold_callback` again restarts from `FAR`, so an object already near is notified again. Use `set_debounce(ms)` to require a longer stable time. `remove_threshold_callback()` stops the notifications.
 
