@@ -1,5 +1,100 @@
 # Modulino brick
 
+The Modulino brick lets your app use the Modulino modules connected to the Qwiic connector of the board. The I2C communication, the polling of the inputs and the debounce run on the microcontroller (through the `Arduino_ModulinoBridge` sketch library, added by the brick); your Python app calls the methods of one class per Modulino:
+
+| Class | Modulino | I2C address |
+|---|---|---|
+| `ModulinoThermo` | temperature and humidity | 0x44, fixed |
+| `ModulinoMovement` | accelerometer and gyroscope | 0x6A by default |
+| `ModulinoLight` | color and ambient light | 0x53, fixed |
+| `ModulinoDistance` | time-of-flight distance | 0x29, fixed |
+| `ModulinoButtons` | 3 buttons with LEDs | autoscan |
+| `ModulinoJoystick` | joystick with button | autoscan |
+| `ModulinoKnob` | rotary encoder with button | autoscan |
+| `ModulinoBuzzer` | buzzer | autoscan |
+| `ModulinoPixels` | 8 RGB LEDs | autoscan |
+| `ModulinoVibro` | vibration motor | autoscan |
+| `ModulinoLatchRelay` | latching relay | autoscan |
+| `ModulinoMotors` | two DC motors or one stepper | autoscan |
+| `ModulinoLEDMatrix` | 12x8 LED matrix | 0x39 by default |
+
+## Using a Modulino
+
+Create the Modulini at the top of your app. `App.run()` starts them and stops them when the app closes, so call their methods from your loop (or from code that runs after `App.run()` has started them):
+
+```python
+import time
+
+from arduino.app_bricks.modulino import ModulinoThermo, ModulinoPixels
+from arduino.app_utils import App
+
+thermo = ModulinoThermo()
+pixels = ModulinoPixels()
+
+def loop():
+    temperature = thermo.get_temperature()
+    if temperature > 28:
+        pixels.set(0, 255, 0, 0)   # LED 0 red
+    else:
+        pixels.clear(0)
+    time.sleep(1)
+
+App.run(user_loop=loop)
+```
+
+To use a Modulino before `App.run()`, start it yourself with `App.start_brick(modulino)`: `App.run()` doesn't start it again, and stops it when the app closes. Don't call `start()` directly before `App.run()`: the Modulino would be started twice, and the second start resets it (for example it turns the LEDs of the Pixels off).
+
+`start()` initializes the Modulino on the board and puts it back in its default state. `stop()` stops its notifications and turns its outputs off: motors, LEDs, sound and vibration (the Latch Relay keeps its position). If a Modulino doesn't answer, its `start()` fails: the app logs the error and keeps running.
+
+The snippets in the next sections show only the calls: put them in your loop, as above.
+
+### Addresses
+
+- **Autoscan**: the Modulini with a microcontroller of their own are found on the bus by default. Pass `i2c_address` only if you changed the address of the module.
+- **Default address**: `ModulinoMovement` (0x6A) and `ModulinoLEDMatrix` (0x39) take an `i2c_address` too.
+- **Fixed address**: `ModulinoThermo`, `ModulinoLight` and `ModulinoDistance` have no `i2c_address` argument: the address is the class constant `I2C_ADDRESS`.
+
+`i2c_address` is the first argument of the constructors that take it: pass the hub port by name, `ModulinoButtons(hub_port=hub.port(0))` (see [Modulino Hub](#modulino-hub)).
+
+### Errors
+
+The methods raise `ModulinoError`:
+
+- when an argument is not valid, for example `ModulinoError("frequency and duration_ms must be non-negative integers")`;
+- when the board can't do the operation, as `modulino <name>: cannot <operation>`, for example `modulino thermo_44: cannot get humidity`. If the call to the board failed (for example a timeout), the original exception is its `__cause__`.
+
+`Modulino` is the base class of the Modulino classes and is not exported: creating it directly raises `TypeError`.
+
+### Callbacks
+
+Some Modulini call a function of your app when something happens: a button pressed, an object near, a move or an animation completed. Your callback runs on the bridge thread, where the Modulino methods can't be called. To act on a Modulino, signal your app (for example with a `threading.Event`) and call the method from your loop:
+
+```python
+import threading
+
+from arduino.app_bricks.modulino import ModulinoButtons, ModulinoBuzzer
+from arduino.app_utils import App
+
+buttons = ModulinoButtons()
+buzzer = ModulinoBuzzer()
+pressed = threading.Event()
+
+def on_buttons(button_a, button_b, button_c):
+    if button_a:
+        pressed.set()
+
+buttons.set_on_change_callback(on_buttons)
+
+def loop():
+    if pressed.wait(timeout=1):
+        pressed.clear()
+        buzzer.tone(880, 100)   # a Modulino method: called from the loop, not from the callback
+
+App.run(user_loop=loop)
+```
+
+Keep the callbacks short: while one runs, the other notifications wait. Passing something that is not callable raises `ModulinoError`.
+
 ## Modulino Hub
 
 A Modulino Hub is an I2C multiplexer with 8 ports (0-7). It lets you use several Modulini that have the same I2C address, for example two Buttons with the default address, by plugging them into different ports.
@@ -26,21 +121,62 @@ thermo = ModulinoThermo()   # main bus, no hub
 - **No cascading**: a hub connected to the port of another hub is not supported. Connect every hub to the main bus.
 - **LED Matrix**: the Modulino LED Matrix is not supported behind a hub. Connect it to the main bus.
 
-## Modulino Buzzer
+## Modulino Thermo
 
-`ModulinoBuzzer` plays a tone with `tone(frequency, duration_ms)` and stops it with `no_tone()`:
+`ModulinoThermo` measures the temperature and the relative humidity. `get_temperature()` returns degrees Celsius and `get_humidity()` the relative humidity in percent, both as `float`:
 
 ```python
-from arduino.app_bricks.modulino import ModulinoBuzzer
+from arduino.app_bricks.modulino import ModulinoThermo
 
-buzzer = ModulinoBuzzer()   # autoscan for the address
-buzzer.start()
+thermo = ModulinoThermo()
 
-buzzer.tone(440, 500)   # 440 Hz for 500 ms
-buzzer.no_tone()         # stop the current tone
+print(f"{thermo.get_temperature():.1f} C, {thermo.get_humidity():.0f} %")
 ```
 
-`frequency` (Hz) and `duration_ms` must be non-negative integers, otherwise `ModulinoError` is raised.
+## Modulino Movement
+
+`ModulinoMovement` measures the acceleration on 3 axes (in g) and the angular rate around them (in degrees per second). `get_sample()` takes a new measure and returns a `MovementSample`, a tuple `(x, y, z, roll, pitch, yaw)` that can also be read by field:
+
+```python
+from arduino.app_bricks.modulino import ModulinoMovement, MovementSample
+
+movement = ModulinoMovement()
+
+sample = movement.get_sample()
+print(sample.x, sample.y, sample.z)   # about (0, 0, 1) g when the module lies flat
+x, y, z, roll, pitch, yaw = sample
+```
+
+To receive the samples at a regular interval, `start_sample(ms, callback)` calls `callback(sample)` with a `MovementSample` every `ms` milliseconds (at least 100), until `stop_sample()`:
+
+```python
+def on_sample(sample: MovementSample):
+    print(sample.roll, sample.pitch, sample.yaw)
+
+movement.start_sample(200, on_sample)   # 5 samples per second
+...
+movement.stop_sample()
+```
+
+## Modulino Light
+
+`ModulinoLight` measures the color and the ambient light. `get_lux()` returns the illuminance in lux, `get_ambient_light()` and `get_ir()` the raw ambient and infrared measures, and `get_color()` the color as a `ModulinoColor`. Every call takes a new measure, which can take up to 200 ms.
+
+```python
+from arduino.app_bricks.modulino import ModulinoLight, ModulinoPixels
+
+light = ModulinoLight()
+pixels = ModulinoPixels()
+
+print(light.get_lux(), "lux")
+color = light.get_color()
+print(color.r, color.g, color.b)
+pixels.set_color(0, color)   # show the color seen by the sensor
+```
+
+`ModulinoColor` is a tuple `(r, g, b)`, so it can be unpacked (`r, g, b = color`) and passed to libraries that take an RGB tuple, such as Pillow (`Image.new("RGB", size, color)`). OpenCV takes colors in BGR order: pass `color[::-1]`.
+
+A failed measure raises `ModulinoError`.
 
 ## Modulino Distance
 
@@ -50,7 +186,6 @@ buzzer.no_tone()         # stop the current tone
 from arduino.app_bricks.modulino import ModulinoDistance
 
 distance = ModulinoDistance()
-distance.start()
 
 print(distance.get_distance())
 ```
@@ -71,11 +206,86 @@ def on_proximity(state, distance_mm):
 distance.set_threshold_callback(150, on_proximity)   # NEAR below 15 cm, FAR again above 17 cm
 ```
 
-The callback runs on the bridge thread, where the Modulino methods can't be called: to act on another Modulino (for example to stop the motors), signal your app and do it from there.
+The callback can't call the Modulino methods (see [Callbacks](#callbacks)): to stop the motors, for example, signal your app and stop them from there.
 
 The sensor measures every 20 ms. By default a new state is notified after the next measure confirms it: a single measure below `threshold_mm` followed by one at or above it does not raise `NEAR`. Calling `set_threshold_callback` again restarts from `FAR`, so an object already near is notified again. Use `set_debounce(ms)` to require a longer stable time. `remove_threshold_callback()` stops the notifications.
 
 The notification goes from the board through the Linux side to your app, so it can arrive late or not at all if the app is busy or stuck. Don't use it as a safety-rated emergency stop.
+
+## Modulino Buttons
+
+`ModulinoButtons` has 3 buttons (A, B and C), each with an LED. `set_on_change_callback(callback)` calls `callback(button_a, button_b, button_c)` when a button is pressed or released, with the state of every button: 1 pressed, 0 released. `set_leds(led_a, led_b, led_c)` turns the LEDs on or off:
+
+```python
+from arduino.app_bricks.modulino import ModulinoButtons
+
+buttons = ModulinoButtons()   # autoscan for the address
+
+def on_buttons(button_a, button_b, button_c):
+    print("A" if button_a else "-", "B" if button_b else "-", "C" if button_c else "-")
+
+buttons.set_on_change_callback(on_buttons)
+buttons.set_leds(True, False, True)   # LEDs A and C on
+```
+
+A change is notified when it has been stable for the debounce time, 30 ms by default: change it with `set_debounce(ms)`. `remove_on_change_callback()` stops the notifications. The LEDs are off after `start()` and `stop()`, and `start()` brings the debounce back to 30 ms.
+
+## Modulino Joystick
+
+`ModulinoJoystick` has two axes and a button. `set_on_change_callback(callback)` calls `callback(x, y, button)` when the position or the button changes: `x` and `y` go from about -128 to 127 and are 0 at the center, `button` is 1 pressed and 0 released.
+
+```python
+from arduino.app_bricks.modulino import ModulinoJoystick
+
+joystick = ModulinoJoystick()   # autoscan for the address
+
+def on_joystick(x, y, button):
+    print(f"x {x:4} y {y:4} {'pressed' if button else ''}")
+
+joystick.set_on_change_callback(on_joystick)
+```
+
+Near the center (within about 26 on both axes) the position reads 0, 0, so a joystick at rest doesn't send notifications. A change is notified when it has been stable for the debounce time, 30 ms by default: change it with `set_debounce(ms)`. `remove_on_change_callback()` stops the notifications.
+
+## Modulino Knob
+
+`ModulinoKnob` is a rotary encoder with a button. `set_on_change_callback(callback)` calls `callback(position, button, direction)` when the knob turns or the button changes:
+
+- `position`: the encoder counter, which goes up turning one way and down turning the other way;
+- `button`: 1 pressed, 0 released;
+- `direction`: how much the position changed since the previous notification, positive or negative by the direction of the rotation (0 when only the button changed).
+
+```python
+from arduino.app_bricks.modulino import ModulinoKnob
+
+knob = ModulinoKnob()   # autoscan for the address
+
+def on_knob(position, button, direction):
+    if direction:
+        print("turned", "up" if direction > 0 else "down", "to", position)
+    if button:
+        print("pressed")
+
+knob.set_on_change_callback(on_knob)
+knob.set_start_position(0)   # the counter starts from 0
+```
+
+The knob keeps its position across apps. `set_start_position(position)` sets the counter: the new position is notified with `direction` 0, as it is not a rotation. In the same way, the first notification after `start()` doesn't count the position left by the previous app as a rotation. A change is notified when it has been stable for the debounce time, 30 ms by default: change it with `set_debounce(ms)`. `remove_on_change_callback()` stops the notifications.
+
+## Modulino Buzzer
+
+`ModulinoBuzzer` plays a tone with `tone(frequency, duration_ms)` and stops it with `no_tone()`:
+
+```python
+from arduino.app_bricks.modulino import ModulinoBuzzer
+
+buzzer = ModulinoBuzzer()   # autoscan for the address
+
+buzzer.tone(440, 500)   # 440 Hz for 500 ms
+buzzer.no_tone()        # stop the current tone
+```
+
+`frequency` (Hz) and `duration_ms` must be non-negative integers, otherwise `ModulinoError` is raised.
 
 ## Modulino Pixels
 
@@ -85,12 +295,11 @@ The notification goes from the board through the Linux side to your app, so it c
 from arduino.app_bricks.modulino import ModulinoPixels
 
 pixels = ModulinoPixels()   # autoscan for the address
-pixels.start()
 
 pixels.set(0, 255, 0, 0, 20)   # LED 0 red at 20 %
 pixels.set(7, 0, 0, 255)       # LED 7 blue at the default 25 %
 
-pixels.clear_all()              # all LEDs off
+pixels.clear_all()             # all LEDs off
 ```
 
 Out-of-range values raise `ModulinoError`.
@@ -104,27 +313,23 @@ orange = ModulinoColor(255, 136, 0)
 pixels.set_color(1, orange, 20)   # LED 1 orange at 20 %
 ```
 
-## Modulino Light
+## Modulino Vibro
 
-`ModulinoLight` measures the color and the ambient light. `get_lux()` returns the illuminance in lux, `get_ambient_light()` and `get_ir()` the raw ambient and infrared measures, and `get_color()` the color as a `ModulinoColor`. Every call takes a new measure, which can take up to 200 ms.
+`ModulinoVibro` drives a vibration motor. `on(duration_ms, power=ModulinoVibro.MAXIMUM, block=False)` vibrates for `duration_ms` milliseconds and `off()` stops it earlier:
 
 ```python
-from arduino.app_bricks.modulino import ModulinoLight, ModulinoPixels
+from arduino.app_bricks.modulino import ModulinoVibro
 
-light = ModulinoLight()
-light.start()
-pixels = ModulinoPixels()
-pixels.start()
+vibro = ModulinoVibro()   # autoscan for the address
 
-print(light.get_lux(), "lux")
-color = light.get_color()
-print(color.r, color.g, color.b)
-pixels.set_color(0, color)        # show the color seen by the sensor
+vibro.on(500)                                      # 500 ms at full power, returns right away
+vibro.on(1000, ModulinoVibro.GENTLE, block=True)   # waits 1 s, then stops
+vibro.off()                                        # stop the current vibration
 ```
 
-`ModulinoColor` is a tuple `(r, g, b)`, so it can be unpacked (`r, g, b = color`) and passed to libraries that take an RGB tuple, such as Pillow (`Image.new("RGB", size, color)`). OpenCV takes colors in BGR order: pass `color[::-1]`.
+The module stops by itself after `duration_ms`, so by default `on()` returns right away and your app keeps running. With `block=True` it waits `duration_ms` and then calls `off()`; only your app waits, the other Modulini keep working.
 
-A failed measure raises `ModulinoError`.
+`power` goes from `ModulinoVibro.STOP` (0) to `ModulinoVibro.MAXIMUM` (50). The named levels are `GENTLE` (25), `MODERATE` (30), `MEDIUM` (35), `INTENSE` (40) and `POWERFUL` (45), and any integer in between is allowed. Out-of-range values raise `ModulinoError`.
 
 ## Modulino Latch Relay
 
@@ -134,33 +339,13 @@ A failed measure raises `ModulinoError`.
 from arduino.app_bricks.modulino import ModulinoLatchRelay
 
 relay = ModulinoLatchRelay()   # autoscan for the address
-relay.start()
 
-relay.set()                     # relay on
+relay.set()                    # relay on
 print(relay.get_status() == ModulinoLatchRelay.ON)
-relay.reset()                   # relay off
+relay.reset()                  # relay off
 ```
 
-After a power on the status is `UNKNOWN` until the first `set()` or `reset()`: the relay keeps its previous position, but the module doesn't know it. If reading the status fails, `get_status()` returns the last status it read.
-
-## Modulino Vibro
-
-`ModulinoVibro` drives a vibration motor. `on(duration_ms, power=ModulinoVibro.MAXIMUM, block=False)` vibrates for `duration_ms` milliseconds and `off()` stops it earlier:
-
-```python
-from arduino.app_bricks.modulino import ModulinoVibro
-
-vibro = ModulinoVibro()   # autoscan for the address
-vibro.start()
-
-vibro.on(500)                                   # 500 ms at full power, returns right away
-vibro.on(1000, ModulinoVibro.GENTLE, block=True)   # waits 1 s, then stops
-vibro.off()                                     # stop the current vibration
-```
-
-The module stops by itself after `duration_ms`, so by default `on()` returns right away and your app keeps running. With `block=True` it waits `duration_ms` and then calls `off()`; only your app waits, the other Modulini keep working.
-
-`power` goes from `ModulinoVibro.STOP` (0) to `ModulinoVibro.MAXIMUM` (50). The named levels are `GENTLE` (25), `MODERATE` (30), `MEDIUM` (35), `INTENSE` (40) and `POWERFUL` (45), and any integer in between is allowed. Out-of-range values raise `ModulinoError`.
+After a power on the status is `UNKNOWN` until the first `set()` or `reset()`: the relay keeps its previous position, but the module doesn't know it. If reading the status fails, `get_status()` returns the last status it read. Stopping the Modulino, or closing the app, doesn't move the relay.
 
 ## Modulino Motors
 
@@ -170,10 +355,9 @@ The module stops by itself after `duration_ms`, so by default `on()` returns rig
 from arduino.app_bricks.modulino import ModulinoMotors
 
 motors = ModulinoMotors()   # autoscan for the address
-motors.start()
 
-motors.set_speed_a(60)     # channel A forward at 60%
-motors.set_speed_b(-30)    # channel B backwards at 30%, A keeps running
+motors.set_speed_a(60)    # channel A forward at 60%
+motors.set_speed_b(-30)   # channel B backwards at 30%, A keeps running
 motors.stop_motors()      # stop both
 ```
 
@@ -181,20 +365,19 @@ For a stepper motor, enable the stepper mode and pass the full steps per revolut
 
 ```python
 motors = ModulinoMotors(steps_per_revolution=200)
-motors.start()
-motors.set_stepper_mode(True)
 
+motors.set_stepper_mode(True)
 motors.set_on_move_complete_callback(lambda: print("done"))
-motors.move(400, 60)                  # two revolutions at 60 rpm, returns right away
-motors.move(-200, 30, block=True)     # one revolution backwards, waits for the end
-motors.release()                      # free the shaft
+motors.move(400, 60)                # two revolutions at 60 rpm, returns right away
+motors.move(-200, 30, block=True)   # one revolution backwards, waits for the end
+motors.release()                    # free the shaft
 ```
 
 With `release_ms=0` the motor keeps holding its position at the end of the move; 1 to 255 releases the coils that many milliseconds after the end. `hold()` and `release()` energize or release the coils right away. `set_half_step(True)` doubles the steps per revolution for a smoother movement. The stepper methods raise `ModulinoError` until `set_stepper_mode(True)` is called, and `set_speed_a`, `set_speed_b` and `stop_motors` raise it in stepper mode.
 
 Both modes share the driver settings: `set_decay(mode)` with `DECAY_SLOW`, `DECAY_MIXED_SLOW`, `DECAY_MIXED_FAST` or `DECAY_FAST`, `set_half_full_scale(enabled)` for the 1.9 A range (better accuracy at low currents) instead of 3.8 A, and `set_frequency(hz)` for the DC PWM frequency (200 to 60000 Hz, 20000 by default). `is_stepper_mode()`, `is_half_step()`, `is_busy()`, `get_decay()` and `is_half_full_scale()` read the state from the module; `get_frequency()` returns the last frequency set. `get_current_a()` and `get_current_b()` return the current of each channel in milliamps.
 
-`stop()` stops the motors (or releases the stepper coils) before closing the modulino.
+`start()` brings the module back to DC mode with the default settings. `stop()`, also when the app closes, stops the DC motors and, in stepper mode, releases the coils.
 
 ## Modulino LED Matrix
 
@@ -204,11 +387,10 @@ Both modes share the driver settings: `set_decay(mode)` with `DECAY_SLOW`, `DECA
 from arduino.app_bricks.modulino import ModulinoLEDMatrix
 
 matrix = ModulinoLEDMatrix()   # default address 0x39
-matrix.start()
 
 designer = matrix.designer()
 frame = designer.empty()
-frame.set_value(3, 5, 1)        # row 3, column 5 on
+frame.set_value(3, 5, 1)       # row 3, column 5 on
 matrix.draw(frame)
 ```
 
@@ -220,12 +402,12 @@ The matrix starts in monochrome mode: a pixel is on when its value is greater th
 frames = [(frame_a, 200), (frame_b, 200), (frame_c, 400)]
 matrix.play_animation(frames, loop=True)
 ...
-matrix.stop_animation()          # the current frame stays on the matrix
+matrix.stop_animation()   # the current frame stays on the matrix
 ```
 
 The animation frames are shown on/off, also in grayscale mode. A new animation replaces the running one, and `draw()` or `clear()` stop it. Frames that are not 12x8 raise `ModulinoError`.
 
-`set_on_animation_end_callback(callback)` calls `callback()` when an animation without loop ends, after the duration of its last frame. A stopped or replaced animation does not call it. The callback runs on the bridge thread, where the Modulino methods can't be called: to chain animations, signal your app and play the next one from there:
+`set_on_animation_end_callback(callback)` calls `callback()` when an animation without loop ends, after the duration of its last frame. A stopped or replaced animation does not call it. To chain animations, signal your app from the callback and play the next one from your loop:
 
 ```python
 import threading

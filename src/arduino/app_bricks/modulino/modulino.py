@@ -358,8 +358,9 @@ class ModulinoKnob(Modulino):
         The callback function will be called on every change of the knob state,
         on the increment or decrement of the knob value or the button press.
 
-        The callback function should accept three integer arguments: the current knob value, the button state,
-        and the direction of the knob rotation.
+        The callback function should accept three integer arguments: the position of the knob, the button state
+        (1 pressed, 0 released) and the direction, how much the position changed since the previous notification
+        (its sign gives the direction of the rotation, 0 when only the button changed).
 
         The callback runs on the bridge thread: it must not call the methods of the Modulini,
         signal the app instead (e.g. with a `threading.Event`).
