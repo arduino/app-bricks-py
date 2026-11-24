@@ -58,10 +58,13 @@ The snippets in the next sections show only the calls: put them in your loop, as
 
 ### Errors
 
-The methods raise `ModulinoError`:
+The methods raise:
 
-- when an argument is not valid, for example `ModulinoError("frequency and duration_ms must be non-negative integers")`;
-- when the board can't do the operation, as `modulino <name>: cannot <operation>`, for example `modulino thermo_44: cannot get humidity`. If the call to the board failed (for example a timeout), the original exception is its `__cause__`.
+- `TypeError` when an argument has the wrong type, for example `TypeError("frequency must be an integer, got float")`, and `ValueError` when it is out of range, for example `ValueError("power must be between 0 and 50, got 80")`;
+- `RuntimeError` when a method can't be used in the current mode, for example `ModulinoMotors.hold()` in DC mode;
+- `ModulinoError` when the board can't do the operation, as `modulino <name>: cannot <operation>`, for example `modulino thermo_44: cannot get humidity`. If the call to the board failed (for example a timeout), the original exception is its `__cause__`.
+
+`ModulinoError` is an `AppError` (`arduino.app_utils`): when it reaches the top of your app uncaught, the app prints a readable report, with a hint on how to fix the problem when there is one (for example, to check the cable of a Modulino that doesn't answer).
 
 `Modulino` is the base class of the Modulino classes and is not exported: creating it directly raises `TypeError`.
 
@@ -93,7 +96,7 @@ def loop():
 App.run(user_loop=loop)
 ```
 
-Keep the callbacks short: while one runs, the other notifications wait. Passing something that is not callable raises `ModulinoError`.
+Keep the callbacks short: while one runs, the other notifications wait. Passing something that is not callable raises `TypeError`.
 
 ## Modulino Hub
 
@@ -285,7 +288,7 @@ buzzer.tone(440, 500)   # 440 Hz for 500 ms
 buzzer.no_tone()        # stop the current tone
 ```
 
-`frequency` (Hz) and `duration_ms` must be non-negative integers, otherwise `ModulinoError` is raised.
+`frequency` (Hz) and `duration_ms` must be non-negative integers: a wrong type raises `TypeError`, a negative value `ValueError`.
 
 ## Modulino Pixels
 
@@ -302,7 +305,7 @@ pixels.set(7, 0, 0, 255)       # LED 7 blue at the default 25 %
 pixels.clear_all()             # all LEDs off
 ```
 
-Out-of-range values raise `ModulinoError`.
+Out-of-range values raise `ValueError`.
 
 To use a color, pass a `ModulinoColor` (or any `(r, g, b)` tuple) to `set_color(idx, color, brightness=25)`:
 
@@ -329,7 +332,7 @@ vibro.off()                                        # stop the current vibration
 
 The module stops by itself after `duration_ms`, so by default `on()` returns right away and your app keeps running. With `block=True` it waits `duration_ms` and then calls `off()`; only your app waits, the other Modulini keep working.
 
-`power` goes from `ModulinoVibro.STOP` (0) to `ModulinoVibro.MAXIMUM` (50). The named levels are `GENTLE` (25), `MODERATE` (30), `MEDIUM` (35), `INTENSE` (40) and `POWERFUL` (45), and any integer in between is allowed. Out-of-range values raise `ModulinoError`.
+`power` goes from `ModulinoVibro.STOP` (0) to `ModulinoVibro.MAXIMUM` (50). The named levels are `GENTLE` (25), `MODERATE` (30), `MEDIUM` (35), `INTENSE` (40) and `POWERFUL` (45), and any integer in between is allowed. Out-of-range values raise `ValueError`.
 
 ## Modulino Latch Relay
 
@@ -373,7 +376,7 @@ motors.move(-200, 30, block=True)   # one revolution backwards, waits for the en
 motors.release()                    # free the shaft
 ```
 
-With `release_ms=0` the motor keeps holding its position at the end of the move; 1 to 255 releases the coils that many milliseconds after the end. `hold()` and `release()` energize or release the coils right away. `set_half_step(True)` doubles the steps per revolution for a smoother movement. The stepper methods raise `ModulinoError` until `set_stepper_mode(True)` is called, and `set_speed_a`, `set_speed_b` and `stop_motors` raise it in stepper mode.
+With `release_ms=0` the motor keeps holding its position at the end of the move; 1 to 255 releases the coils that many milliseconds after the end. `hold()` and `release()` energize or release the coils right away. `set_half_step(True)` doubles the steps per revolution for a smoother movement. The stepper methods raise `RuntimeError` until `set_stepper_mode(True)` is called, and `set_speed_a`, `set_speed_b` and `stop_motors` raise it in stepper mode.
 
 Both modes share the driver settings: `set_decay(mode)` with `DECAY_SLOW`, `DECAY_MIXED_SLOW`, `DECAY_MIXED_FAST` or `DECAY_FAST`, `set_half_full_scale(enabled)` for the 1.9 A range (better accuracy at low currents) instead of 3.8 A, and `set_frequency(hz)` for the DC PWM frequency (200 to 60000 Hz, 20000 by default). `is_stepper_mode()`, `is_half_step()`, `is_busy()`, `get_decay()` and `is_half_full_scale()` read the state from the module; `get_frequency()` returns the last frequency set. `get_current_a()` and `get_current_b()` return the current of each channel in milliamps.
 
@@ -405,7 +408,7 @@ matrix.play_animation(frames, loop=True)
 matrix.stop_animation()   # the current frame stays on the matrix
 ```
 
-The animation frames are shown on/off, also in grayscale mode. A new animation replaces the running one, and `draw()` or `clear()` stop it. Frames that are not 12x8 raise `ModulinoError`.
+The animation frames are shown on/off, also in grayscale mode. A new animation replaces the running one, and `draw()` or `clear()` stop it. Frames that are not 12x8 raise `ValueError`.
 
 `set_on_animation_end_callback(callback)` calls `callback()` when an animation without loop ends, after the duration of its last frame. A stopped or replaced animation does not call it. To chain animations, signal your app from the callback and play the next one from your loop:
 
