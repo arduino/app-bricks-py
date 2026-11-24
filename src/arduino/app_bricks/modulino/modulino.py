@@ -29,7 +29,7 @@ class ModulinoHubPort:
         self.hub_address = hub_address
         self.port = port
 
-class Modulino_Hub:
+class ModulinoHub:
     """Modulino Hub (I2C multiplexer with 8 ports).
 
     It holds no resources: the hub is created on the MCU together with the first
@@ -70,7 +70,7 @@ class Modulino:
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         self.type = type
-        self.i2caddress = i2c_address
+        self.i2c_address = i2c_address
         self.hub_address = hub_port.hub_address if hub_port is not None else 0
         self.port = hub_port.port if hub_port is not None else 0
         # The MCU builds the RPC name and returns "" if the modulino can't be created
@@ -93,20 +93,20 @@ class Modulino:
         logger.info("Stopping Modulino")
 
 
-class Modulino_Thermo(Modulino):
+class ModulinoThermo(Modulino):
     """Class to handle a Modulino 'thermo' for temperature and humidity sensing."""
     def __init__(self, i2c_address = 0x44, hub_port = None) -> None:
-        """Initialize a Modulino_Thermo with the given I2C address.
+        """Initialize a ModulinoThermo with the given I2C address.
 
         Args:
-            i2c_address (int): The I2C address of the Modulino_Thermo. Defaults to 0x44.
+            i2c_address (int): The I2C address of the ModulinoThermo. Defaults to 0x44.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         super().__init__("thermo", i2c_address, hub_port)
 
     @override
     def start(self) -> None:
-        """Start the Modulino_Thermo."""
+        """Start the ModulinoThermo."""
         try:
             Bridge.call(f"{self.name}:begin")
         except:
@@ -115,14 +115,14 @@ class Modulino_Thermo(Modulino):
 
     @override
     def stop(self) -> None:
-        """Stop the Modulino_Thermo."""
+        """Stop the ModulinoThermo."""
         try:
             Bridge.call("delete_modulino", self.name)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
-    def getHumidity(self) -> float:
-        """Get the humidity from the Modulino_Thermo.
+    def get_humidity(self) -> float:
+        """Get the humidity from the ModulinoThermo.
 
         Returns:
             float: The humidity value.
@@ -134,8 +134,8 @@ class Modulino_Thermo(Modulino):
 
         return hum_float
 
-    def getTemperature(self) -> float:
-        """Get the temperature from the Modulino_Thermo.
+    def get_temperature(self) -> float:
+        """Get the temperature from the ModulinoThermo.
 
         Returns:
             float: The temperature value.
@@ -160,20 +160,20 @@ class MovementSample:
         self.pitch = pitch
         self.yaw = yaw
 
-class Modulino_Movement(Modulino):
+class ModulinoMovement(Modulino):
     """Class to handle a Modulino 'movement' sensor."""
     def __init__(self, i2c_address = 0x6A, hub_port = None) -> None:
-        """Initialize the Modulino_Movement with the specified I2C address.
+        """Initialize the ModulinoMovement with the specified I2C address.
 
         Args:
-            i2c_address (int): The I2C address of the Modulino_Movement. Defaults to 0x6A.
+            i2c_address (int): The I2C address of the ModulinoMovement. Defaults to 0x6A.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         super().__init__("movement", i2c_address, hub_port)
 
     @override
     def start(self) -> None:
-        """Start the Modulino_Movement."""
+        """Start the ModulinoMovement."""
         try:
 
             Bridge.call(f"{self.name}:begin")
@@ -182,14 +182,14 @@ class Modulino_Movement(Modulino):
 
     @override
     def stop(self) -> None:
-        """Stop the Modulino_Movement."""
+        """Stop the ModulinoMovement."""
         try:
             Bridge.call("delete_modulino", self.name)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
-    def getSample(self) -> MovementSample:
-        """Get a movement sample from the Modulino_Movement.
+    def get_sample(self) -> MovementSample:
+        """Get a movement sample from the ModulinoMovement.
 
         Returns:
             MovementSample: The movement sample containing x, y, z, roll, pitch, and yaw values.
@@ -207,11 +207,11 @@ class Modulino_Movement(Modulino):
 
         return MovementSample(x,y,z, roll, pitch, yaw)
 
-    def startSample(self, ms, callback) -> None:
+    def start_sample(self, ms, callback) -> None:
         """Start sampling movement data at the specified interval.
         The callback function will be called with each movement sample as an argument
         at the specified interval.
-        To stop sampling, call the `stopSample` method.
+        To stop sampling, call the `stop_sample` method.
         The callback must accept 6 arguments: x, y, z, roll, pitch, and yaw.
 
         Args:
@@ -225,24 +225,24 @@ class Modulino_Movement(Modulino):
         Bridge.provide(f"{self.name}_callback", callback)
         Bridge.notify("poll_subscribe", self.name, ms)
 
-    def stopSample(self) -> None:
+    def stop_sample(self) -> None:
         """Stop sampling movement data."""
         Bridge.notify("poll_unsubscribe", self.name)
 
-class Modulino_Buttons(Modulino):
+class ModulinoButtons(Modulino):
     """Class to handle a Modulino Buttons."""
     def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
-        """Initialize the Modulino_Buttons with the specified I2C address.
+        """Initialize the ModulinoButtons with the specified I2C address.
 
         Args:
-            i2c_address (int): The I2C address of the Modulino_Buttons. Defaults it will autoscan for the address.
+            i2c_address (int): The I2C address of the ModulinoButtons. Defaults it will autoscan for the address.
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
         """
         super().__init__("buttons", i2c_address, hub_port)
 
     @override
     def start(self) -> None:
-        """Start the Modulino_Buttons."""
+        """Start the ModulinoButtons."""
         try:
             Bridge.call(f"{self.name}:begin")
         except:
@@ -250,33 +250,33 @@ class Modulino_Buttons(Modulino):
 
     @override
     def stop(self) -> None:
-        """Stop the Modulino_Buttons."""
+        """Stop the ModulinoButtons."""
         try:
             Bridge.call("delete_modulino", self.name)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
-    def setLeds(self, ledA, ledB, ledC) -> None:
-        """Set the state of the LEDs on the Modulino_Buttons.
+    def set_leds(self, led_a, led_b, led_c) -> None:
+        """Set the state of the LEDs on the ModulinoButtons.
         Args:
-            ledA (bool): State of LED A.
-            ledB (bool): State of LED B.
-            ledC (bool): State of LED C.
+            led_a (bool): State of LED A.
+            led_b (bool): State of LED B.
+            led_c (bool): State of LED C.
         """
         try:
-            Bridge.call(f"{self.name}:setLeds", ledA, ledB, ledC)
+            Bridge.call(f"{self.name}:setLeds", led_a, led_b, led_c)
         except:
             raise ModulinoError(f"cannot set LEDs for modulino {self.name}")
 
-    def setOnChangeCallback(self, callback) -> None:
+    def set_on_change_callback(self, callback) -> None:
         """Set the callback function to be called when a button state changes.
         The callback will report the current state of each button after the change event (1 pressed, 0 released).
-        The callback must accept 3 arguments: buttonA, buttonB, and buttonC.
+        The callback must accept 3 arguments: button_a, button_b, and button_c.
 
         Args:
             callback (Callable): The callback function to be called on button state change.
             The callback function should have the following signature:
-                def callback(buttonA: int, buttonB: int, buttonC: int) -> None:
+                def callback(button_a: int, button_b: int, button_c: int) -> None:
         """
         try:
             Bridge.provide(f"{self.name}_callback", callback)
@@ -284,14 +284,14 @@ class Modulino_Buttons(Modulino):
         except:
             raise ModulinoError(f"cannot set callback for modulino {self.name}")
 
-    def removeOnChangeCallback(self) -> None:
+    def remove_on_change_callback(self) -> None:
         """Remove the callback function for button state changes."""
         try:
             Bridge.notify("poll_unsubscribe", self.name)
         except:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
 
-    def setDebounce(self, ms) -> None:
+    def set_debounce(self, ms) -> None:
         """Set the debounce time for button state changes.
 
         Args:
@@ -302,10 +302,10 @@ class Modulino_Buttons(Modulino):
         except:
             raise ModulinoError(f"cannot set debounce for modulino {self.name}")
 
-class Modulino_Joystick(Modulino):
+class ModulinoJoystick(Modulino):
     """Class to handle a Modulino Joystick."""
     def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
-        """Initialize the Modulino_Joystick with the given I2C address.
+        """Initialize the ModulinoJoystick with the given I2C address.
 
         Args:
             i2c_address (int, optional): The I2C address of the joystick modulino. Defaults it will autoscan for the address.
@@ -328,7 +328,7 @@ class Modulino_Joystick(Modulino):
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
-    def setOnChangeCallback(self, callback) -> None:
+    def set_on_change_callback(self, callback) -> None:
         """Set the callback function for joystick state changes.
         The callback function will be called whenever the joystick state changes
         on x, y axes or the button state.
@@ -344,14 +344,14 @@ class Modulino_Joystick(Modulino):
         except:
             raise ModulinoError(f"cannot set callback for modulino {self.name}")
 
-    def removeOnChangeCallback(self) -> None:
+    def remove_on_change_callback(self) -> None:
         """Remove the callback function for joystick state changes."""
         try:
             Bridge.notify("poll_unsubscribe", self.name)
         except:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
 
-    def setDebounce(self, ms) -> None:
+    def set_debounce(self, ms) -> None:
         """Set the debounce time for the joystick modulino.
 
         Args:
@@ -362,10 +362,10 @@ class Modulino_Joystick(Modulino):
         except:
             raise ModulinoError(f"cannot set debounce for modulino {self.name}")
 
-class Modulino_Knob(Modulino):
+class ModulinoKnob(Modulino):
     """Class to handle a Modulino Knob."""
     def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
-        """Initialize the Modulino_Knob with the given I2C address.
+        """Initialize the ModulinoKnob with the given I2C address.
 
         Args:
             i2c_address (int, optional): The I2C address of the knob modulino. Defaults it will autoscan for the address.
@@ -389,7 +389,7 @@ class Modulino_Knob(Modulino):
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
-    def setOnChangeCallback(self, callback) -> None:
+    def set_on_change_callback(self, callback) -> None:
         """Set the callback function for knob state changes.
         The callback function will be called on every change of the knob state,
         on the increment or decrement of the knob value or the button press.
@@ -406,14 +406,14 @@ class Modulino_Knob(Modulino):
         except:
             raise ModulinoError(f"cannot set callback for modulino {self.name}")
 
-    def removeOnChangeCallback(self) -> None:
+    def remove_on_change_callback(self) -> None:
         """Remove the callback function for knob state changes."""
         try:
             Bridge.notify("poll_unsubscribe", self.name)
         except:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
 
-    def setDebounce(self, ms) -> None:
+    def set_debounce(self, ms) -> None:
         """Set the debounce time for the knob modulino.
 
         Args:
@@ -424,7 +424,7 @@ class Modulino_Knob(Modulino):
         except:
             raise ModulinoError(f"cannot set debounce for modulino {self.name}")
 
-    def setStartPosition(self, position) -> None:
+    def set_start_position(self, position) -> None:
         """Set the start position for the knob modulino.
 
         Args:
@@ -435,7 +435,7 @@ class Modulino_Knob(Modulino):
         except:
             raise ModulinoError(f"cannot set start position for modulino {self.name}")
 
-class Modulino_Distance(Modulino):
+class ModulinoDistance(Modulino):
     """Class to handle a Modulino Distance (time-of-flight sensor, I2C address 0x29)."""
     FAR = 0
     """Proximity state: nothing closer than the threshold."""
@@ -445,7 +445,7 @@ class Modulino_Distance(Modulino):
     I2C_ADDRESS = 0x29
 
     def __init__(self, hub_port = None) -> None:
-        """Initialize the Modulino_Distance.
+        """Initialize the ModulinoDistance.
 
         Args:
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
@@ -454,9 +454,9 @@ class Modulino_Distance(Modulino):
 
     @override
     def start(self) -> None:
-        """Start the Modulino_Distance.
+        """Start the ModulinoDistance.
 
-        Waits up to 50 ms for the first measure, so the first `getDistance()` is already valid.
+        Waits up to 50 ms for the first measure, so the first `get_distance()` is already valid.
         """
         try:
             ok = Bridge.call(f"{self.name}:begin")
@@ -467,13 +467,13 @@ class Modulino_Distance(Modulino):
 
     @override
     def stop(self) -> None:
-        """Stop the Modulino_Distance."""
+        """Stop the ModulinoDistance."""
         try:
             Bridge.call("delete_modulino", self.name)
         except:
             raise ModulinoError(f"cannot delete modulino {self.name}")
 
-    def getDistance(self) -> float:
+    def get_distance(self) -> float:
         """Get the last measured distance.
 
         Returns:
@@ -484,7 +484,7 @@ class Modulino_Distance(Modulino):
         except:
             raise ModulinoError(f"cannot get distance from modulino {self.name}")
 
-    def setThresholdCallback(self, threshold_mm, callback, hysteresis_mm = 20) -> None:
+    def set_threshold_callback(self, threshold_mm, callback, hysteresis_mm = 20) -> None:
         """Call a callback when an object enters or leaves the zone closer than a threshold.
 
         The state becomes `NEAR` when the distance goes below `threshold_mm` and goes back
@@ -519,14 +519,14 @@ class Modulino_Distance(Modulino):
         except:
             raise ModulinoError(f"cannot set callback for modulino {self.name}")
 
-    def removeThresholdCallback(self) -> None:
+    def remove_threshold_callback(self) -> None:
         """Remove the threshold callback."""
         try:
             Bridge.notify("poll_unsubscribe", self.name)
         except:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
 
-    def setDebounce(self, ms) -> None:
+    def set_debounce(self, ms) -> None:
         """Set how long a new state must be stable before the callback is called.
 
         Defaults to 0: a state change is confirmed by the next measure (about 20 ms).
@@ -539,10 +539,10 @@ class Modulino_Distance(Modulino):
         except:
             raise ModulinoError(f"cannot set debounce for modulino {self.name}")
 
-class Modulino_Buzzer(Modulino):
+class ModulinoBuzzer(Modulino):
     """Class to handle a Modulino Buzzer."""
     def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
-        """Initialize the Modulino_Buzzer with the given I2C address.
+        """Initialize the ModulinoBuzzer with the given I2C address.
 
         Args:
             i2c_address (int, optional): The I2C address of the buzzer modulino. Defaults it will autoscan for the address.
@@ -582,17 +582,17 @@ class Modulino_Buzzer(Modulino):
         if not ok:
             raise ModulinoError(f"cannot play tone on modulino {self.name}")
 
-    def noTone(self) -> None:
+    def no_tone(self) -> None:
         """Stop the tone currently playing on the buzzer."""
         try:
             Bridge.call(f"{self.name}:noTone")
         except:
             raise ModulinoError(f"cannot stop tone on modulino {self.name}")
 
-class Modulino_Pixels(Modulino):
+class ModulinoPixels(Modulino):
     """Class to handle a Modulino Pixels (8 RGB LEDs)."""
     def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
-        """Initialize the Modulino_Pixels with the given I2C address.
+        """Initialize the ModulinoPixels with the given I2C address.
 
         Args:
             i2c_address (int, optional): The I2C address of the pixels modulino. Defaults it will autoscan for the address.
@@ -633,7 +633,7 @@ class Modulino_Pixels(Modulino):
         if not ok:
             raise ModulinoError(f"cannot set LED {idx} on modulino {self.name}: invalid arguments")
 
-    def setColor(self, idx, color, brightness = 25) -> None:
+    def set_color(self, idx, color, brightness = 25) -> None:
         """Set the color and brightness of one LED.
 
         Args:
@@ -660,14 +660,14 @@ class Modulino_Pixels(Modulino):
         if not ok:
             raise ModulinoError(f"cannot clear LED {idx} on modulino {self.name}: invalid index")
 
-    def clearAll(self) -> None:
+    def clear_all(self) -> None:
         """Turn off all the LEDs."""
         try:
             Bridge.call(f"{self.name}:clearAll")
         except:
             raise ModulinoError(f"cannot clear LEDs on modulino {self.name}")
 
-class Modulino_Light(Modulino):
+class ModulinoLight(Modulino):
     """Class to handle a Modulino Light (color and ambient light sensor, I2C address 0x53).
 
     Every getter takes a new measure of all the sensors, so it can take up to 200 ms.
@@ -675,7 +675,7 @@ class Modulino_Light(Modulino):
     I2C_ADDRESS = 0x53
 
     def __init__(self, hub_port = None) -> None:
-        """Initialize the Modulino_Light.
+        """Initialize the ModulinoLight.
 
         Args:
             hub_port (ModulinoHubPort, optional): The hub port the Modulino is connected to. Defaults to None (main bus).
@@ -684,7 +684,7 @@ class Modulino_Light(Modulino):
 
     @override
     def start(self) -> None:
-        """Start the Modulino_Light."""
+        """Start the ModulinoLight."""
         try:
             ok = Bridge.call(f"{self.name}:begin")
         except:
@@ -694,7 +694,7 @@ class Modulino_Light(Modulino):
 
     @override
     def stop(self) -> None:
-        """Stop the Modulino_Light."""
+        """Stop the ModulinoLight."""
         try:
             Bridge.call("delete_modulino", self.name)
         except:
@@ -710,7 +710,7 @@ class Modulino_Light(Modulino):
             raise ModulinoError(f"cannot get {what} from modulino {self.name}: measure failed")
         return value
 
-    def getLux(self) -> int:
+    def get_lux(self) -> int:
         """Get the illuminance.
 
         Returns:
@@ -718,7 +718,7 @@ class Modulino_Light(Modulino):
         """
         return self._read("getLux", "lux")
 
-    def getAmbientLight(self) -> int:
+    def get_ambient_light(self) -> int:
         """Get the raw ambient light.
 
         Returns:
@@ -726,7 +726,7 @@ class Modulino_Light(Modulino):
         """
         return self._read("getAmbientLight", "ambient light")
 
-    def getIR(self) -> int:
+    def get_ir(self) -> int:
         """Get the raw infrared light.
 
         Returns:
@@ -734,7 +734,7 @@ class Modulino_Light(Modulino):
         """
         return self._read("getIR", "infrared light")
 
-    def getColor(self) -> ModulinoColor:
+    def get_color(self) -> ModulinoColor:
         """Get the color seen by the sensor.
 
         Returns:
@@ -744,7 +744,7 @@ class Modulino_Light(Modulino):
         packed = self._read("getColor", "color")
         return ModulinoColor((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF)
 
-class Modulino_LatchRelay(Modulino):
+class ModulinoLatchRelay(Modulino):
     """Class to handle a Modulino Latch Relay.
 
     The relay keeps its position (on or off) when the power is removed.
@@ -757,7 +757,7 @@ class Modulino_LatchRelay(Modulino):
     """Relay status: on (closed circuit)."""
 
     def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
-        """Initialize the Modulino_LatchRelay with the given I2C address.
+        """Initialize the ModulinoLatchRelay with the given I2C address.
 
         Args:
             i2c_address (int, optional): The I2C address of the latch relay modulino. Defaults it will autoscan for the address.
@@ -797,7 +797,7 @@ class Modulino_LatchRelay(Modulino):
         except:
             raise ModulinoError(f"cannot reset modulino {self.name}")
 
-    def getStatus(self) -> int:
+    def get_status(self) -> int:
         """Get the relay status.
 
         Returns:
@@ -808,7 +808,7 @@ class Modulino_LatchRelay(Modulino):
         except:
             raise ModulinoError(f"cannot get status from modulino {self.name}")
 
-class Modulino_Vibro(Modulino):
+class ModulinoVibro(Modulino):
     """Class to handle a Modulino Vibro (vibration motor)."""
     STOP = 0
     """Power level: no vibration."""
@@ -826,7 +826,7 @@ class Modulino_Vibro(Modulino):
     """Power level: strongest vibration."""
 
     def __init__(self, i2c_address = 0xFF, hub_port = None) -> None:
-        """Initialize the Modulino_Vibro with the given I2C address.
+        """Initialize the ModulinoVibro with the given I2C address.
 
         Args:
             i2c_address (int, optional): The I2C address of the vibro modulino. Defaults it will autoscan for the address.
@@ -884,11 +884,11 @@ class Modulino_Vibro(Modulino):
         except:
             raise ModulinoError(f"cannot turn off modulino {self.name}")
 
-class Modulino_Motors(Modulino):
+class ModulinoMotors(Modulino):
     """Class to handle a Modulino Motors (two DC motors on channels A and B, or one stepper motor).
 
-    The modulino starts in DC mode. The stepper methods (`move`, `hold`, `release`, `setHalfStep`
-    and the move complete callback) are available after `setStepperMode(True)`.
+    The modulino starts in DC mode. The stepper methods (`move`, `hold`, `release`, `set_half_step`
+    and the move complete callback) are available after `set_stepper_mode(True)`.
     """
     DECAY_SLOW = 0
     """Decay mode: smoother and quieter, slower to follow speed changes."""
@@ -903,7 +903,7 @@ class Modulino_Motors(Modulino):
     _CHANNEL_B = 1
 
     def __init__(self, i2c_address = 0xFF, hub_port = None, steps_per_revolution = None) -> None:
-        """Initialize the Modulino_Motors with the given I2C address.
+        """Initialize the ModulinoMotors with the given I2C address.
 
         Args:
             i2c_address (int, optional): The I2C address of the motors modulino. Defaults it will autoscan for the address.
@@ -970,7 +970,7 @@ class Modulino_Motors(Modulino):
 
     # Common methods
 
-    def setStepperMode(self, enabled) -> None:
+    def set_stepper_mode(self, enabled) -> None:
         """Switch between DC mode (two DC motors) and stepper mode (one stepper motor).
 
         Enabling the stepper mode stops the DC motors first.
@@ -983,11 +983,11 @@ class Modulino_Motors(Modulino):
         self._command("set stepper mode", "setStepperMode", enabled)
         self._stepper = enabled
 
-    def isStepperMode(self) -> bool:
+    def is_stepper_mode(self) -> bool:
         """Return True if the module is in stepper mode (read from the module)."""
         return bool(self._status() & 0x02)
 
-    def setDecay(self, mode) -> None:
+    def set_decay(self, mode) -> None:
         """Set the current decay mode of the motor driver.
 
         Args:
@@ -997,11 +997,11 @@ class Modulino_Motors(Modulino):
             raise ModulinoError("mode must be DECAY_SLOW, DECAY_MIXED_SLOW, DECAY_MIXED_FAST or DECAY_FAST")
         self._command("set decay", "setDecay", mode)
 
-    def getDecay(self) -> int:
+    def get_decay(self) -> int:
         """Return the decay mode (read from the module): `DECAY_SLOW`, `DECAY_MIXED_SLOW`, `DECAY_MIXED_FAST` or `DECAY_FAST`."""
         return (self._status() >> 4) & 0x03
 
-    def setHalfFullScale(self, enabled) -> None:
+    def set_half_full_scale(self, enabled) -> None:
         """Set the current range of the motor driver.
 
         Args:
@@ -1012,7 +1012,7 @@ class Modulino_Motors(Modulino):
             raise ModulinoError("enabled must be a boolean")
         self._command("set half full scale", "setHalfFullScale", enabled)
 
-    def isHalfFullScale(self) -> bool:
+    def is_half_full_scale(self) -> bool:
         """Return True if the half full scale current range is enabled (read from the module)."""
         return bool(self._status() & 0x08)
 
@@ -1025,44 +1025,44 @@ class Modulino_Motors(Modulino):
             raise ModulinoError(f"cannot get current from modulino {self.name}")
         return current
 
-    def getCurrentA(self) -> float:
+    def get_current_a(self) -> float:
         """Return the current of channel A in milliamps (in stepper mode, the current of coil A)."""
         return self._current(self._CHANNEL_A)
 
-    def getCurrentB(self) -> float:
+    def get_current_b(self) -> float:
         """Return the current of channel B in milliamps (in stepper mode, the current of coil B)."""
         return self._current(self._CHANNEL_B)
 
     # DC mode
 
-    def _setSpeed(self, channel, percent) -> None:
+    def _set_speed(self, channel, percent) -> None:
         if not isinstance(percent, int) or not -100 <= percent <= 100:
             raise ModulinoError("percent must be an integer between -100 and 100")
         self._require_dc("set speed")
         self._command("set speed", "setSpeed", channel, percent)
 
-    def setSpeedA(self, percent) -> None:
+    def set_speed_a(self, percent) -> None:
         """Set the speed of the DC motor on channel A, leaving channel B unchanged.
 
         Args:
             percent (int): The speed from -100 to 100 percent, the sign gives the direction. 0 stops the motor.
         """
-        self._setSpeed(self._CHANNEL_A, percent)
+        self._set_speed(self._CHANNEL_A, percent)
 
-    def setSpeedB(self, percent) -> None:
+    def set_speed_b(self, percent) -> None:
         """Set the speed of the DC motor on channel B, leaving channel A unchanged.
 
         Args:
             percent (int): The speed from -100 to 100 percent, the sign gives the direction. 0 stops the motor.
         """
-        self._setSpeed(self._CHANNEL_B, percent)
+        self._set_speed(self._CHANNEL_B, percent)
 
-    def stopMotors(self) -> None:
+    def stop_motors(self) -> None:
         """Stop both DC motors."""
         self._require_dc("stop motors")
         self._command("stop motors", "stop")
 
-    def setFrequency(self, hz) -> None:
+    def set_frequency(self, hz) -> None:
         """Set the PWM frequency of the DC motors.
 
         Args:
@@ -1072,7 +1072,7 @@ class Modulino_Motors(Modulino):
             raise ModulinoError("hz must be an integer between 200 and 60000")
         self._command("set frequency", "setFrequency", hz)
 
-    def getFrequency(self) -> int:
+    def get_frequency(self) -> int:
         """Return the PWM frequency of the DC motors in Hz (the last value set, the module does not report it)."""
         return (self._status() >> 8) & 0xFFFF
 
@@ -1099,16 +1099,16 @@ class Modulino_Motors(Modulino):
         if self.steps_per_revolution is None:
             raise ModulinoError(f"cannot move modulino {self.name}: steps_per_revolution not set")
         self._require_stepper("move")
-        steps_per_revolution = self.steps_per_revolution * (2 if self.isHalfStep() else 1)
+        steps_per_revolution = self.steps_per_revolution * (2 if self.is_half_step() else 1)
         period = int(600000 / (rpm * steps_per_revolution))   # 0.1 ms ticks between steps
         if not 1 <= period <= 65535:
             raise ModulinoError(f"rpm out of range for {steps_per_revolution} steps per revolution")
         self._command("move", "move", steps, period, release_ms)
         if block:
-            while self.isBusy():
+            while self.is_busy():
                 time.sleep(0.01)
 
-    def isBusy(self) -> bool:
+    def is_busy(self) -> bool:
         """Return True while the stepper motor is moving (read from the module)."""
         return bool(self._status() & 0x01)
 
@@ -1122,7 +1122,7 @@ class Modulino_Motors(Modulino):
         self._require_stepper("release")
         self._command("release", "release")
 
-    def setHalfStep(self, enabled) -> None:
+    def set_half_step(self, enabled) -> None:
         """Set half step mode: twice the steps per revolution, smoother movement.
 
         Args:
@@ -1133,11 +1133,11 @@ class Modulino_Motors(Modulino):
         self._require_stepper("set half step")
         self._command("set half step", "setHalfStep", enabled)
 
-    def isHalfStep(self) -> bool:
+    def is_half_step(self) -> bool:
         """Return True if half step mode is enabled (read from the module)."""
         return bool(self._status() & 0x04)
 
-    def setOnMoveCompleteCallback(self, callback) -> None:
+    def set_on_move_complete_callback(self, callback) -> None:
         """Call a callback each time a stepper move completes.
 
         Set it before calling `move()`. If a new move starts before the previous one completes,
@@ -1155,18 +1155,18 @@ class Modulino_Motors(Modulino):
         except Exception:
             raise ModulinoError(f"cannot set callback for modulino {self.name}")
 
-    def removeOnMoveCompleteCallback(self) -> None:
+    def remove_on_move_complete_callback(self) -> None:
         """Remove the move complete callback."""
         try:
             Bridge.notify("poll_unsubscribe", self.name)
         except Exception:
             raise ModulinoError(f"cannot remove callback for modulino {self.name}")
 
-class Modulino_LEDMatrix(Modulino):
+class ModulinoLEDMatrix(Modulino):
     """Class to handle a Modulino LED Matrix (12x8 LEDs).
 
     Frames are `Frame` objects of 12x8 pixels (`MODULINO_MATRIX`), create them with `designer()`.
-    The matrix is monochrome by default, `setGrayscale(True)` enables 16 brightness levels.
+    The matrix is monochrome by default, `set_grayscale(True)` enables 16 brightness levels.
     The LED matrix is not supported on a Modulino Hub: connect it to the main bus.
     """
     MAX_FRAMES = 20
@@ -1177,7 +1177,7 @@ class Modulino_LEDMatrix(Modulino):
     _GRAYSCALE_LEVELS = 16
 
     def __init__(self, i2c_address = 0x39) -> None:
-        """Initialize the Modulino_LEDMatrix with the given I2C address.
+        """Initialize the ModulinoLEDMatrix with the given I2C address.
 
         Args:
             i2c_address (int, optional): The I2C address of the LED matrix. Defaults to 0x39.
@@ -1230,7 +1230,7 @@ class Modulino_LEDMatrix(Modulino):
         """
         return FrameDesigner(MODULINO_MATRIX, self.brightness_levels)
 
-    def setGrayscale(self, enabled) -> None:
+    def set_grayscale(self, enabled) -> None:
         """Set the display mode.
 
         Args:
@@ -1247,7 +1247,7 @@ class Modulino_LEDMatrix(Modulino):
             raise ModulinoError(f"cannot set the mode of modulino {self.name}")
         self._grayscale = enabled
 
-    def isGrayscale(self) -> bool:
+    def is_grayscale(self) -> bool:
         """Return True if the matrix is in grayscale mode."""
         return self._grayscale
 
@@ -1279,12 +1279,12 @@ class Modulino_LEDMatrix(Modulino):
         """Turn off every LED. A running animation is stopped."""
         self.draw(Frame.empty(MODULINO_MATRIX))
 
-    def playAnimation(self, frames, loop = False) -> None:
+    def play_animation(self, frames, loop = False) -> None:
         """Play an animation on the matrix, the frames are timed by the board.
 
         The frames are shown on/off (a pixel is on when its value is greater than 0), also in grayscale mode.
         The call returns right away. A new animation replaces the running one, `draw()` and `clear()` stop it.
-        Without loop, the callback set with `setOnAnimationEndCallback()` is called when the animation ends.
+        Without loop, the callback set with `set_on_animation_end_callback()` is called when the animation ends.
 
         Args:
             frames (Sequence[tuple]): `(frame, duration_ms)` or `(frame, duration_ms, label)` items, as taken
@@ -1320,17 +1320,17 @@ class Modulino_LEDMatrix(Modulino):
         except:
             raise ModulinoError(f"cannot play animation on modulino {self.name}")
 
-    def stopAnimation(self) -> None:
+    def stop_animation(self) -> None:
         """Stop the animation, the current frame stays on the matrix."""
         try:
             Bridge.call(f"{self.name}:stop_animation")
         except:
             raise ModulinoError(f"cannot stop animation on modulino {self.name}")
 
-    def setOnAnimationEndCallback(self, callback) -> None:
+    def set_on_animation_end_callback(self, callback) -> None:
         """Call a callback each time an animation without loop ends, after the duration of its last frame.
 
-        An animation stopped by `stopAnimation()`, `draw()`, `clear()` or a new `playAnimation()` does not call it.
+        An animation stopped by `stop_animation()`, `draw()`, `clear()` or a new `play_animation()` does not call it.
         The callback runs on the bridge thread: it must not call the methods of the Modulini, signal the app instead
         (e.g. with a `threading.Event`).
 
@@ -1342,6 +1342,6 @@ class Modulino_LEDMatrix(Modulino):
             raise ModulinoError("callback must be callable")
         self._on_animation_end = callback
 
-    def removeOnAnimationEndCallback(self) -> None:
+    def remove_on_animation_end_callback(self) -> None:
         """Remove the animation end callback."""
         self._on_animation_end = None
