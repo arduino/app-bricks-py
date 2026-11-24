@@ -312,6 +312,7 @@ ERR_MODEL_PRIVATE_OR_GATED = "model_private_or_gated"
 ERR_MODEL_DISABLED = "model_disabled"
 ERR_MODEL_INCOMPATIBLE = "model_incompatible"
 ERR_NO_COMPATIBLE_FILE = "no_compatible_file"
+ERR_NO_MULTIMODAL_PROJECTOR = "no_multimodal_projector"
 ERR_HUB_UNREACHABLE = "hub_unreachable"
 
 
@@ -1564,9 +1565,8 @@ def no_projector_error(repo_id: str, candidates: list[str], available: list[str]
     projectors = sorted(path for path in available if is_mmproj_file(path))
     if not projectors:
         return NoMatchingFileError(
-            ERR_NO_COMPATIBLE_FILE,
-            f"Repository '{repo_id}' publishes no multimodal projector (an mmproj GGUF file), so it cannot be installed as a "
-            "multimodal model. Install it as a text model instead, or choose a repository that publishes a projector.",
+            ERR_NO_MULTIMODAL_PROJECTOR,
+            f"The selected model does not provide multimedia capabilities: repository '{repo_id}' publishes no mmproj GGUF file.",
         )
     return NoMatchingFileError(
         ERR_MODEL_NOT_FOUND,

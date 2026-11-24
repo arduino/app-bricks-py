@@ -2673,11 +2673,11 @@ def test_a_repository_with_no_projector_at_all_says_so(monkeypatch):
 
     with pytest.raises(FileNotFoundError) as excinfo:
         narrow_to_published(source)
-    assert "publishes no multimodal projector" in str(excinfo.value)
-    # What to do about it, not the list of model files: none of them is a projector.
-    assert "Install it as a text model instead" in str(excinfo.value)
+    assert str(excinfo.value).startswith("The selected model does not provide multimedia capabilities")
+    # Not the list of model files: none of them is a projector.
     assert "m-Q4_0.gguf" not in str(excinfo.value)
-    assert excinfo.value.code == "no_compatible_file"
+    # A code of its own: the repository does have a GGUF model, so it is not no_compatible_file.
+    assert excinfo.value.code == "no_multimodal_projector"
 
 
 def test_an_installed_projector_settles_a_defaulted_one(tmp_path, monkeypatch, capsys):
@@ -2979,8 +2979,22 @@ def test_a_model_declared_multimodal_fails_before_writing_when_there_is_no_proje
     assert not (models_dir / GEMMA_REPO).exists()
     error = read_events(capsys)[-1]
     assert error["event"] == "error"
-    assert error["code"] == "no_compatible_file"
-    assert "publishes no multimodal projector" in error["description"]
+    assert error["code"] == "no_multimodal_projector"
+    assert error["description"].startswith("The selected model does not provide multimedia capabilities")
+
+
+def test_the_info_of_a_model_declared_multimodal_reports_a_missing_projector(tmp_path, monkeypatch, capsys):
+    """--info settles the projector too, so it fails with the code the download would."""
+    monkeypatch.setattr(hf_downloader, "validate_hub_source", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding(GEMMA_TEXT_FILE))
+
+    with pytest.raises(SystemExit):
+        _declared_multimodal(monkeypatch, tmp_path / "models", "--info")
+
+    error = read_events(capsys)[-1]
+    assert error["event"] == "error"
+    assert error["code"] == "no_multimodal_projector"
+    assert error["description"].startswith("The selected model does not provide multimedia capabilities")
 
 
 def test_the_size_of_a_model_declared_multimodal_counts_its_projector(tmp_path, monkeypatch, capsys):
