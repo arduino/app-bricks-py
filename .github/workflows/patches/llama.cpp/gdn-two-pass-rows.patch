@@ -1,4 +1,4 @@
-From ac04b9f902ebedf9e78e7b4170cfb5e5c130ec9e Mon Sep 17 00:00:00 2001
+From b11d2705e8f550f2ebdaca18e5af959fd6992119 Mon Sep 17 00:00:00 2001
 From: Marco Colombo <ing.marco.colombo@gmail.com>
 Date: Thu, 12 Nov 2026 10:20:05 +0100
 Subject: [PATCH] ggml-cpu: do the gated delta rule in two passes per state row
@@ -9,10 +9,10 @@ Assisted-by: Claude Fable 5.2
  1 file changed, 74 insertions(+), 25 deletions(-)
 
 diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
-index adc92dd2c..06da9692e 100644
+index 6d3d4d3d5..c4e0dd0dd 100644
 --- a/ggml/src/ggml-cpu/ops.cpp
 +++ b/ggml/src/ggml-cpu/ops.cpp
-@@ -11027,6 +11027,70 @@ void ggml_compute_forward_solve_tri(const struct ggml_compute_params * params, s
+@@ -11294,6 +11294,70 @@ void ggml_compute_forward_solve_tri(const struct ggml_compute_params * params, s
  }
  
  // ggml_compute_forward_gated_delta_net
@@ -83,22 +83,24 @@ index adc92dd2c..06da9692e 100644
  static void ggml_compute_forward_gated_delta_net_one_chunk(
      const ggml_compute_params * params,
      ggml_tensor * dst,
-@@ -11115,10 +11179,12 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+@@ -11390,10 +11454,14 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
              ? state_work
              : state_out_base + (iv3 * H + iv1) * S_v * S_v;
  
 -        // copy input state into the working buffer and operate in-place
 +        // the first token reads the input state, the next ones update the working buffer in place
++        // the replay runs in place on the working buffer, so then the first token reads it too
          // state layout [S_v, S_v, H, n_seqs]: seq iv3 starts at iv3 * state_seq_stride.
          const float * s_in = state_in_base + iv3 * state_seq_stride + iv1 * S_v * S_v;
 -        memcpy(s_out, s_in, S_v * S_v * sizeof(float));
-+        if (n_tokens == 0) {
++        if (n_tokens == 0 || src_pk) {
 +            memcpy(s_out, s_in, S_v * S_v * sizeof(float));
++            s_in = s_out;
 +        }
  
-         // attn output pointer for first token of this (head, seq)
-         float * attn_data = attn_out_base + (iv3 * n_tokens * H + iv1) * S_v;
-@@ -11134,36 +11200,19 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+         if (src_pk) {
+             const int64_t n_r = ((const int32_t *) src_n_rep->data)[iv3];
+@@ -11451,36 +11519,19 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
              // state is stored transposed: s_out[j*S_v + i] = S[i][j]
              // so row j of s_out = column j of S (contiguous access)
  
@@ -141,3 +143,6 @@ index adc92dd2c..06da9692e 100644
              }
  
              attn_data += S_v * H; // advance to next token
+-- 
+2.34.1
+
