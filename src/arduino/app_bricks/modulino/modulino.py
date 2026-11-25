@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from dataclasses import dataclass
 import time
 from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple, override
@@ -44,8 +45,8 @@ def _check_callable(callback: object) -> None:
     if not callable(callback):
         raise TypeError("callback must be callable")
 
-
-class ModulinoColor(NamedTuple):
+@dataclass
+class RGBColor(NamedTuple):
     """An RGB color, 0-255 per channel.
 
     It is a tuple `(r, g, b)`, so it can be unpacked (`r, g, b = color`) and passed to libraries
@@ -261,7 +262,7 @@ class ModulinoThermo(Modulino):
         """
         return self._call("get temperature", "getTemperature")
 
-
+@dataclass
 class MovementSample(NamedTuple):
     """A movement sample of a Modulino Movement.
 
@@ -313,7 +314,15 @@ class ModulinoMovement(Modulino):
         """
         what = "get movement sample"
         self._call(what, "update")
-        return MovementSample(*(self._call(what, method) for method in ("getX", "getY", "getZ", "getRoll", "getPitch", "getYaw")))
+        sample = MovementSample()
+        #Data are cached in the MCU, the "update" call refreshes the cache
+        sample.x = self._call(what, "getX")
+        sample.y = self._call(what, "getY")
+        sample.z = self._call(what, "getZ")
+        sample.roll = self._call(what, "getRoll")
+        sample.pitch = self._call(what, "getPitch")
+        sample.yaw = self._call(what, "getYaw")
+        return sample
 
     def start_sample(self, ms: int, callback: Callable[[MovementSample], object]) -> None:
         """Start sampling movement data at the specified interval.
@@ -692,7 +701,7 @@ class ModulinoBuzzer(Modulino):
         """
         super().__init__(i2c_address, hub_port)
 
-    def tone(self, frequency: int, duration_ms: int) -> None:
+    def play_tone(self, frequency: int, duration_ms: int) -> None:
         """Play a tone on the buzzer.
 
         Args:
@@ -708,7 +717,7 @@ class ModulinoBuzzer(Modulino):
         _check_int("duration_ms", duration_ms, 0)
         self._command("play tone", "tone", frequency, duration_ms)
 
-    def no_tone(self) -> None:
+    def stop_tone(self) -> None:
         """Stop the tone currently playing on the buzzer.
 
         Raises:
@@ -738,7 +747,7 @@ class ModulinoPixels(Modulino):
         """
         super().__init__(i2c_address, hub_port)
 
-    def set(self, idx: int, r: int, g: int, b: int, brightness: int = 25) -> None:
+    def set_pixel(self, idx: int, r: int, g: int, b: int, brightness: int = 25) -> None:
         """Set the color and brightness of one LED.
 
         Args:
@@ -776,9 +785,9 @@ class ModulinoPixels(Modulino):
             r, g, b = color
         except (TypeError, ValueError) as e:
             raise TypeError("color must be an (r, g, b) tuple") from e
-        self.set(idx, r, g, b, brightness)
+        self.set_pixel(idx, r, g, b, brightness)
 
-    def clear(self, idx: int) -> None:
+    def clear_pixel(self, idx: int) -> None:
         """Turn off one LED.
 
         Args:
@@ -792,7 +801,7 @@ class ModulinoPixels(Modulino):
         _check_int("idx", idx, 0, self.LED_COUNT - 1)
         self._command(f"clear LED {idx}", "clear", idx)
 
-    def clear_all(self) -> None:
+    def clear_all_pixels(self) -> None:
         """Turn off all the LEDs.
 
         Raises:
@@ -855,18 +864,18 @@ class ModulinoLight(Modulino):
         """
         return self._read("get infrared light", "getIR")
 
-    def get_color(self) -> ModulinoColor:
+    def get_color(self) -> RGBColor:
         """Get the color seen by the sensor.
 
         Returns:
-            ModulinoColor: The color, 0-255 per channel.
+            RGBColor: The color, 0-255 per channel.
 
         Raises:
             ModulinoError: If the measure fails.
         """
         # The MCU packs the color as 0x00RRGGBB
         packed: int = self._read("get color", "getColor")
-        return ModulinoColor((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF)
+        return RGBColor((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF)
 
 
 class ModulinoLatchRelay(Modulino):
@@ -1537,7 +1546,7 @@ class ModulinoLEDMatrix(Modulino):
         """
         self._call("stop animation", "stop_animation")
 
-    def set_on_animation_end_callback(self, callback: Callable[[], object]) -> None:
+    def on_animation_end_callback(self, callback: Callable[[], object]) -> None:
         """Call a callback each time an animation without loop ends, after the duration of its last frame.
 
         An animation stopped by `stop_animation()`, `draw()`, `clear()` or a new `play_animation()` does not call it.
