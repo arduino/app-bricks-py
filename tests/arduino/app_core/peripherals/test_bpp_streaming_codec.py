@@ -16,10 +16,17 @@ def stream_wrapper():
     return BPPStreamCodec(codec)
 
 
-def test_stream_simple_encode_decode(stream_wrapper):
+@pytest.fixture
+def stream_peer():
+    """Remote peer of stream_wrapper, encodes the data it receives"""
+    codec = BPPCodec(secret=SECRET, enable_encryption=True)
+    return BPPStreamCodec(codec)
+
+
+def test_stream_simple_encode_decode(stream_wrapper, stream_peer):
     """Test standard flow: encode -> decode"""
     # Encode (Magic + Len + Checksum + BPP)
-    wire_data = stream_wrapper.encode(PAYLOAD)
+    wire_data = stream_peer.encode(PAYLOAD)
 
     assert wire_data[0] == 0xAA
     length = struct.unpack(">I", wire_data[1:5])[0]
@@ -30,9 +37,9 @@ def test_stream_simple_encode_decode(stream_wrapper):
     assert result == PAYLOAD
 
 
-def test_stream_fragmentation(stream_wrapper):
+def test_stream_fragmentation(stream_wrapper, stream_peer):
     """Test receiving data byte-by-byte (BLE MTU fragmentation simulation)"""
-    wire_data = stream_wrapper.encode(PAYLOAD)
+    wire_data = stream_peer.encode(PAYLOAD)
     results = []
 
     # Feed one byte at a time using decode()
@@ -46,10 +53,10 @@ def test_stream_fragmentation(stream_wrapper):
     assert results[0] == PAYLOAD
 
 
-def test_stream_concatenation(stream_wrapper):
+def test_stream_concatenation(stream_wrapper, stream_peer):
     """Test receiving multiple packets in a single chunk (UART buffering)"""
-    packet1 = stream_wrapper.encode(b"packet_one")
-    packet2 = stream_wrapper.encode(b"packet_two")
+    packet1 = stream_peer.encode(b"packet_one")
+    packet2 = stream_peer.encode(b"packet_two")
 
     big_chunk = packet1 + packet2
 
@@ -65,9 +72,9 @@ def test_stream_concatenation(stream_wrapper):
         idx += 1
 
 
-def test_stream_garbage_resync(stream_wrapper):
+def test_stream_garbage_resync(stream_wrapper, stream_peer):
     """Test recovery from garbage data before a valid packet"""
-    valid_packet = stream_wrapper.encode(PAYLOAD)
+    valid_packet = stream_peer.encode(PAYLOAD)
 
     # Inject garbage bytes before valid packet
     garbage = b"\x00\x11\x22" + valid_packet
@@ -82,9 +89,9 @@ def test_stream_garbage_resync(stream_wrapper):
     assert n_msgs == 1
 
 
-def test_stream_garbage_packet_resync(stream_wrapper):
+def test_stream_garbage_packet_resync(stream_wrapper, stream_peer):
     """Test recovery when garbage contains an invalid packet"""
-    valid_packet = stream_wrapper.encode(PAYLOAD)
+    valid_packet = stream_peer.encode(PAYLOAD)
 
     # Inject garbage packet before valid packet
     garbage_packet = b"\xaa\x00\x00" + b"\xff" * 5
@@ -100,9 +107,9 @@ def test_stream_garbage_packet_resync(stream_wrapper):
     assert n_msgs == 1
 
 
-def test_stream_invalid_checksum_resync(stream_wrapper):
+def test_stream_invalid_checksum_resync(stream_wrapper, stream_peer):
     """Test recovery when garbage contains the magic byte but invalid checksum"""
-    valid_packet = stream_wrapper.encode(PAYLOAD)
+    valid_packet = stream_peer.encode(PAYLOAD)
 
     # Inject invalid packet before valid packet
     # 0xAA ^ 0 ^ 0 ^ 0 ^ 5 = 0xAF, but we put 0xFF as checksum to force mismatch.

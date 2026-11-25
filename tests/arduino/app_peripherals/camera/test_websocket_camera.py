@@ -535,6 +535,25 @@ async def test_wrong_secret_client_is_not_connected(encrypt):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("encrypt", [False, True])
+async def test_client_echoing_the_welcome_is_not_connected(encrypt):
+    """Test that a client sending the welcome message back causes no status change."""
+    events = []
+
+    camera = WebSocketCamera(port=0, secret=TEST_SECRET, encrypt=encrypt)
+    camera.on_status_changed(lambda status, info: events.append(status))
+    camera.start()
+
+    async with websockets.connect(camera.url) as ws:
+        welcome = await ws.recv()
+        await ws.send(welcome)
+
+    camera.stop()
+
+    assert events == []
+
+
+@pytest.mark.asyncio
 async def test_websocket_camera_authenticated_mode():
     """Test sending and receiving frames with HMAC-SHA256 authentication (secret, no encryption)."""
     codec = BPPCodec(TEST_SECRET, enable_encryption=False)
