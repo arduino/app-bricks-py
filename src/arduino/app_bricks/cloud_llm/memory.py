@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import json
+from collections.abc import Callable
 from typing import Protocol, runtime_checkable
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage, messages_from_dict, messages_to_dict
@@ -98,6 +99,46 @@ def keep_latest_media(messages: list[BaseMessage]) -> list[BaseMessage]:
     """
     latest = next((i for i in range(len(messages) - 1, -1, -1) if has_media(messages[i])), None)
     return [message if i == latest else without_media(message) for i, message in enumerate(messages)]
+
+
+def text_size(message: BaseMessage) -> int:
+    """Returns the characters of text ``message`` sends: its text and the arguments of its tool calls.
+
+    Images and audio count nothing: their size in characters says nothing about their size in tokens.
+
+    Args:
+        message (BaseMessage): The message to measure.
+
+    Returns:
+        int: The number of characters.
+    """
+    content = message.content
+    parts = [content] if isinstance(content, str) else content
+    size = sum(len(part) if isinstance(part, str) else len(str(part.get("text", ""))) for part in parts)
+    if isinstance(message, AIMessage):
+        size += sum(len(call["name"]) + len(json.dumps(call["args"])) for call in message.tool_calls)
+    return size
+
+
+def drop_oldest_turns(messages: list[BaseMessage], size: float) -> list[BaseMessage]:
+    """Returns ``messages`` without the oldest turns that hold at least ``size`` characters of text.
+
+    A turn starts at a user message, so a tool exchange is never split. At least one turn is
+    dropped, and all of them when they hold less text than ``size`` (see ``text_size``).
+
+    Args:
+        messages (list[BaseMessage]): The conversation, oldest first.
+        size (float): The characters of text to drop.
+
+    Returns:
+        list[BaseMessage]: The newest messages, starting with a user message, or an empty list.
+    """
+    dropped = 0
+    for i, message in enumerate(messages):
+        if i > 0 and isinstance(message, HumanMessage) and dropped >= size:
+            return messages[i:]
+        dropped += text_size(message)
+    return []
 
 
 @runtime_checkable
@@ -265,6 +306,36 @@ class WindowedChatMessageHistory:
             self._store.append([without_media(m) for m in messages] if self._latest_media_only else messages)
 
         self._apply_window(messages)
+
+    def compact(self, compactor: Callable[[list[BaseMessage]], list[BaseMessage]]) -> list[BaseMessage] | None:
+        """Replaces the messages of the window with the shorter list ``compactor`` makes of them.
+
+        The store is left as it is: it keeps the whole conversation, and a history loaded from
+        it is compacted again when it does not fit.
+
+        Args:
+            compactor (Callable[[list[BaseMessage]], list[BaseMessage]]): Takes the messages of
+                the window, oldest first and without the system message, and returns the ones
+                to keep in their place.
+
+        Returns:
+            list[BaseMessage] | None: The messages the window held before, which ``restore`` puts
+                back, or None when ``compactor`` kept them all (the window is then left unchanged).
+        """
+        previous = list(self._messages)
+        compacted = compactor(list(previous))
+        if len(compacted) >= len(previous):
+            return None
+        self._messages = list(compacted)
+        return previous
+
+    def restore(self, messages: list[BaseMessage]) -> None:
+        """Puts back the window that ``compact`` replaced.
+
+        Args:
+            messages (list[BaseMessage]): The messages ``compact`` returned.
+        """
+        self._messages = list(messages)
 
     def get_messages(self) -> list[BaseMessage]:
         """Get all messages in the history, including system message if set."""

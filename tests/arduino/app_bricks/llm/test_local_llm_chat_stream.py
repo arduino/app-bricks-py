@@ -17,6 +17,7 @@ import threading
 from types import SimpleNamespace
 
 import pytest
+from langchain_core.messages import HumanMessage
 
 import arduino.app_bricks.llm.local_llm as local_llm_module
 from arduino.app_bricks.cloud_llm import CloudLLM
@@ -68,7 +69,7 @@ def _make_llm(chunks) -> LargeLanguageModel:
     llm._reasoning_effort_default = None
     llm._callbacks = None
     llm._history = RecordingHistory()
-    llm._get_message_with_history = lambda *_args, **_kwargs: []
+    llm._user_message = lambda *_args, **_kwargs: HumanMessage(content="hello")
     return llm
 
 

@@ -8,10 +8,10 @@ from langchain_core.runnables import Runnable
 
 import importlib
 import time
-from typing import Any, NoReturn, Self
+from typing import Any, NoReturn, Self, cast
 
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider, ReasoningEffort
-from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY, ToolLike
+from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY, ContextFullPolicy, ContextLengthExceededError, ToolLike
 from arduino.app_bricks.cloud_llm.memory import MessagePersistence
 from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
@@ -37,6 +37,10 @@ LIST_MODELS_RETRY_DELAY_S = 1.0
 MEDIA_NOT_SUPPORTED = "input is not supported"
 MEDIA_ENCODE_FAILURE = "failed to process mtmd chunk"
 
+# llama.cpp server error type for a request longer than the context window. The error body
+# carries the request tokens (n_prompt_tokens) and the context size (n_ctx).
+CONTEXT_SIZE_EXCEEDED = "exceed_context_size_error"
+
 # Local runners don't check the API key, but the OpenAI clients require one.
 _RUNNER_API_KEY = "api_key"
 
@@ -58,6 +62,11 @@ class LargeLanguageModel(CloudLLM):
     """
 
     _logger = logger
+
+    _CONTEXT_LENGTH_HINT = (
+        "Send a shorter message, or make room in the memory with clear_memory()."
+        " On a llamacpp: model, LLAMA_ARG_CTX_SIZE in the variables of the Brick in app.yaml sets a larger context window."
+    )
 
     GENIE_MODEL = "genie"
     LLAMACPP_MODEL = "llamacpp"
@@ -195,6 +204,7 @@ class LargeLanguageModel(CloudLLM):
         self,
         max_messages: int = DEFAULT_MEMORY,
         persistence: bool | MessagePersistence | None = None,
+        on_context_full: ContextFullPolicy = "drop_oldest",
     ) -> Self:
         """Enables conversational memory for this instance.
 
@@ -202,17 +212,33 @@ class LargeLanguageModel(CloudLLM):
         AI to maintain context across multiple interactions. An optional persistence
         backend stores the history so it can resume across restarts.
 
+        A turn enters the memory once the model has answered it. When a request does not
+        fit in the context window of the model, the memory makes room as `on_context_full`
+        says and the request is sent again; the new message is never cut. The persistence
+        backend keeps the whole conversation either way.
+
         Args:
             max_messages (int): The maximum number of messages.
             persistence (bool | MessagePersistence | None): Optional persistence backend.
                 `None`/`False` for in-memory only, `True` for a default
                 `SQLMessagePersistence`, or any `MessagePersistence` instance for full
                 control.
+            on_context_full (ContextFullPolicy): What the memory does when a request does not
+                fit in the context window. `"drop_oldest"` (default) drops the oldest whole
+                turns, down to about half of the context window, so that the next turns fit as
+                well; a warning is logged. `"raise"` keeps the memory and raises
+                `ContextLengthExceededError`. A callable takes the messages of the memory window
+                (oldest first, without the system prompt) and returns fewer messages to keep in
+                their place, for example a summary of the oldest turns followed by the newest
+                ones; the result must still be a valid conversation, starting with a user message.
 
         Returns:
             Self: The current instance, allowing for method chaining.
+
+        Raises:
+            ValueError: If `on_context_full` is neither `"drop_oldest"`, `"raise"` nor a callable.
         """
-        return super().with_memory(max_messages=max_messages, persistence=persistence)
+        return super().with_memory(max_messages=max_messages, persistence=persistence, on_context_full=on_context_full)
 
     def get_client(self) -> BaseChatModel | Runnable[LanguageModelInput, AIMessage]:
         """Returns the underlying LangChain model instance.
@@ -237,6 +263,28 @@ class LargeLanguageModel(CloudLLM):
             bool: True if the runner failed to load the model.
         """
         return "failed to load" in (server_msg or "").lower()
+
+    def _as_context_length_error(self, e: Exception) -> ContextLengthExceededError | None:
+        """Tells whether the model rejected a request as longer than its context window.
+
+        The llama.cpp runner answers such a request with its own error type and reports the
+        tokens of the request and the size of the context window.
+
+        Args:
+            e (Exception): The error a request raised.
+
+        Returns:
+            ContextLengthExceededError | None: The error that stands for `e`, or None when `e` is another failure.
+        """
+        if not (isinstance(e, APIError) and e.type == CONTEXT_SIZE_EXCEEDED):
+            return super()._as_context_length_error(e)
+        error_body: object = e.body
+        body = cast(dict[str, object], error_body) if isinstance(error_body, dict) else {}
+        prompt_tokens, context_size = body.get("n_prompt_tokens"), body.get("n_ctx")
+        return self._context_length_error(
+            prompt_tokens=prompt_tokens if isinstance(prompt_tokens, int) else None,
+            context_size=context_size if isinstance(context_size, int) else None,
+        )
 
     def _handle_api_error(self, ilogger: Logger, e: Exception) -> NoReturn:
         """Handles OpenAI API errors by logging details and raising RuntimeError.
@@ -322,6 +370,7 @@ class LargeLanguageModel(CloudLLM):
             str: The complete text response generated by the AI.
 
         Raises:
+            ContextLengthExceededError: If the request does not fit in the context window of the model.
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             ValueError: If `reasoning_effort` is not a supported level or budget.
             TypeError: If `reasoning_effort` is not a ReasoningEffort, str, int, or None.
@@ -346,6 +395,7 @@ class LargeLanguageModel(CloudLLM):
             str: Chunks of text (tokens) from the AI response.
 
         Raises:
+            ContextLengthExceededError: If the request does not fit in the context window of the model.
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             AlreadyGenerating: If a streaming session is already active.
         """

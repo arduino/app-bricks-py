@@ -57,6 +57,7 @@ EXPECTED_SIGNATURES = {
         ("self", _P.POSITIONAL_OR_KEYWORD, False),
         ("max_messages", _P.POSITIONAL_OR_KEYWORD, True),
         ("persistence", _P.POSITIONAL_OR_KEYWORD, True),
+        ("on_context_full", _P.POSITIONAL_OR_KEYWORD, True),
     ],
 }
 

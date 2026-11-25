@@ -54,13 +54,13 @@ def test_temperature_zero_is_sent_with_every_request(brick):
 
 
 def test_text_only_message_stays_a_plain_string(brick):
-    messages = brick._get_message_with_history("How many legs does a spider have?")
+    messages = [brick._user_message("How many legs does a spider have?")]
 
     assert messages[-1].content == "How many legs does a spider have?"
 
 
 def test_images_then_audio_then_text(brick):
-    messages = brick._get_message_with_history("Describe both.", images=[JPEG], audio=[_pcm()])
+    messages = [brick._user_message("Describe both.", images=[JPEG], audio=[_pcm()])]
 
     content = messages[-1].content
     assert [part["type"] for part in content] == ["image_url", "input_audio", "text"]
@@ -70,14 +70,14 @@ def test_images_then_audio_then_text(brick):
 
 
 def test_single_audio_clip_without_a_list(brick):
-    messages = brick._get_message_with_history("Transcribe.", audio=_pcm())
+    messages = [brick._user_message("Transcribe.", audio=_pcm())]
 
     assert [part["type"] for part in messages[-1].content] == ["input_audio", "text"]
 
 
 def test_input_audio_part_survives_langchain_conversion(brick):
     """LangChain must forward the ``input_audio`` part to /v1/chat/completions unchanged."""
-    messages = brick._get_message_with_history("Transcribe.", images=[JPEG], audio=[_pcm()])
+    messages = [brick._user_message("Transcribe.", images=[JPEG], audio=[_pcm()])]
 
     payload = brick._base_model._get_request_payload(messages)
 
@@ -193,7 +193,7 @@ def sql_store():
 
 
 def test_sql_store_preserves_audio_message(sql_store, brick):
-    content = brick._get_message_with_history("Transcribe.", images=[JPEG], audio=[_pcm()])[-1].content
+    content = brick._user_message("Transcribe.", images=[JPEG], audio=[_pcm()]).content
     store = SQLMessagePersistence(sql_store=sql_store, thread_id="multimodal-audio")
 
     store.append([HumanMessage(content=content), AIMessage(content="Water is spilling.")])
