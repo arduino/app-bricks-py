@@ -186,7 +186,6 @@ The constructor also accepts the parameters of the tracker inside the model, eac
 | `min_detections` | `3` | Detections an object needs before it is reported as tracked. |
 | `iou_threshold` | `0.1` | How much two boxes must overlap between frames to be the same object. For bounding-box models such as YOLO. |
 | `euclidean_distance_threshold` | `50` | How far an object may move between frames, in pixels, to be the same object. For centroid models such as FOMO. |
-| `keep_identities` | `True` | Keep the ID of an object through a short loss or a change of label. |
 
 `iou_threshold` and `euclidean_distance_threshold` are alternatives: the model uses the one matching its type and the other `override_*` method does nothing. An `override_*` method raises `RuntimeError` when the model has no such parameter. The parameters belong to the model, so they hold for every Brick of the app using the same model.
 
