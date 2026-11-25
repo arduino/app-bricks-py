@@ -15,6 +15,7 @@ import shutil
 import time
 from typing import Any
 from urllib.parse import urlparse
+from arduino.app_tools.brick_categories import DEFAULT_BRICK_CATEGORY
 from arduino.version import __version__
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ class ArduinoBrick:
         ports: list[int],
         fs_path: str,
         model_name: str,
-        category: str | None = "miscellaneous",
+        category: str | None = DEFAULT_BRICK_CATEGORY,
         mount_devices_into_container: bool = False,
         requires_display: str | None = None,
         required_device_classes: list[str] | None = None,
@@ -94,7 +95,7 @@ class ArduinoBrick:
         self.readme_file: str | None = self.get_readme_file()
         self.model_name: str = model_name
         # A brick_config.yaml without a category, read as None, gets the default
-        self.category: str = category or "miscellaneous"
+        self.category: str = category or DEFAULT_BRICK_CATEGORY
         self.mount_devices_into_container: bool = mount_devices_into_container
         self.requires_display: str | None = requires_display
         self.required_device_classes: list[str] | None = required_device_classes
@@ -172,7 +173,7 @@ class ArduinoService:
         name: str,
         brick_description: str,
         fs_path: str,
-        category: str | None = "miscellaneous",
+        category: str | None = DEFAULT_BRICK_CATEGORY,
         env_variables: list[dict[str, Any]] | None = None,
         supported_boards: list[str] | None = None,
         root_path: str | pathlib.Path | None = None,
@@ -182,7 +183,7 @@ class ArduinoService:
         self.brick_description = brick_description
         self.path = fs_path
         self.compose_file: str | None = self.get_compose_file()
-        self.category: str = category or "miscellaneous"
+        self.category: str = category or DEFAULT_BRICK_CATEGORY
         self.env_variables: list[dict[str, Any]] | None = env_variables
         self.supported_boards: list[str] | None = supported_boards
         self.root_path: str | None = str(root_path) if root_path is not None else None

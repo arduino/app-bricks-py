@@ -1,6 +1,7 @@
 id: arduino:vlm
 name: Large Language Model - Vision
 description: "Vision Language Model Brick enables seamless integration with locally hosted VLMs for advanced AI capabilities in your Arduino projects."
+category: text
 requires_services:
   - id: arduino:genie
     when:

@@ -1,6 +1,7 @@
 id: arduino:llm
 name: Large Language Model - Text
 description: "Large Language Model Brick enables seamless integration with locally hosted text LLMs for advanced AI capabilities in your Arduino projects."
+category: text
 requires_services:
   - id: arduino:genie
     when:
