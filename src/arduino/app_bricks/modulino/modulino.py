@@ -3,7 +3,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from dataclasses import dataclass
 import time
 from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple, override
@@ -36,6 +35,12 @@ def _check_int(name: str, value: object, minimum: int | None = None, maximum: in
         raise ValueError(f"{name} must be at least {minimum}, got {value}")
 
 
+def _check_number(name: str, value: object) -> None:
+    """Raise TypeError if `value` is not an int or a float (bool excluded)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be a number, got {type(value).__name__}")
+
+
 def _check_bool(name: str, value: object) -> None:
     if not isinstance(value, bool):
         raise TypeError(f"{name} must be a boolean, got {type(value).__name__}")
@@ -45,7 +50,7 @@ def _check_callable(callback: object) -> None:
     if not callable(callback):
         raise TypeError("callback must be callable")
 
-@dataclass
+
 class RGBColor(NamedTuple):
     """An RGB color, 0-255 per channel.
 
@@ -76,6 +81,12 @@ class ModulinoHubPort:
         """
         self.hub_address = hub_address
         self.port = port
+
+
+def _check_hub_port(hub_port: object) -> None:
+    """Raise TypeError if `hub_port` is neither None nor a ModulinoHubPort."""
+    if hub_port is not None and not isinstance(hub_port, ModulinoHubPort):
+        raise TypeError("hub_port must be a ModulinoHubPort, get it with ModulinoHub.port()")
 
 
 class ModulinoHub:
@@ -142,8 +153,7 @@ class Modulino:
         if not type(self)._TYPE:
             raise TypeError("Modulino is a base class: use the class of your Modulino, e.g. ModulinoThermo")
         _check_int("i2c_address", i2c_address, 0x00, 0xFF)
-        if hub_port is not None and not isinstance(hub_port, ModulinoHubPort):
-            raise TypeError("hub_port must be a ModulinoHubPort, get it with ModulinoHub.port()")
+        _check_hub_port(hub_port)
         self.i2c_address = i2c_address
         self.hub_address = hub_port.hub_address if hub_port is not None else 0
         self.port = hub_port.port if hub_port is not None else 0
@@ -262,7 +272,7 @@ class ModulinoThermo(Modulino):
         """
         return self._call("get temperature", "getTemperature")
 
-@dataclass
+
 class MovementSample(NamedTuple):
     """A movement sample of a Modulino Movement.
 
@@ -313,16 +323,16 @@ class ModulinoMovement(Modulino):
             ModulinoError: If the board can't read the sample.
         """
         what = "get movement sample"
+        # Data are cached in the MCU: the "update" call refreshes the cache read by the getters below.
         self._call(what, "update")
-        sample = MovementSample()
-        #Data are cached in the MCU, the "update" call refreshes the cache
-        sample.x = self._call(what, "getX")
-        sample.y = self._call(what, "getY")
-        sample.z = self._call(what, "getZ")
-        sample.roll = self._call(what, "getRoll")
-        sample.pitch = self._call(what, "getPitch")
-        sample.yaw = self._call(what, "getYaw")
-        return sample
+        return MovementSample(
+            x=self._call(what, "getX"),
+            y=self._call(what, "getY"),
+            z=self._call(what, "getZ"),
+            roll=self._call(what, "getRoll"),
+            pitch=self._call(what, "getPitch"),
+            yaw=self._call(what, "getYaw"),
+        )
 
     def start_sample(self, ms: int, callback: Callable[[MovementSample], object]) -> None:
         """Start sampling movement data at the specified interval.
@@ -1256,8 +1266,7 @@ class ModulinoMotors(Modulino):
             ModulinoError: If the board can't move the motor.
         """
         _check_int("steps", steps)
-        if isinstance(rpm, bool) or not isinstance(rpm, (int, float)):
-            raise TypeError(f"rpm must be a number, got {type(rpm).__name__}")
+        _check_number("rpm", rpm)
         if rpm <= 0:
             raise ValueError(f"rpm must be positive, got {rpm}")
         _check_int("release_ms", release_ms, 0, 255)
