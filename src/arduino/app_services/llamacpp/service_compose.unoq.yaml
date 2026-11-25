@@ -30,6 +30,9 @@ services:
     ports:
       - ${BIND_ADDRESS:-127.0.0.1}:9999:9999
       - ${BIND_ADDRESS_IPV6:-[::1]}:9999:9999
+    # A crash dumps no core: it would be GBs written into the models directory.
+    ulimits:
+      core: 0
     mem_limit: 2500m
     memswap_limit: 2500m
     volumes:

@@ -29,6 +29,16 @@ def _clear_scandir_cache():
 
 
 @pytest.fixture(autouse=True)
+def _clear_repo_listing_cache():
+    """Each test asks its own Hub: a listing is kept for one run of the downloader."""
+    from hugging_face import hf_downloader
+
+    hf_downloader.repo_files.cache_clear()
+    yield
+    hf_downloader.repo_files.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def _no_release_version(monkeypatch):
     """Run outside the image, as the tests do: no release unless a test sets one."""
     import list_models

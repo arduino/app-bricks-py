@@ -55,17 +55,24 @@ def _find_user_frame(tb: TracebackType | None) -> traceback.FrameSummary | None:
     return user_frames[-1] if user_frames else None
 
 
-def _app_excepthook(exc_type: type[BaseException], exc: BaseException, tb: TracebackType | None) -> None:
-    if not isinstance(exc, Exception):
-        # BaseExceptions like KeyboardInterrupt keep the standard behavior
-        _previous_excepthook(exc_type, exc, tb)
-        return
+def report_exception(exc: Exception, title: str) -> None:
+    """Prints a user-readable report of exc to stderr, followed by its full traceback.
 
+    The report names the innermost frame of user code. An AppError is shown with its
+    message and optional hint; any other exception is reported as unexpected, with its
+    class name.
+
+    Args:
+        exc (Exception): The exception to report, with its traceback attached.
+        title (str): The text of the opening banner, e.g. "App failed to start".
+    """
     out = sys.stderr
+    exc_type = type(exc)
+    tb = exc.__traceback__
     frame = _find_user_frame(tb)
     location = f" in {os.path.basename(frame.filename)}, line {frame.lineno}" if frame else ""
 
-    print(_banner("App failed to start"), file=out)
+    print(_banner(title), file=out)
     if isinstance(exc, AppError):
         print(f"Error{location}:", file=out)
         print(f"  {str(exc) or exc_type.__name__}", file=out)
@@ -78,6 +85,14 @@ def _app_excepthook(exc_type: type[BaseException], exc: BaseException, tb: Trace
     print("\nTrace:", file=out)
     traceback.print_exception(exc_type, exc, tb, file=out)
     print(_banner(), file=out, flush=True)
+
+
+def _app_excepthook(exc_type: type[BaseException], exc: BaseException, tb: TracebackType | None) -> None:
+    if not isinstance(exc, Exception):
+        # BaseExceptions like KeyboardInterrupt keep the standard behavior
+        _previous_excepthook(exc_type, exc, tb)
+        return
+    report_exception(exc.with_traceback(tb), "App failed to start")
 
 
 _previous_excepthook = sys.__excepthook__

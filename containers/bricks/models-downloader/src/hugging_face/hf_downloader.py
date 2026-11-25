@@ -30,11 +30,23 @@ host has a single variable to set whatever the model is::
     hf_downloader --model-url [<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]]
 
 The multimodal projector takes either syntax too, in its own variable, whichever form the
-model came in — and only there can it be asked for without naming a quantization, which
-falls back through F16 and BF16::
+model came in::
 
     hf_downloader --model-url <model> --model-mmproj-url https://huggingface.co/<org>/<repo>/blob/<revision>/mmproj-<q>.gguf
     hf_downloader --model-url <model> --model-mmproj-url [<model_type>:]<repo_id>[:<quantization>]
+
+Or it is not named at all: ``auto`` in the projector's variable asks for the model with
+its projector, and the downloader looks for one in the model's own repository::
+
+    hf_downloader --model-url [<model_type>:]<repo_id>[:<quantization>] --model-mmproj-url auto
+    hf_downloader --model-url https://huggingface.co/<org>/<repo>/blob/<revision>/<file>.gguf --model-mmproj-url auto
+
+A projector asked for without a quantization — by ``auto``, or by an mmproj key naming
+only the repository — is the first the repository publishes of F16, BF16 and Q8_0
+(Q8_0, F16, BF16 on UnoQ, see BOARD_MMPROJ_QUANTIZATIONS), or else the only projector
+there is, whatever its name. A repository with no projector fails the request: a model
+asked for with its projector is never installed as its text model alone. A projector the
+model key names, with its ``<mmproj_quantization>``, wins over ``auto``.
 
 A leading ``<scheme>://`` selects form 1; anything else is parsed as a key. A URL that
 names only a repository — the address of the page the file would be copied from — says
@@ -102,6 +114,7 @@ declares, the output-dir-relative path for ad-hoc downloads.
 """
 
 import fnmatch
+import functools
 import os
 import re
 import shutil
@@ -119,6 +132,7 @@ from huggingface_hub.hf_api import RepoFile
 import argparse
 import configparser
 from collections import ChainMap
+from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -236,11 +250,33 @@ def default_quantization(repo_id: str = "", board: str | None = None) -> str:
 
 # The same, for a multimodal projector asked for without a quantization. An mmproj is a
 # small file next to a much larger model, so there is nothing to gain by going below the
-# half precision it is published at: F16 first, BF16 for the publishers who prefer it.
+# half precision it is published at: F16 first, BF16 for the publishers who prefer it,
+# and Q8_0 for the repositories that publish nothing else.
 # "FP16" is deliberately not in the list — no repository spells the file that way.
-DEFAULT_MMPROJ_QUANTIZATIONS = ("F16", "BF16")
+DEFAULT_MMPROJ_QUANTIZATIONS = ("F16", "BF16", "Q8_0")
 
-DEFAULT_MMPROJ_QUANTIZATION = DEFAULT_MMPROJ_QUANTIZATIONS[0]
+# Boards whose runner wants a different projector, keyed by BOARD_NAME. UnoQ encodes an
+# image on a CPU with no half-precision arithmetic, where the Q8_0 projector gives the
+# same answers several times faster: the half-precision ones are only its fallbacks.
+BOARD_MMPROJ_QUANTIZATIONS = {
+    "unoq": ("Q8_0", "F16", "BF16"),
+}
+
+
+# The projector spec that names no projector: the model is wanted with the one its own
+# repository publishes, found in the order above. Case is ignored.
+MMPROJ_AUTO = "auto"
+
+
+def default_mmproj_quantizations(board: str | None = None) -> tuple[str, ...]:
+    """The projector preference order on *board*, or on the board this run is on.
+
+    The board is read from BOARD_NAME, as ``default_quantizations`` reads it.
+    """
+    if board is None:
+        board = os.environ.get("BOARD_NAME", "")
+    return BOARD_MMPROJ_QUANTIZATIONS.get(board.lower(), DEFAULT_MMPROJ_QUANTIZATIONS)
+
 
 # The only host a model may come from. The whole netloc is compared against it, so a
 # lookalike domain ("huggingface.co.example.com"), embedded credentials that hide the real
@@ -277,6 +313,7 @@ ERR_MODEL_PRIVATE_OR_GATED = "model_private_or_gated"
 ERR_MODEL_DISABLED = "model_disabled"
 ERR_MODEL_INCOMPATIBLE = "model_incompatible"
 ERR_NO_COMPATIBLE_FILE = "no_compatible_file"
+ERR_NO_MULTIMODAL_PROJECTOR = "no_multimodal_projector"
 ERR_HUB_UNREACHABLE = "hub_unreachable"
 
 
@@ -378,13 +415,15 @@ def matching_files(output_dir: str, patterns: list[str]) -> list[Path]:
     Matched the way ``matches_pattern`` matches them on the Hub — against the
     repository-relative path as well as the file name — so the quantization of a
     repository that nests its files in per-quantization folders is recognised on disk
-    under the same pattern that selected it for download.
+    under the same pattern that selected it for download. And selected the way the
+    download selects them (``pattern_selects``): a projector is only named by a
+    projector pattern.
     """
     base = Path(output_dir)
     return [
         p
         for p in model_files(output_dir)
-        if not unsupported_quantization(p.name) and any(matches_pattern(p.relative_to(base).as_posix(), pattern) for pattern in patterns)
+        if not unsupported_quantization(p.name) and any(pattern_selects(p.relative_to(base).as_posix(), pattern) for pattern in patterns)
     ]
 
 
@@ -782,10 +821,13 @@ def parse_model_key(model_key: str) -> tuple[str, str, str, str | None]:
         <repo_id>                                                   # quantization defaults to the board's first choice, then the fallbacks
         <repo_id>:<quantization>                                    # llama.cpp -hf style
         <model_type>:<repo_id>:<quantization>
+        <owner>/<repo>:<quantization>:<mmproj_quantization>
         <model_type>:<repo_id>:<quantization>:<mmproj_quantization>
 
     ``model_type`` is optional and purely informative — nothing selects on it — so a
     two-field key is accepted and reads like llama.cpp's ``-hf Qwen/Qwen3-8B-GGUF:Q8_0``.
+    Three fields are told apart by the slash: a ``model_type`` never holds one, so a
+    first field that does is the repository, followed by both quantizations.
     A defaulted quantization is only the first of ``default_quantizations(repo_id)`` — the
     order for the board this run is on and for a model that size; which one the run
     settles on is decided later, against the disk and then the repository.
@@ -802,6 +844,8 @@ def parse_model_key(model_key: str) -> tuple[str, str, str, str | None]:
         model_type, repo_id, quantization, mmproj_quantization = "", parts[0], default_quantization(parts[0]), None
     elif len(parts) == 2:
         model_type, repo_id, quantization, mmproj_quantization = "", parts[0], parts[1], None
+    elif len(parts) == 3 and "/" in parts[0]:
+        model_type, repo_id, quantization, mmproj_quantization = "", parts[0], parts[1], parts[2]
     elif len(parts) == 3:
         model_type, repo_id, quantization, mmproj_quantization = parts[0], parts[1], parts[2], None
     elif len(parts) == 4:
@@ -852,7 +896,7 @@ def parse_mmproj_key(mmproj_key: str) -> tuple[str, str | None]:
         raise ValueError(
             f"Invalid mmproj key: {mmproj_key}\n"
             "Expected format: [<model_type>:]<repo_id>[:<quantization>] "
-            f"(e.g. unsloth/gemma-3-4b-it-GGUF, which defaults to {DEFAULT_MMPROJ_QUANTIZATION}, "
+            f"(e.g. unsloth/gemma-3-4b-it-GGUF, which defaults to {default_mmproj_quantizations()[0]}, "
             "or unsloth/gemma-3-4b-it-GGUF:BF16)"
         )
     if repo_id == "":
@@ -913,9 +957,10 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None) ->
     *model_mmproj_url* names the multimodal projector, and takes either syntax too,
     independently of the one the model came in: a URL pins the file, a key
     ``[<model_type>:]<repo_id>[:<quantization>]`` asks the repository for it and falls back
-    through ``DEFAULT_MMPROJ_QUANTIZATIONS`` when no quantization is given. It is the only
-    way to ask for a projector without naming its quantization — the key's fourth field
-    cannot, since an empty field there would be indistinguishable from a typo.
+    through ``default_mmproj_quantizations()`` when no quantization is given. ``auto``
+    (``MMPROJ_AUTO``) names none: the projector is then looked for in the model's own
+    repository, in the same preference order, unless the model key already names its
+    quantization — a choice the caller made, which ``auto`` does not contradict.
 
     Returns:
         A dict with ``repo_id``, ``allow_pattern`` and ``mmproj_allow_pattern`` (used by
@@ -935,6 +980,11 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None) ->
             f"([<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]], e.g. {EXAMPLE_REPO_ID} "
             f"which defaults to {default_quantization(EXAMPLE_REPO_ID)}, or Qwen/Qwen3-8B-GGUF:Q8_0)"
         )
+
+    # "auto" names no projector, so it is not a second name for the one a key may give.
+    find_projector = (model_mmproj_url or "").strip().lower() == MMPROJ_AUTO
+    if find_projector:
+        model_mmproj_url = None
 
     source = {
         "repo_id": "",
@@ -987,6 +1037,8 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None) ->
 
     if model_mmproj_url:
         apply_mmproj_spec(source, model_mmproj_url)
+    elif find_projector and not source["mmproj_allow_pattern"]:
+        apply_mmproj_quantization(source)
     return source
 
 
@@ -1024,15 +1076,19 @@ def apply_mmproj_spec(source: dict, spec: str) -> None:
             f"The mmproj key names repository '{mmproj_repo_id}', but the model comes from '{repo_id}'.\n"
             "Both files must live in the same Hugging Face repository."
         )
-    apply_mmproj_quantization(source, quantization or DEFAULT_MMPROJ_QUANTIZATION, defaulted=quantization is None)
+    apply_mmproj_quantization(source, quantization)
 
 
-def apply_mmproj_quantization(source: dict, quantization: str, defaulted: bool = False) -> None:
-    """Ask *source* for a projector of *quantization*, with the fallbacks if *defaulted*."""
-    source["mmproj_quantization"] = quantization
-    source["mmproj_allow_pattern"] = gguf_pattern(quantization, mmproj=True)
-    if defaulted:
-        source["mmproj_quantization_fallbacks"] = [q for q in DEFAULT_MMPROJ_QUANTIZATIONS if q != quantization]
+def apply_mmproj_quantization(source: dict, quantization: str | None = None) -> None:
+    """Ask *source* for a projector of *quantization*.
+
+    Without one the projector is defaulted: the first choice of
+    ``default_mmproj_quantizations()``, with the rest of that order as its fallbacks.
+    """
+    first, *fallbacks = default_mmproj_quantizations()
+    source["mmproj_quantization"] = quantization or first
+    source["mmproj_allow_pattern"] = gguf_pattern(source["mmproj_quantization"], mmproj=True)
+    source["mmproj_quantization_fallbacks"] = [] if quantization else fallbacks
 
 
 def source_patterns(source: dict) -> list[str]:
@@ -1088,6 +1144,18 @@ def narrow_to(source: dict, quantization: str, mmproj: bool = False, pattern: st
 def is_mmproj_file(path: str) -> bool:
     """True when *path* is a multimodal projector rather than a model file."""
     return matches_pattern(path, "*mmproj*")
+
+
+def sole_projector(paths: list[str]) -> str | None:
+    """The file name of the only projector among *paths*, or None when there is none or several.
+
+    A defaulted projector settles on it when no file names one of its candidate
+    quantizations: plenty of repositories publish a single projector without one in its
+    name ("gemma-4-E2B-it-mmproj.gguf"), and where there is only one there is nothing
+    to choose between.
+    """
+    projectors = [path for path in paths if path.lower().endswith(".gguf") and is_mmproj_file(path) and not unsupported_quantization(path)]
+    return projectors[0].split("/")[-1] if len(projectors) == 1 else None
 
 
 def names_quantization(path: str, quantization: str) -> bool:
@@ -1156,24 +1224,34 @@ def narrow_to_installed(source: dict, output_dir: str, mmproj: bool = False) -> 
     time, a Q4_0 published after the Q8_0 was downloaded would turn ``--check`` into "not
     installed" and re-download the model on every boot.
 
+    A defaulted projector none of whose candidates is installed settles on the only
+    projector in *output_dir* (``sole_projector``): the one a download of this request
+    fetched from a repository that names no quantization in it.
+
     Returns:
-        The quantization settled on, or None when no candidate is installed — which
-        leaves *source* asking for its first choice, as it was.
+        The quantization settled on — the file name, for a sole projector — or None when
+        nothing is installed for the slot, which leaves *source* asking for its first
+        choice, as it was.
     """
-    quantization_key, _fallbacks_key, _ = quantization_keys(mmproj)
+    quantization_key, fallbacks_key, _ = quantization_keys(mmproj)
     if not slot_needs_narrowing(source, mmproj):
         return None
     base = Path(output_dir)
+    installed = [p.relative_to(base).as_posix() for p in model_files(output_dir)]
     for quantization in candidate_quantizations(source, mmproj):
-        present = [p for p in model_files(output_dir) if slot_holds(p.relative_to(base).as_posix(), quantization, mmproj)]
+        present = [path for path in installed if slot_holds(path, quantization, mmproj)]
         if not present:
             continue
         if quantization != source[quantization_key]:
             slot = "mmproj quantization" if mmproj else "quantization"
             emit_json_info(f"No {slot} given for '{source['repo_id']}', using the {quantization} already installed.")
-        narrow_to(source, quantization, mmproj, pattern=present[0].name if mmproj else None)
+        narrow_to(source, quantization, mmproj, pattern=present[0].split("/")[-1] if mmproj else None)
         return quantization
-    return None
+    sole = sole_projector(installed) if mmproj and source[fallbacks_key] else None
+    if sole:
+        emit_json_info(f"No mmproj quantization given for '{source['repo_id']}', using the {sole} already installed.")
+        narrow_to(source, sole, mmproj=True)
+    return sole
 
 
 def narrow_to_published(source: dict) -> None:
@@ -1185,10 +1263,13 @@ def narrow_to_published(source: dict) -> None:
     The projector is pinned to the file that was found rather than left as the glob its
     quantization widens to, and that happens whether it was defaulted or asked for:
     ``*mmproj*F16*.gguf`` would otherwise fetch ``mmproj-BF16.gguf`` alongside the F16 one.
+    A defaulted projector the repository publishes under none of its candidates settles
+    on the only projector there is (``sole_projector``).
 
     Raises:
         FileNotFoundError: when the repository publishes none of a defaulted slot's
-            candidates. A slot that was asked for by name is left alone to fail at
+            candidates — for the projector, no projector at all or several with nothing
+            to choose one by. A slot that was asked for by name is left alone to fail at
             download time, where the error already lists what the repository does have.
     """
     model_pending = slot_needs_narrowing(source, mmproj=False)
@@ -1216,15 +1297,20 @@ def narrow_slot_to_published(source: dict, available: list[str], mmproj: bool) -
         if not matched:
             continue
         if quantization != asked_for:
-            slot = "mmproj" if mmproj else "model"
-            emit_json_info(
-                f"'{repo_id}' publishes no {asked_for} {slot}, using {quantization} instead. Specify another as '{repo_id}:<quantization>'."
-            )
+            slot, key = ("mmproj", "<quantization>:<mmproj_quantization>") if mmproj else ("model", "<quantization>")
+            emit_json_info(f"'{repo_id}' publishes no {asked_for} {slot}, using {quantization} instead. Specify another as '{repo_id}:{key}'.")
         # One projector is one file, so it is pinned by name. A model quantization can be
         # several (a sharded GGUF), and stays the pattern that collects them all.
         narrow_to(source, quantization, mmproj, pattern=matched[0].split("/")[-1] if mmproj and len(matched) == 1 else None)
         return
 
+    if defaulted and mmproj:
+        sole = sole_projector(available)
+        if sole is None:
+            raise no_projector_error(repo_id, candidates, available)
+        emit_json_info(f"'{repo_id}' publishes one mmproj, using {sole}.")
+        narrow_to(source, sole, mmproj=True)
+        return
     if defaulted:
         raise no_match_error(repo_id, [gguf_pattern(q, mmproj=mmproj) for q in candidates])
     # Asked for by name and not found: for the projector the spec may still be a substring
@@ -1255,11 +1341,29 @@ def matches_pattern(path: str, pattern: str) -> bool:
     return fnmatch.fnmatch(path, pattern) or fnmatch.fnmatch(path.split("/")[-1], pattern)
 
 
+def pattern_selects(path: str, pattern: str) -> bool:
+    """True when *pattern*, one of the patterns of a request, names the file at *path*.
+
+    A model pattern never names a projector: ``*Q8_0*.gguf`` also matches
+    ``mmproj-model-Q8_0.gguf``, which only the projector's own pattern asks for.
+    """
+    return matches_pattern(path, pattern) and (is_mmproj_file(pattern) or not is_mmproj_file(path))
+
+
+@functools.cache
+def repo_files(repo_id: str) -> tuple[RepoFile, ...]:
+    """Every file of *repo_id* at the tip of its default branch.
+
+    The Hub is asked once per run: settling the quantizations, sizing the download and
+    fetching the files all read the same listing, and each round trip is time the caller
+    spends waiting before the first byte.
+    """
+    return tuple(item for item in HfApi().list_repo_tree(repo_id=repo_id, recursive=True) if isinstance(item, RepoFile))
+
+
 def list_repo_matches(repo_id: str, patterns: list[str], ignore_pattern: str | None = None) -> list[RepoFile]:
     """Return the files of *repo_id* matching any of *patterns*, minus *ignore_pattern*."""
-    api = HfApi()
-    all_files = [item for item in api.list_repo_tree(repo_id=repo_id, recursive=True) if isinstance(item, RepoFile)]
-    matched = [f for f in all_files if not unsupported_quantization(f.path) and any(matches_pattern(f.path, p) for p in patterns)]
+    matched = [f for f in repo_files(repo_id) if not unsupported_quantization(f.path) and any(matches_pattern(f.path, p) for p in patterns)]
     if ignore_pattern:
         matched = [f for f in matched if not matches_pattern(f.path, ignore_pattern)]
     return matched
@@ -1385,6 +1489,26 @@ def fallback_model_id(model_type: str, downloaded: list[str], models_dir: str) -
     return f"{model_type or 'llamacpp'}:{name}"
 
 
+def identify_download(env: Mapping[str, str], source: dict, files: list[str], models_dir: str, models_list_path: str = MODELS_LIST_PATH) -> dict:
+    """``identify_model`` for the *files* a request names, as the model the request asked for.
+
+    The catalog is matched on the download variables, and a text entry's are all there
+    when its GGUF is asked for with a projector the entry does not name — ``auto``, or
+    one pinned at another commit. That request is the multimodal entry the
+    catalog declares on the same file, which is what the listing calls these files.
+    """
+    identity = identify_model(env, models_list_path, fallback_model_id(source["model_type"], files, models_dir))
+    main_gguf = next((p for p in sorted(files) if not is_mmproj_file(os.path.basename(p))), None)
+    if not source["mmproj_allow_pattern"] or identity["model_origin"] != ORIGIN_BUILTIN or main_gguf is None:
+        return identity
+    declarations = catalog_gguf_declarations(models_list_path)
+    if any(d.multimodal for d in declarations if d.model_id == identity["model_id"]):
+        return identity
+    rel_dir, _, filename = Path(main_gguf).resolve().relative_to(Path(models_dir).resolve()).as_posix().rpartition("/")
+    multimodal = next((d for d in declarations if declaration_covers(d, rel_dir, filename, multimodal=True)), None)
+    return {**identity, "model_id": multimodal.model_id} if multimodal else identity
+
+
 def downloaded_size_mb(downloaded: list[str]) -> float | None:
     """Total ``size_mb`` of the files a download wrote, or None if any cannot be read.
 
@@ -1395,6 +1519,11 @@ def downloaded_size_mb(downloaded: list[str]) -> float | None:
     return paths_size_mb(downloaded)
 
 
+def requested_repo_files(repo_id: str, patterns: list[str]) -> list[RepoFile]:
+    """The files of *repo_id* a request for *patterns* downloads (see ``pattern_selects``)."""
+    return [f for f in list_repo_matches(repo_id, patterns) if any(pattern_selects(f.path, pattern) for pattern in patterns)]
+
+
 def expected_size_bytes(repo_id: str, patterns: list[str]) -> int | None:
     """The bytes the files matching *patterns* will take once downloaded, or None.
 
@@ -1403,7 +1532,7 @@ def expected_size_bytes(repo_id: str, patterns: list[str]) -> int | None:
     describes.
     """
     try:
-        sizes = [f.size for f in list_repo_matches(repo_id, patterns)]
+        sizes = [f.size for f in requested_repo_files(repo_id, patterns)]
     except Exception:  # noqa: BLE001 - see the docstring
         return None
     if not sizes or any(size is None for size in sizes):
@@ -1434,6 +1563,26 @@ def no_match_error(repo_id: str, pattern: str | list[str]) -> NoMatchingFileErro
     if not available:
         return NoMatchingFileError(ERR_NO_COMPATIBLE_FILE, f"{message} The repository contains no GGUF files at all.")
     return NoMatchingFileError(ERR_MODEL_NOT_FOUND, f"{message} Available GGUF files: {', '.join(available)}")
+
+
+def no_projector_error(repo_id: str, candidates: list[str], available: list[str]) -> NoMatchingFileError:
+    """Explain that *repo_id* has no projector a defaulted multimodal request can settle on.
+
+    *available* is the repository's GGUF listing, already in hand. A repository with no
+    projector cannot give a multimodal model at all; one with several, none of them a
+    *candidates* quantization, needs the caller to name the one they want.
+    """
+    projectors = sorted(path for path in available if is_mmproj_file(path))
+    if not projectors:
+        return NoMatchingFileError(
+            ERR_NO_MULTIMODAL_PROJECTOR,
+            f"The selected model does not provide multimedia capabilities: repository '{repo_id}' publishes no mmproj GGUF file.",
+        )
+    return NoMatchingFileError(
+        ERR_MODEL_NOT_FOUND,
+        f"Repository '{repo_id}' publishes several multimodal projectors, none of them {', '.join(candidates)}: {', '.join(projectors)}. "
+        f"Name one as '{repo_id}:<quantization>:<mmproj_quantization>'.",
+    )
 
 
 def download_matched_files(
@@ -1728,9 +1877,12 @@ def main():
         help="The multimodal projector to download alongside the model, as either a Hugging Face file URL "
         "(e.g. https://huggingface.co/org/repo/resolve/main/mmproj-BF16.gguf) or a compact key "
         "[<model_type>:]<repo_id>[:<quantization>] naming the model's own repository "
-        f"(e.g. unsloth/gemma-3-4b-it-GGUF, which tries {', '.join(DEFAULT_MMPROJ_QUANTIZATIONS)} in that order; "
+        f"(e.g. unsloth/gemma-3-4b-it-GGUF, which tries {', '.join(default_mmproj_quantizations())} in that order; "
         "unsloth/gemma-3-4b-it-GGUF:BF16). Works with either form of --model-url, and is the only way to ask for "
-        "a projector without naming its quantization; the model key's fourth field does the same job explicitly.",
+        "a projector by repository; the model key's fourth field names its quantization explicitly. "
+        f"'{MMPROJ_AUTO}' names no projector and finds the one the model's repository publishes: the same order, "
+        "which depends on the board, then the only projector there is. The model key's fourth field wins over it, "
+        "and a repository with no projector fails the request.",
     )
     parser.add_argument(
         "--output-dir",
@@ -1798,8 +1950,8 @@ def main():
         )
     if source["mmproj_quantization_fallbacks"]:
         emit_json_info(
-            f"No mmproj quantization given for '{repo_id}', defaulting to {DEFAULT_MMPROJ_QUANTIZATION}. "
-            f"Specify another as '{repo_id}:<quantization>'."
+            f"No mmproj quantization given for '{repo_id}', defaulting to {source['mmproj_quantization']}. "
+            f"Specify another as '{repo_id}:<quantization>:<mmproj_quantization>'."
         )
 
     # Create download folder if it doesn't exist. Patter is: output_dir + / repo_id
@@ -1843,7 +1995,7 @@ def main():
         narrow_to_published_or_exit(source)
         allow_pattern = source["allow_pattern"]
         patterns = source_patterns(source)
-        matched_files = [{"file": f.path, "size": f.size} for f in list_repo_matches(repo_id, patterns) if f.size]
+        matched_files = [{"file": f.path, "size": f.size} for f in requested_repo_files(repo_id, patterns) if f.size]
         if not matched_files:
             # Reporting a 0-byte total would read as "this model is free to download".
             error = no_match_error(repo_id, allow_pattern)
@@ -1925,7 +2077,7 @@ def main():
             # the files this request matched, the same way the download path derives
             # it, so the two cannot disagree about a repository holding several
             # quantizations.
-            identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], present, args.output_dir))
+            identity = identify_download(metadata_env, source, present, args.output_dir)
             # The files can be there without this model's record: the projector landed
             # with a sibling quantization, or the text model was deleted while the
             # multimodal one stayed. Downloading it again is what records it.
@@ -2004,9 +2156,11 @@ def main():
             # The files still missing are reported as one transfer, so the host's progress
             # runs from 0 to 100% once however many files the model is made of.
             with JsonProgress.one_transfer(model_bytes if fetch == patterns else expected_size_bytes(repo_id, fetch)):
-                if url_filename:
-                    # Single-file download via direct URL
-                    if allow_pattern in fetch:
+                # The model first, then its projector. Each is fetched the way it was named,
+                # whatever the other came as: a URL pins one file at one commit, anything
+                # else is a pattern matched against the tip of the default branch.
+                if allow_pattern in fetch:
+                    if url_filename:
                         if args.verbose:
                             emit_json_info(f"Downloading file '{url_filename}' from {repo_id} (revision: {url_revision})")
                         hf_hub_download(
@@ -2016,19 +2170,7 @@ def main():
                             local_dir=output_dir,
                             tqdm_class=tqdm_class,
                         )
-                    if mmproj_url_filename and mmproj_allow_pattern in fetch:
-                        if args.verbose:
-                            emit_json_info(f"Downloading mmproj file '{mmproj_url_filename}' from {repo_id} (revision: {mmproj_url_revision})")
-                        hf_hub_download(
-                            repo_id=repo_id,
-                            filename=mmproj_url_filename,
-                            revision=mmproj_url_revision,
-                            local_dir=output_dir,
-                            tqdm_class=tqdm_class,
-                        )
-                else:
-                    # Pattern-based download
-                    if allow_pattern in fetch:
+                    else:
                         if args.verbose:
                             emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
                         download_matched_files(
@@ -2039,8 +2181,18 @@ def main():
                             ignore_pattern="*mmproj*",
                             verbose=args.verbose,
                         )
-
-                    if mmproj_allow_pattern in fetch:
+                if mmproj_allow_pattern in fetch:
+                    if mmproj_url_filename:
+                        if args.verbose:
+                            emit_json_info(f"Downloading mmproj file '{mmproj_url_filename}' from {repo_id} (revision: {mmproj_url_revision})")
+                        hf_hub_download(
+                            repo_id=repo_id,
+                            filename=mmproj_url_filename,
+                            revision=mmproj_url_revision,
+                            local_dir=output_dir,
+                            tqdm_class=tqdm_class,
+                        )
+                    else:
                         if args.verbose:
                             emit_json_info(
                                 f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
@@ -2065,7 +2217,7 @@ def main():
             # id the host is told is the id on disk. Any repository can be downloaded
             # without a models-list.yaml entry, so name it after the file that arrived
             # rather than leaving it unidentified.
-            identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], downloaded, args.output_dir))
+            identity = identify_download(metadata_env, source, downloaded, args.output_dir)
 
             # Record what was downloaded, then clear the in-progress marker: while the
             # marker is still there the repo directory counts as incomplete, so a crash

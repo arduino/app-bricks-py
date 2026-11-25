@@ -101,6 +101,13 @@ def test_declared_gguf_files_extracts_llamacpp_locations():
     ]
 
 
+def test_an_entry_leaving_its_projector_to_auto_declares_the_multimodal_model():
+    variables = {"model_url": GEMMA_URL, "model_mmproj_url": "auto", "models_repository": "llamacpp", "model_directory": "google/gemma-gguf"}
+    models = [{"llamacpp:gemma-Q4_0-multimodal": {"deployment": {"handler": "hf-handler", "platforms": [{"unoq": {"variables": variables}}]}}}]
+
+    assert declared_gguf_files(models) == [GgufDeclaration("google/gemma-gguf", "gemma-Q4_0.gguf", "llamacpp:gemma-Q4_0-multimodal", multimodal=True)]
+
+
 def test_a_declaration_covers_the_model_of_its_own_kind_only():
     text, multimodal, _qwen = declared_gguf_files(MODELS)
 

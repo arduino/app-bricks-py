@@ -186,7 +186,9 @@ Per layer that owns a cache, `n_head_kv x (key_length + value_length)` elements 
 
 - Which layers own a cache comes out of the tensor index: the recurrent layers of a hybrid
   model, and the layers of a gemma that share another layer's cache, have no K projection
-  of their own.
+  of their own. A gemma that declares `attention.shared_kv_layers` caches in the layers
+  before those only, K projection or not: NVIDIA-Nemotron-3.5-Bolt-E4B keeps one in all 42
+  layers and caches in 24 (356 MiB at 16k, where counting 42 gave 623 and three sessions).
 - A layer flagged in `attention.sliding_window_pattern` holds only
   `n_seq_max x window + n_ubatch` cells, however large the context.
 
@@ -205,6 +207,27 @@ share = (ceil(n_layer / sessions) + 1) / n_layer
 
 granite-4.2-3b at 16k over two sessions: 21/40 of 1280 MiB = 672 MiB, and 672 MiB is what
 the log says. It holds for every model and session count measured.
+
+llama.cpp splits the `n_layer + 1` layers (the output counts as one) evenly, so layer `i`
+lands on session `i × sessions / (n_layer + 1)`. For the gemmas whose last layers share
+the cache of one of the two layers before them, that decides more than the share. A
+session holding shared layers without those two reserves a compute buffer the allowance
+does not cover, measured on NVIDIA-Nemotron-3.5-Bolt-E4B on 21linux (2026-11-24, `n_ubatch`
+512):
+
+| Sessions | Context | Shared layers apart from their cache | Last session's compute buffer | Loads |
+|---|---|---|---|---|
+| 2 | 16k | no (HTP1 holds layers 22-41) | 208 MiB | yes (UD-Q4_K_XL, Q4_K_M) |
+| 3 | 16k | yes, layers 29-41 on HTP2 | 1166 MiB | never (UD-Q4_K_XL, Q4_K_M, UD-Q8_K_XL) |
+| 3 | 8k | yes | 750 MiB | no (UD-Q8_K_XL) |
+| 4 | 16k | yes, layers 33-41 on HTP3 | 842 MiB | yes (UD-Q4_K_XL once, UD-Q8_K_XL three times) |
+
+gemma-4-E2B does not load on two sessions either. So the server is given the fewest
+sessions that hold the hungriest model and keep together the shared layers of every model
+that needs more than one, and every session when no count below four does — the Q8_K_XL
+sizes to three and runs on four at 16k. The context cap still looks at size only. A
+one-session model takes no part: the count is server-wide and no count above one keeps
+gemma-4-E2B together.
 
 ### Compute buffers
 

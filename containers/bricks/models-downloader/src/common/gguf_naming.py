@@ -27,7 +27,8 @@ would all act on whichever file happened to win.
 A GGUF with a multimodal projector (``*mmproj*.gguf``) in its directory is two models:
 the text model ``<name>``, loaded alone, and ``<name>-multimodal``
 (``multimodal_model_name``), loaded with the projector. The catalog declares them as
-two entries on the same file, the second one with a ``model_mmproj_url``.
+two entries on the same file, the second one with a ``model_mmproj_url``: the projector
+it names, or ``auto`` to leave the downloader to find it.
 
 The same rule must name a model everywhere it appears: the listing id
 (``llamacpp:<name>``), the models.ini section (``<name>``) and the fallback metadata

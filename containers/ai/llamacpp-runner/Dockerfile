@@ -4,8 +4,8 @@
 
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
-ARG LLAMA_CPP_URL=https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20261119/llamacpp-cpu-20261119.tar.gz
-ARG LLAMA_CPP_DIGEST=sha256:ab89f797f0c4c3e28e8b95827996dbe6d29568cd53631770266d969dff11ba27
+ARG LLAMA_CPP_URL=https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20261125/llamacpp-cpu-20261125.tar.gz
+ARG LLAMA_CPP_DIGEST=sha256:5d8d6c2f8f63e3157d1a51645964a514aae3eeb624cf2dc6edc559fe7eb495ad
 
 FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
 

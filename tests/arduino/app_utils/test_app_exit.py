@@ -106,26 +106,32 @@ def test_sigterm_while_the_bricks_start_stops_the_ones_already_running():
     assert "App shutdown completed" in out
 
 
-def test_a_user_loop_that_stops_returns_from_run_as_before():
-    """The fast exit is for the signal path only: a loop that ends by itself hands control back to the script."""
+def test_a_user_loop_that_stops_ends_the_process_as_a_stop_request():
+    """StopIteration ends the app like a stop from the launcher: exit code 143, which it reads as stopped, not failed."""
     result = subprocess.run(
         [
             sys.executable,
+            "-u",
             "-c",
             textwrap.dedent("""
+                import atexit
                 from arduino.app_utils import App
+                atexit.register(lambda: print("ATEXIT RAN", flush=True))
                 def loop():
                     raise StopIteration
                 App.run(loop)
-                print("AFTER RUN", flush=True)
+                print("AFTER RUN", flush=True)  # Not reached: run() exits after the shutdown
             """),
         ],
         capture_output=True,
         text=True,
         timeout=60,
     )
-    assert result.returncode == 0, result.stderr
-    assert "AFTER RUN" in result.stdout
+    assert result.returncode == 128 + signal.SIGTERM, result.stderr
+    assert "App shutdown completed" in result.stdout
+    assert "ATEXIT RAN" in result.stdout, "exit handlers must still run"
+    assert "AFTER RUN" not in result.stdout
+    assert "Traceback" not in result.stdout + result.stderr
 
 
 def test_startup_handler_leaves_an_existing_handler_alone():

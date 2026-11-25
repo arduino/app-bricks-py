@@ -347,6 +347,125 @@ def test_layers_that_share_a_cache_cost_no_recurrent_state(tmp_path):
     assert shape.state_bytes == 0
 
 
+def shared_kv_gemma(path: Path, *, layers: int, shared: int, k_layers: int, full_every: int, weight_mib: float = 0) -> Path:
+    """A gemma4 header whose last *shared* layers read another layer's KV cache, with a K
+    projection in the first *k_layers* layers and full attention in every *full_every*-th."""
+    tensors = [(f"blk.{layer}.attn_k.weight", (512,), Q4_0) for layer in range(k_layers)]
+    if weight_mib:
+        tensors.append(("weights.blob", (q4_0_elements(weight_mib),), Q4_0))
+    return write_gguf(
+        path,
+        {
+            "general.architecture": "gemma4",
+            "gemma4.block_count": layers,
+            "gemma4.attention.head_count": 8,
+            "gemma4.attention.head_count_kv": 2,
+            "gemma4.attention.key_length": 512,
+            "gemma4.attention.value_length": 512,
+            "gemma4.attention.key_length_swa": 256,
+            "gemma4.attention.value_length_swa": 256,
+            "gemma4.attention.sliding_window": 512,
+            "gemma4.attention.sliding_window_pattern": [layer % full_every != full_every - 1 for layer in range(layers)],
+            "gemma4.attention.shared_kv_layers": shared,
+        },
+        tensors,
+    )
+
+
+def nemotron_bolt_e4b(path: Path, weight_mib: float = 0) -> Path:
+    """The header of NVIDIA-Nemotron-3.5-Bolt-E4B: its 18 shared layers keep a K
+    projection, unlike Google's gemma-4 conversions."""
+    return shared_kv_gemma(path, layers=42, shared=18, k_layers=42, full_every=6, weight_mib=weight_mib)
+
+
+def test_the_shared_kv_layers_cache_nothing_even_with_a_k_projection(tmp_path, monkeypatch):
+    """Measured on 21linux 2026-11-24 at 16k: llama-server allocated 192 + 64 MiB of full
+    and 95 + 5 MiB of windowed cache over two sessions, the first 24 layers' worth. Counting
+    all 42 came to 623 MiB, put the model 5 MiB over the budget on two sessions and sized
+    it for three, where it never loaded."""
+    monkeypatch.delenv("LLAMA_ARG_UBATCH", raising=False)
+    shape = read_model_shape(nemotron_bolt_e4b(tmp_path / "m.gguf"))
+
+    assert len(shape.kv_layers) == 24
+    assert shape.kv_cache_bytes(16384) == (192 + 64 + 95 + 5) * MIB
+
+
+@pytest.mark.parametrize("npu_weight_mib", [3298, 3023], ids=["unsloth-UD-Q4_K_XL", "nvidia-Q4_K_M"])
+def test_nemotron_bolt_e4b_gets_the_two_sessions_it_loads_on(npu_weight_mib, tmp_path, monkeypatch):
+    """Both conversions loaded and answered on two sessions and failed on three, with a
+    1166 MiB compute buffer on HTP2 (21linux 2026-11-24, n_ubatch 512, MBUF 256,256)."""
+    monkeypatch.delenv("LLAMA_ARG_UBATCH", raising=False)
+    kv = read_model_shape(nemotron_bolt_e4b(tmp_path / "m.gguf")).kv_layers
+    shape = ModelShape(n_layer=42, npu_weight_bytes=npu_weight_mib * MIB, kv_layers=kv, state_bytes=0)
+
+    assert shape.sessions_needed(16384) == 2
+
+
+# Session counts that keep every shared layer with the layers that own its cache, measured
+# on 21linux 2026-11-24 for the Nemotron (2 and 4 loaded, 3 never did) and known for
+# gemma-4-E2B, which only loads on one.
+@pytest.mark.parametrize(
+    ("layout", "kept_together"),
+    [
+        (dict(layers=42, shared=18, k_layers=42, full_every=6), {1: True, 2: True, 3: False, 4: False}),
+        (dict(layers=42, shared=18, k_layers=24, full_every=6), {1: True, 2: True, 3: False, 4: False}),
+        (dict(layers=35, shared=20, k_layers=15, full_every=5), {1: True, 2: False, 3: False, 4: False}),
+    ],
+    ids=["Nemotron-3.5-Bolt-E4B", "gemma-4-E4B", "gemma-4-E2B"],
+)
+def test_shared_kv_layers_are_kept_with_the_layers_that_own_their_cache(layout, kept_together, tmp_path):
+    shape = read_model_shape(shared_kv_gemma(tmp_path / "m.gguf", **layout))
+
+    assert shape.kv_shared_from == layout["layers"] - layout["shared"]
+    assert {count: not shape.strands_shared_layers(count) for count in kept_together} == kept_together
+
+
+def test_a_model_without_shared_kv_layers_is_never_stranded(tmp_path):
+    shape = read_model_shape(attention_model(tmp_path / "m.gguf", layers=48))
+
+    assert shape.kv_shared_from == 0
+    assert not any(shape.strands_shared_layers(count) for count in range(1, configure_llamacpp.MAX_SESSIONS + 1))
+
+
+def test_the_q8_nemotron_runs_on_every_session_at_the_requested_context(tmp_path, monkeypatch, capsys):
+    """UD-Q8_K_XL sizes to three sessions (2507 MiB), which split its shared layers from
+    their cache and never loaded; four loaded at 16k, and the context stays where it was
+    asked: it is the split, not the size, that rules out three."""
+    monkeypatch.delenv("LLAMA_ARG_UBATCH", raising=False)
+    nemotron_bolt_e4b(tmp_path / "nemotron-q8.gguf", weight_mib=4942)
+    models = configure_llamacpp.find_models(tmp_path)
+
+    assert detect_hexagon_sessions(models, 16384) == configure_llamacpp.MAX_SESSIONS
+    assert detect_ctx_size(models, 16384) == 16384
+    assert "nemotron-q8: 3 sessions would split its shared KV layers from their cache" in capsys.readouterr().err
+
+
+def test_a_model_needing_three_sessions_moves_the_nemotron_to_four_not_three(tmp_path, monkeypatch):
+    """The hungriest model alone would set three sessions, the one count the Nemotron
+    cannot load on."""
+    monkeypatch.delenv("LLAMA_ARG_UBATCH", raising=False)
+    nemotron_bolt_e4b(tmp_path / "nemotron-q4.gguf", weight_mib=3299)
+    attention_model(tmp_path / "big.gguf", layers=32, weight_mib=4000)
+    models = configure_llamacpp.find_models(tmp_path)
+
+    assert detect_hexagon_sessions({"nemotron-q4": models["nemotron-q4"]}, 4096) == 2
+    assert detect_hexagon_sessions({"big": models["big"]}, 4096) == 3
+    assert detect_hexagon_sessions(models, 4096) == 4
+
+
+def test_a_one_session_gemma_leaves_the_count_to_the_others(tmp_path, monkeypatch):
+    """gemma-4-E2B is split over whatever count the others need and no count above one
+    keeps it together, so it must not push a two-session server to four."""
+    monkeypatch.delenv("LLAMA_ARG_UBATCH", raising=False)
+    shared_kv_gemma(tmp_path / "e2b.gguf", layers=35, shared=20, k_layers=15, full_every=5, weight_mib=1342)
+    attention_model(tmp_path / "two.gguf", layers=32, weight_mib=2500)
+    models = configure_llamacpp.find_models(tmp_path)
+
+    assert detect_hexagon_sessions({"e2b": models["e2b"]}, 4096) == 1
+    assert detect_hexagon_sessions({"two": models["two"]}, 4096) == 2
+    assert detect_hexagon_sessions(models, 4096) == 2
+
+
 def test_an_unreadable_header_is_not_a_model(tmp_path):
     (tmp_path / "m.gguf").write_bytes(b"not a gguf file")
 
