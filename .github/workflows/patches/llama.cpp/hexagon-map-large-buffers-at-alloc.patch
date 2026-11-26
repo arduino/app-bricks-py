@@ -1,16 +1,13 @@
-From 4d6c544927cd14872c174ce4334b2004099def93 Mon Sep 17 00:00:00 2001
-From: Marco Colombo <ing.marco.colombo@gmail.com>
-Date: Thu, 26 Nov 2026 08:37:41 +0100
-Subject: [PATCH] hexagon: map buffer early to properly release resources on
- fail
+hexagon: map buffer early to properly release resources on fail
 
+Buffers of 128 MiB and more are mapped when they are allocated (not with dma64), so that running out of IOVA
+space is a failed allocation, and a clean model load error, instead of an abort at compute time that leaves
+the DSP mappings behind. Mappings take power-of-2 IOVA slots: when the mapping fails, the buffers of the session
+are remapped largest first, the order the lazy mapping packs them in, before giving up.
+mtmd: a failed allocation of the projector weights is an error, not an assert.
 ---
- ggml/src/ggml-hexagon/ggml-hexagon.cpp | 10 ++++++++--
- tools/mtmd/mtmd-model.cpp              |  3 +++
- 2 files changed, 11 insertions(+), 2 deletions(-)
-
 diff --git a/ggml/src/ggml-hexagon/ggml-hexagon.cpp b/ggml/src/ggml-hexagon/ggml-hexagon.cpp
-index ccb128e06..5e2b36c16 100644
+index ccb128e06..371d3fdf8 100644
 --- a/ggml/src/ggml-hexagon/ggml-hexagon.cpp
 +++ b/ggml/src/ggml-hexagon/ggml-hexagon.cpp
 @@ -70,6 +70,7 @@ using uintvec = std::vector<unsigned int>;
@@ -21,7 +18,15 @@ index ccb128e06..5e2b36c16 100644
  
  struct ggml_hexagon_device_config {
      int         physical_idx = 0;
-@@ -960,8 +961,13 @@ static ggml_backend_buffer_t ggml_backend_hexagon_buffer_type_alloc_buffer(
+@@ -380,6 +381,7 @@ struct ggml_hexagon_session {
+     void flush_pending(bool all = true);
+ 
+     void mmap_buffers();
++    void mmap_early(ggml_hexagon_shared_buffer*);
+     void clone_buffer(const ggml_hexagon_shared_buffer*);
+     void release_buffer(const ggml_hexagon_shared_buffer*);
+     void unclone_buffer(const ggml_hexagon_shared_buffer*);
+@@ -960,8 +962,13 @@ static ggml_backend_buffer_t ggml_backend_hexagon_buffer_type_alloc_buffer(
          return nullptr;
      }
      try {
@@ -31,12 +36,40 @@ index ccb128e06..5e2b36c16 100644
 +        // map large buffers now: a mapping failure is then an allocation failure, not an abort at compute time
 +        // (dma64 picks the mapping type at first use)
 +        if (!opt_dma64 && size >= GGML_HEXAGON_EARLY_MAP_SIZE) {
-+            sbuf->mmap();
++            sess->mmap_early(sbuf.get());
 +        }
 +        return ggml_backend_buffer_init(buffer_type, ggml_backend_hexagon_buffer_interface, sbuf.release(), size);
      } catch (const std::exception & exc) {
          GGML_LOG_ERROR("ggml-hex: %s failed to allocate device buffer context: %s\n", dev_ctx->c_name(), exc.what());
          return nullptr;
+@@ -2144,6 +2151,27 @@ void ggml_hexagon_session::mmap_buffers() {
+     }
+ }
+ 
++// Map a buffer at allocation time. Mappings take power-of-2 IOVA slots, so the allocation order can leave no
++// slot for a buffer that fits when everything is mapped largest first: on failure remap all the session buffers
++// in that order (mmap_buffers). Throws if the buffer still does not fit.
++void ggml_hexagon_session::mmap_early(ggml_hexagon_shared_buffer * sbuf) {
++    this->buffers.insert(sbuf);
++    try {
++        sbuf->mmap();
++    } catch (const std::exception &) {
++        GGML_LOG_WARN("ggml-hex: %s remapping the session buffers largest first\n", this->c_name());
++        for (auto * b : this->buffers) {
++            b->unmap();
++        }
++        try {
++            this->mmap_buffers();
++        } catch (const std::exception &) {
++            this->buffers.erase(sbuf);
++            throw;
++        }
++    }
++}
++
+ void ggml_hexagon_session::clone_buffer(const ggml_hexagon_shared_buffer * sbuf)
+ {
+     GGML_ASSERT(sbuf && sbuf->mem);
 diff --git a/tools/mtmd/mtmd-model.cpp b/tools/mtmd/mtmd-model.cpp
 index 508dfbe94..380672d27 100644
 --- a/tools/mtmd/mtmd-model.cpp
@@ -51,6 +84,3 @@ index 508dfbe94..380672d27 100644
              ggml_backend_buffer_set_usage(model.buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
              // read the weight from file
              if (!no_alloc) {
--- 
-2.34.1
-
