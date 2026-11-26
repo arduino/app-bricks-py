@@ -34,9 +34,9 @@ pixels = ModulinoPixels()
 def loop():
     temperature = thermo.get_temperature()
     if temperature > 28:
-        pixels.set(0, 255, 0, 0)   # LED 0 red
+        pixels.set_pixel(0, 255, 0, 0)   # LED 0 red
     else:
-        pixels.clear(0)
+        pixels.clear_pixel(0)
     time.sleep(1)
 
 App.run(user_loop=loop)
@@ -91,7 +91,7 @@ buttons.set_on_change_callback(on_buttons)
 def loop():
     if pressed.wait(timeout=1):
         pressed.clear()
-        buzzer.tone(880, 100)   # a Modulino method: called from the loop, not from the callback
+        buzzer.play_tone(880, 100)   # a Modulino method: called from the loop, not from the callback
 
 App.run(user_loop=loop)
 ```
@@ -277,32 +277,32 @@ The knob keeps its position across apps. `set_start_position(position)` sets the
 
 ## Modulino Buzzer
 
-`ModulinoBuzzer` plays a tone with `tone(frequency, duration_ms)` and stops it with `no_tone()`:
+`ModulinoBuzzer` plays a tone with `play_tone(frequency, duration_ms)` and stops it with `stop_tone()`:
 
 ```python
 from arduino.app_bricks.modulino import ModulinoBuzzer
 
 buzzer = ModulinoBuzzer()   # autoscan for the address
 
-buzzer.tone(440, 500)   # 440 Hz for 500 ms
-buzzer.no_tone()        # stop the current tone
+buzzer.play_tone(440, 500)   # 440 Hz for 500 ms
+buzzer.stop_tone()           # stop the current tone
 ```
 
 `frequency` (Hz) and `duration_ms` must be non-negative integers: a wrong type raises `TypeError`, a negative value `ValueError`.
 
 ## Modulino Pixels
 
-`ModulinoPixels` drives 8 RGB LEDs (index 0-7). `set(idx, r, g, b, brightness=25)` sets the color (0-255 per channel) and the brightness (0-100 %) of one LED, `clear(idx)` turns one off and `clear_all()` turns all of them off. Each call updates the LEDs right away.
+`ModulinoPixels` drives 8 RGB LEDs (index 0-7). `set_pixel(idx, r, g, b, brightness=25)` sets the color (0-255 per channel) and the brightness (0-100 %) of one LED, `clear_pixel(idx)` turns one off and `clear_all_pixels()` turns all of them off. Each call updates the LEDs right away.
 
 ```python
 from arduino.app_bricks.modulino import ModulinoPixels
 
 pixels = ModulinoPixels()   # autoscan for the address
 
-pixels.set(0, 255, 0, 0, 20)   # LED 0 red at 20 %
-pixels.set(7, 0, 0, 255)       # LED 7 blue at the default 25 %
+pixels.set_pixel(0, 255, 0, 0, 20)   # LED 0 red at 20 %
+pixels.set_pixel(7, 0, 0, 255)       # LED 7 blue at the default 25 %
 
-pixels.clear_all()             # all LEDs off
+pixels.clear_all_pixels()            # all LEDs off
 ```
 
 Out-of-range values raise `ValueError`.
@@ -410,13 +410,13 @@ matrix.stop_animation()   # the current frame stays on the matrix
 
 The animation frames are shown on/off, also in grayscale mode. A new animation replaces the running one, and `draw()` or `clear()` stop it. Frames that are not 12x8 raise `ValueError`.
 
-`set_on_animation_end_callback(callback)` calls `callback()` when an animation without loop ends, after the duration of its last frame. A stopped or replaced animation does not call it. To chain animations, signal your app from the callback and play the next one from your loop:
+`on_animation_end_callback(callback)` calls `callback()` when an animation without loop ends, after the duration of its last frame. A stopped or replaced animation does not call it. To chain animations, signal your app from the callback and play the next one from your loop:
 
 ```python
 import threading
 
 ended = threading.Event()
-matrix.set_on_animation_end_callback(ended.set)
+matrix.on_animation_end_callback(ended.set)
 
 matrix.play_animation(frames)
 ended.wait()

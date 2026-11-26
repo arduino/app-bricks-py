@@ -783,7 +783,7 @@ class ModulinoPixels(Modulino):
 
         Args:
             idx (int): The LED index, 0-7.
-            color (tuple[int, int, int]): The color, a `ModulinoColor` or any `(r, g, b)` tuple with 0-255 per channel.
+            color (tuple[int, int, int]): The color, a `RGBColor` or any `(r, g, b)` tuple with 0-255 per channel.
             brightness (int, optional): Brightness in percent, 0-100. Defaults to 25.
 
         Raises:
@@ -1507,7 +1507,7 @@ class ModulinoLEDMatrix(Modulino):
 
         The frames are shown on/off (a pixel is on when its value is greater than 0), also in grayscale mode.
         The call returns right away. A new animation replaces the running one, `draw()` and `clear()` stop it.
-        Without loop, the callback set with `set_on_animation_end_callback()` is called when the animation ends.
+        Without loop, the callback set with `on_animation_end_callback()` is called when the animation ends.
 
         Args:
             frames (Sequence[tuple[Frame, int] | tuple[Frame, int, str]]): `(frame, duration_ms)` or `(frame, duration_ms, label)`
