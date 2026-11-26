@@ -29,7 +29,7 @@ The Video Object Tracking Brick allows you to:
 - Two callback styles:
   - `on_detect("<label>", callback)` → React to a specific label.
   - `on_detect_all(callback)` → React to all tracked objects of a frame at once.
-- Event callbacks: `on_line_crossing(callback)`, `on_area_enter(callback)`, `on_area_exit(callback)`.
+- Event callbacks: `on_line_crossing(callback)`, `on_area_enter(callback)`, `on_area_exit(callback)`. Callbacks must be plain functions.
 - Counters, readable at any time: `get_unique_objects_count()`, `get_line_crossing_counts()`, `get_objects_in_area()`, `get_area_counts()`, `get_objects_directions()`.
 - Configurable confidence threshold (default: `0.4`) and debounce time between repeated callbacks (default: `0s`, i.e. no debounce).
 - Clean lifecycle control with `start()` / `stop()` and integration with `App.run()`.
@@ -108,7 +108,7 @@ print(tracker.get_line_crossing_counts())  # {"person": {"left": 3, "right": 2, 
 
 The line always runs across the whole frame, so an object is counted wherever it crosses it. The coordinates are pixels of the camera frame; pass `relative=True` to give them as fractions of the frame instead, from 0 to 1: `tracker.set_vertical_crossing_line(0.5, relative=True)` puts the line in the middle whatever the camera resolution.
 
-To react to each crossing as it happens, register a callback with `on_line_crossing()`. It receives `{"label": str, "object_id": int, "direction": str}`, where the direction is the way the object went as seen on the screen: `up`, `down`, `left`, `right` or one of the four diagonals.
+To react to each crossing as it happens, register a plain callback with `on_line_crossing()`. It receives `{"label": str, "object_id": int, "direction": str}`, where the direction is the way the object went as seen on the screen: `up`, `down`, `left`, `right` or one of the four diagonals: `up-left`, `up-right`, `down-left`, `down-right`.
 
 ```python
 def on_crossing(crossing: dict) -> None:
@@ -180,13 +180,12 @@ Until an object counts it is not among the distinct objects, does not enter the 
 
 The constructor also accepts the parameters of the tracker inside the model, each with a matching `override_*` method to change it at runtime. The defaults suit most cases.
 
-| Parameter | Default | Meaning |
-| --- | --- | --- |
-| `keep_grace` | `3` | Frames an object is kept after it disappears, before its ID is dropped. When they last longer than a second, the counts and the area wait that long before they let the object go. |
-| `min_detections` | `3` | Detections an object needs before it is reported as tracked. |
-| `iou_threshold` | `0.1` | How much two boxes must overlap between frames to be the same object. For bounding-box models such as YOLO. |
-| `euclidean_distance_threshold` | `50` | How far an object may move between frames, in pixels, to be the same object. For centroid models such as FOMO. |
-| `keep_identities` | `True` | Keep the ID of an object through a short loss or a change of label. |
+| Parameter                      | Default | Meaning                                                                                                                                                                            |
+| ------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `keep_grace`                   | `3`     | Frames an object is kept after it disappears, before its ID is dropped. When they last longer than a second, the counts and the area wait that long before they let the object go. |
+| `min_detections`               | `3`     | Detections an object needs before it is reported as tracked.                                                                                                                       |
+| `iou_threshold`                | `0.1`   | How much two boxes must overlap between frames to be the same object. For bounding-box models such as YOLO.                                                                        |
+| `euclidean_distance_threshold` | `50`    | How far an object may move between frames, in pixels, to be the same object. For centroid models such as FOMO.                                                                     |
 
 `iou_threshold` and `euclidean_distance_threshold` are alternatives: the model uses the one matching its type and the other `override_*` method does nothing. An `override_*` method raises `RuntimeError` when the model has no such parameter. The parameters belong to the model, so they hold for every Brick of the app using the same model.
 
