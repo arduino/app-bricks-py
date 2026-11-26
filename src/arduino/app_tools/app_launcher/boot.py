@@ -19,8 +19,6 @@ from . import child
 from .child import Launch
 from .config import Config
 
-STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT)
-
 
 @dataclass(frozen=True)
 class Started:
@@ -30,11 +28,15 @@ class Started:
     pid: int
     started_at: datetime
     dispositions: Mapping[int, Any]
-    """The handlers the stop signals had before the start, the ones a fresh `python main.py` has."""
+    """The handlers the stop signals had when the container started, the ones a fresh `python main.py` has."""
 
 
-def start_app(env: Mapping[str, str]) -> Started | None:
+def start_app(env: Mapping[str, str], dispositions: Mapping[int, Any]) -> Started | None:
     """Forks the app the environment names and returns it; None when it cannot be started, for the launcher to report why.
+
+    Args:
+        env (Mapping[str, str]): The container environment.
+        dispositions (Mapping[int, Any]): The handlers the stop signals had when the container started: the app gets them.
 
     Raises:
         SystemExit: in the forked child, with the exit code of the app.
@@ -50,26 +52,31 @@ def start_app(env: Mapping[str, str]) -> Started | None:
     sys.stdout.flush()
     sys.stderr.flush()
     # A stop waits until the app has its own dispositions and the launcher knows which app to stop
-    signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+    signal.pthread_sigmask(signal.SIG_BLOCK, dispositions)
     try:
         pid = os.fork()
     except OSError:
-        signal.pthread_sigmask(signal.SIG_UNBLOCK, STOP_SIGNALS)
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, dispositions)
         return None
     if pid == 0:
         child.detach()
-        signal.pthread_sigmask(signal.SIG_UNBLOCK, STOP_SIGNALS)
+        restore(dispositions)
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, dispositions)
         raise SystemExit(child.run(launch))
-
-    dispositions: dict[int, Any] = {signum: signal.getsignal(signum) for signum in STOP_SIGNALS}
 
     def stop(signum: int, frame: FrameType | None) -> NoReturn:
         _stop(pid, config.stop_timeout_s, signum)
 
-    for signum in STOP_SIGNALS:
+    for signum in dispositions:
         signal.signal(signum, stop)
-    signal.pthread_sigmask(signal.SIG_UNBLOCK, STOP_SIGNALS)
+    signal.pthread_sigmask(signal.SIG_UNBLOCK, dispositions)
     return Started(launch=launch, pid=pid, started_at=datetime.now(UTC), dispositions=dispositions)
+
+
+def restore(dispositions: Mapping[int, Any]) -> None:
+    """Gives the stop signals the handlers they had when the container started."""
+    for signum, handler in dispositions.items():
+        signal.signal(signum, signal.SIG_DFL if handler is None else handler)
 
 
 def _stop(pid: int, timeout_s: float, signum: int) -> NoReturn:
