@@ -10,6 +10,12 @@ SECRET = "super_secret_key_12345"
 PAYLOAD = b'{"command": "turn_on", "value": 1}'
 
 
+def move_clock(monkeypatch, seconds: float) -> None:
+    """Moves the system clock by the given seconds, a negative value moves it back"""
+    current_ns = time.time_ns
+    monkeypatch.setattr(time, "time_ns", lambda: current_ns() + int(seconds * 1_000_000_000))
+
+
 # FIXTURES
 @pytest.fixture
 def codec_none():
@@ -149,11 +155,54 @@ def test_packet_expiration(codec_enc, peer_enc, monkeypatch):
     """
     packet = peer_enc.encode(PAYLOAD)
 
-    # Fast forward time by 11 seconds
-    original_ns = time.time_ns
-    monkeypatch.setattr(time, "time_ns", lambda: original_ns() + (11_000_000 * 1000))
+    move_clock(monkeypatch, 11)
 
     assert codec_enc.decode(packet) is None  # Rejected due to expiration
+
+
+def test_replay_attack_prevention_after_many_packets(codec_enc, peer_enc):
+    """
+    Scenario: Valid packet sent again after 1500 other packets, all inside the window.
+    Result: Should return None.
+    """
+    packet = peer_enc.encode(PAYLOAD)
+    assert codec_enc.decode(packet) == PAYLOAD
+
+    for _ in range(1500):
+        assert codec_enc.decode(peer_enc.encode(PAYLOAD)) == PAYLOAD
+
+    assert codec_enc.decode(packet) is None  # Rejected
+
+
+def test_replay_attack_prevention_with_sender_clock_ahead(codec_enc, peer_enc, monkeypatch):
+    """
+    Scenario: Sender's clock is 8 seconds ahead. Its packet is sent again 12 seconds
+    later, when its timestamp is still inside the window.
+    Result: Should return None.
+    """
+    move_clock(monkeypatch, 8)
+    packet = peer_enc.encode(PAYLOAD)
+    move_clock(monkeypatch, -8)
+    assert codec_enc.decode(packet) == PAYLOAD
+
+    move_clock(monkeypatch, 12)
+    assert codec_enc.decode(peer_enc.encode(PAYLOAD)) == PAYLOAD
+
+    assert codec_enc.decode(packet) is None  # Rejected
+
+
+def test_expired_packets_are_forgotten(codec_enc, peer_enc, monkeypatch):
+    """
+    Scenario: 50 packets received, then one more 21 seconds later.
+    Result: Only the last one is still remembered.
+    """
+    for _ in range(50):
+        assert codec_enc.decode(peer_enc.encode(PAYLOAD)) == PAYLOAD
+
+    move_clock(monkeypatch, 21)
+    assert codec_enc.decode(peer_enc.encode(PAYLOAD)) == PAYLOAD
+
+    assert len(codec_enc.replay_protection.cache) == 1
 
 
 # INTEGRITY (TAMPERING)
