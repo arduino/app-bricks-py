@@ -7,7 +7,7 @@ are remapped largest first, the order the lazy mapping packs them in, before giv
 mtmd: a failed allocation of the projector weights is an error, not an assert.
 ---
 diff --git a/ggml/src/ggml-hexagon/ggml-hexagon.cpp b/ggml/src/ggml-hexagon/ggml-hexagon.cpp
-index ccb128e06..371d3fdf8 100644
+index ccb128e06..dbf4e4bc8 100644
 --- a/ggml/src/ggml-hexagon/ggml-hexagon.cpp
 +++ b/ggml/src/ggml-hexagon/ggml-hexagon.cpp
 @@ -70,6 +70,7 @@ using uintvec = std::vector<unsigned int>;
@@ -42,7 +42,7 @@ index ccb128e06..371d3fdf8 100644
      } catch (const std::exception & exc) {
          GGML_LOG_ERROR("ggml-hex: %s failed to allocate device buffer context: %s\n", dev_ctx->c_name(), exc.what());
          return nullptr;
-@@ -2144,6 +2151,27 @@ void ggml_hexagon_session::mmap_buffers() {
+@@ -2144,6 +2151,29 @@ void ggml_hexagon_session::mmap_buffers() {
      }
  }
  
@@ -55,6 +55,8 @@ index ccb128e06..371d3fdf8 100644
 +        sbuf->mmap();
 +    } catch (const std::exception &) {
 +        GGML_LOG_WARN("ggml-hex: %s remapping the session buffers largest first\n", this->c_name());
++        // nothing may still run on the buffers that get unmapped
++        this->flush_sync();
 +        for (auto * b : this->buffers) {
 +            b->unmap();
 +        }
