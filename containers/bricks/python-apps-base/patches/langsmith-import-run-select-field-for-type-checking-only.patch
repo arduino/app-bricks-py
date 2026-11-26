@@ -1,0 +1,40 @@
+From e1b8f72c239cf0d15732f09b1691baa2d4e44c13 Mon Sep 17 00:00:00 2001
+From: Marco Colombo <m.colombo@arduino.cc>
+Date: Thu, 26 Nov 2026 17:50:10 +0100
+Subject: [PATCH] Import RunSelectField for type checking only
+
+langsmith._internal._v2_migration_utils imported RunSelectField at module
+level from langsmith.types.run_select_field, and importing that submodule
+runs langsmith/types/__init__.py, which eagerly imports the whole generated
+API types package (~160 modules of pydantic models). The module is imported
+by langsmith.client and langsmith.run_trees, so every program that imports
+langchain_core paid for it, also when it never talks to the LangSmith API.
+On a small ARM board that is ~1 s of start time.
+
+RunSelectField is a Literal type alias used only in two variable annotations,
+which `from __future__ import annotations` already leaves unevaluated, so the
+import moves under the module's existing TYPE_CHECKING block.
+
+Made against langsmith 0.16.2, the version in uv.lock, for the
+python-apps-base image of arduino/app-bricks-py; to be proposed upstream to
+langchain-ai/langsmith-sdk.
+---
+ langsmith/_internal/_v2_migration_utils.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/langsmith/_internal/_v2_migration_utils.py b/langsmith/_internal/_v2_migration_utils.py
+index 9832706..3127292 100644
+--- a/langsmith/_internal/_v2_migration_utils.py
++++ b/langsmith/_internal/_v2_migration_utils.py
+@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING, Any, Optional
+ 
+ from langsmith import schemas
+ from langsmith._types import omit
+-from langsmith.types.run_select_field import RunSelectField
+ 
+ if TYPE_CHECKING:
+     from langsmith.client import Client
++    from langsmith.types.run_select_field import RunSelectField
+ 
+ 
+ class QueryBackend(enum.Enum):

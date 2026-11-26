@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 """python-apps-base applies the source patches of its patches/ directory at build time: each must apply to the version
-the image installs, the FastAPI one must keep FastAPI working, and the engineio one must keep the Socket.IO client working."""
+the image installs, the FastAPI one must keep FastAPI working, the engineio one must keep the Socket.IO client working,
+and the langsmith one must keep the LangSmith client and tracing working."""
 
 import os
 import re
@@ -23,6 +24,7 @@ IMAGE_DIR = ROOT / "containers" / "bricks" / "python-apps-base"
 PATCHES = sorted((IMAGE_DIR / "patches").glob("*.patch"))
 FASTAPI_PATCH = IMAGE_DIR / "patches" / "fastapi-defer-openapi-model-build.patch"
 ENGINEIO_PATCH = IMAGE_DIR / "patches" / "engineio-import-requests-and-websocket-on-first-use.patch"
+LANGSMITH_PATCH = IMAGE_DIR / "patches" / "langsmith-import-run-select-field-for-type-checking-only.patch"
 
 PATCH_FLAGS = ["-p1", "--forward", "--fuzz=0", "--no-backup-if-mismatch"]
 IMAGE_PATCH_COMMAND = " ".join(["patch", *PATCH_FLAGS, "-d", "/usr/local/lib/python3.13/site-packages", "-i", '"$p"'])
@@ -75,6 +77,14 @@ def engineio_patched_site_packages(tmp_path: Path) -> Path:
     """The installed engineio, patched as the image does, in a directory that shadows it on PYTHONPATH."""
     site_packages = tmp_path / "site-packages"
     _apply_to_a_copy(ENGINEIO_PATCH, site_packages)
+    return site_packages
+
+
+@pytest.fixture
+def langsmith_patched_site_packages(tmp_path: Path) -> Path:
+    """The installed langsmith, patched as the image does, in a directory that shadows it on PYTHONPATH."""
+    site_packages = tmp_path / "site-packages"
+    _apply_to_a_copy(LANGSMITH_PATCH, site_packages)
     return site_packages
 
 
@@ -218,5 +228,51 @@ def test_socketio_client_still_connects_over_polling_and_websocket(engineio_patc
                 # stop() does not wait: exiting while the server thread still shuts down can crash the interpreter
                 server.join(timeout=10)
             assert not server.is_alive(), "the server did not stop"
+        """,
+    )
+
+
+@needs_patch
+def test_llm_import_leaves_the_langsmith_api_types_unloaded(langsmith_patched_site_packages: Path):
+    """App start time: the generated LangSmith API types load when the API client needs them, not with LangChain."""
+    _run_with(
+        langsmith_patched_site_packages,
+        """
+        import sys
+        import arduino.app_bricks.llm
+        import langsmith._internal._v2_migration_utils as migration
+
+        assert migration.__file__.startswith(sys.argv[1]), f"not the patched langsmith: {migration.__file__}"
+        loaded = [m for m in sys.modules if m == "langsmith.types" or m.startswith("langsmith.types.")]
+        assert loaded == [], f"loaded with the llm brick: {len(loaded)} modules, {loaded[:3]}"
+        """,
+    )
+
+
+@needs_patch
+def test_langsmith_run_selects_and_tracing_still_work(langsmith_patched_site_packages: Path):
+    _run_with(
+        langsmith_patched_site_packages,
+        """
+        from typing import get_args
+
+        from langchain_core.runnables import RunnableLambda
+        from langchain_core.tracers.context import collect_runs
+        from langsmith._internal import _v2_migration_utils as migration
+        from langsmith.run_trees import RunTree
+        from langsmith.types.run_select_field import RunSelectField
+
+        # The annotation the patch moves under TYPE_CHECKING still names the fields the module selects
+        assert set(migration._V2_RUN_SELECTS_WITH_ATTACHMENTS) <= set(get_args(RunSelectField))
+
+        run = RunTree(name="parent", run_type="chain", inputs={"x": 1})
+        child = run.create_child(name="child", run_type="llm")
+        child.end(outputs={"y": 2})
+        run.end(outputs={"y": 2})
+        assert run.child_runs == [child] and child.outputs == {"y": 2}
+
+        with collect_runs() as callback:
+            assert RunnableLambda(lambda x: x + 1).invoke(1) == 2
+        assert [r.outputs for r in callback.traced_runs] == [{"output": 2}]
         """,
     )
