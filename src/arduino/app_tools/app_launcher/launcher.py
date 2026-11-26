@@ -24,7 +24,7 @@ import stat
 import sys
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -36,25 +36,11 @@ from arduino.version import __version__
 
 from . import child, dependencies, protocol
 from .child import Launch, Runner
+from .config import Config
 from .protocol import ErrorCode, LauncherError, Request, Start, Status
 
 logger = logging.getLogger("arduino.app_tools.app_launcher")
 
-# The packages the apps spend their startup importing, the backends of the peripherals named one by one, since their
-# packages load them only on use
-DEFAULT_PRELOAD = ",".join((
-    # The library reads app.yaml and the brick configs with it when an app builds its bricks
-    "yaml",
-    "arduino.app_utils",
-    "arduino.app_peripherals.camera.v4l_camera",
-    "arduino.app_peripherals.camera.csi_camera",
-    "arduino.app_peripherals.camera.ip_camera",
-    "arduino.app_peripherals.camera.websocket_camera",
-    "arduino.app_peripherals.microphone.alsa_microphone",
-    "arduino.app_peripherals.microphone.websocket_microphone",
-    "arduino.app_peripherals.speaker",
-    "arduino.app_bricks.web_ui",
-))
 REQUEST_TIMEOUT_S = 5.0
 HANDLED_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGCHLD)
 PRELOAD_GRACE_S = 0.5
@@ -67,33 +53,6 @@ VENV_PRELOAD = ("streamlit.web.bootstrap",)
 """What a launcher running in an app venv preloads on top, when the venv has it: the Streamlit of the app."""
 
 SignalHandler = Callable[[int, FrameType | None], Any] | int | signal.Handlers | None
-
-
-@dataclass(frozen=True)
-class Config:
-    """Launcher settings, from the environment."""
-
-    preload: tuple[str, ...]
-    socket_path: str
-    stop_timeout_s: float
-    app_dir: str
-    """The app folder run.sh prepared before starting the launcher, the one it serves."""
-
-    @classmethod
-    def from_env(cls, env: Mapping[str, str]) -> "Config":
-        """Reads the settings.
-
-        Raises:
-            ValueError: when a value is malformed or APP_DIR is not set.
-        """
-        if not env.get("APP_DIR"):
-            raise ValueError("APP_DIR is not set: the app folder to serve")
-        return cls(
-            preload=tuple(name.strip() for name in env.get("APP_LAUNCHER_PRELOAD", DEFAULT_PRELOAD).split(",") if name.strip()),
-            socket_path=env.get("APP_LAUNCHER_SOCKET", protocol.DEFAULT_SOCKET),
-            stop_timeout_s=float(env.get("APP_LAUNCHER_STOP_TIMEOUT_S", "5")),
-            app_dir=os.path.normpath(env["APP_DIR"]),
-        )
 
 
 @dataclass(eq=False)
@@ -428,12 +387,12 @@ class Launcher:
         if (target := self._child) is None:
             return
         target.stopping = True
-        _signal_group(target.pid, signal.SIGTERM)
+        child.signal_group(target.pid, signal.SIGTERM)
         try:
             await asyncio.wait_for(asyncio.shield(target.exited), self._config.stop_timeout_s)
         except TimeoutError:
             logger.warning(f"{target.app} (pid {target.pid}) did not stop in {self._config.stop_timeout_s} s, killing it")
-            _signal_group(target.pid, signal.SIGKILL)
+            child.signal_group(target.pid, signal.SIGKILL)
             await target.exited
 
     def _reap(self) -> None:
@@ -447,7 +406,7 @@ class Launcher:
             if (reaped := self._child) is not None and reaped.pid == pid:
                 self._child = None
                 # What the app left behind dies with it, as in a container whose main process ends
-                _signal_group(pid, signal.SIGKILL)
+                child.signal_group(pid, signal.SIGKILL)
                 self._kill_strays()
                 fields = _exit_fields(status)
                 self._last = {"app": reaped.app, "pid": pid, **fields, "ended_at": datetime.now(UTC).isoformat()}
@@ -491,18 +450,6 @@ def _owns_container() -> bool:
     except OSError:
         return False
     return nested and 1 in (os.getpid(), os.getppid())
-
-
-def _signal_group(pid: int, signum: int) -> None:
-    """Signals the process group the child leads, or the child alone when it has not become its leader yet."""
-    for kill in (os.killpg, os.kill):
-        try:
-            kill(pid, signum)
-            return
-        except ProcessLookupError:
-            continue
-        except PermissionError:
-            return
 
 
 def _live_pids() -> list[int]:
