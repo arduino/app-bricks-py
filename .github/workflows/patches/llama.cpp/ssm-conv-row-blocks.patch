@@ -9,7 +9,7 @@ Assisted-by: Claude Fable 5.2
  1 file changed, 48 insertions(+), 21 deletions(-)
 
 diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
-index 72dd3e691..6d3d4d3d5 100644
+index 72dd3e6910..6d3d4d3d5f 100644
 --- a/ggml/src/ggml-cpu/ops.cpp
 +++ b/ggml/src/ggml-cpu/ops.cpp
 @@ -10085,7 +10085,6 @@ static void ggml_compute_forward_ssm_conv_f32(
@@ -97,6 +97,3 @@ index 72dd3e691..6d3d4d3d5 100644
              }
          }
      }
--- 
-2.34.1
-

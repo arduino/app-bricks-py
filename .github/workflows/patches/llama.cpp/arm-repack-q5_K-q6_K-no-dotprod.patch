@@ -8,7 +8,7 @@ Prefetch in the Q6_K kernels only. Not selected on Apple, as the merged Q4_0/Q8_
  2 files changed, 578 insertions(+), 1 deletion(-)
 
 diff --git a/ggml/src/ggml-cpu/arch/arm/repack.cpp b/ggml/src/ggml-cpu/arch/arm/repack.cpp
-index f1092486b..1127e9821 100644
+index f1092486b7..1127e98216 100644
 --- a/ggml/src/ggml-cpu/arch/arm/repack.cpp
 +++ b/ggml/src/ggml-cpu/arch/arm/repack.cpp
 @@ -24,7 +24,7 @@
@@ -620,7 +620,7 @@ index f1092486b..1127e9821 100644
  }
  
 diff --git a/ggml/src/ggml-cpu/repack.cpp b/ggml/src/ggml-cpu/repack.cpp
-index f515c577c..7cabc5bd8 100644
+index f515c577cc..7cabc5bd8d 100644
 --- a/ggml/src/ggml-cpu/repack.cpp
 +++ b/ggml/src/ggml-cpu/repack.cpp
 @@ -5033,6 +5033,15 @@ static const ggml::cpu::tensor_traits * ggml_repack_get_optimal_repack_type(cons
