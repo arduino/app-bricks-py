@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import secrets
 import struct
+from collections import deque
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.exceptions import InvalidTag
 
@@ -35,6 +36,7 @@ class ReplayProtection:
     def __init__(self, window_us: int = WINDOW_US) -> None:
         self.window_us = window_us
         self.cache: dict[bytes, int] = {}  # IV -> Expiration timestamp
+        self._expirations: deque[tuple[int, bytes]] = deque()  # (Expiration timestamp, IV) in arrival order
 
     def check_and_update(self, iv: bytes, timestamp_us: int) -> bool:
         """
@@ -53,25 +55,24 @@ class ReplayProtection:
             logger.warning("IV reuse detected")
             return False
 
-        self.mark_seen(iv)
+        self.mark_seen(iv, timestamp_us)
 
         return True
 
-    def mark_seen(self, iv: bytes) -> None:
+    def mark_seen(self, iv: bytes, timestamp_us: int) -> None:
         """Stores an IV so that a later message carrying it is rejected."""
-        now = time.time_ns() // 1_000
+        self._prune(time.time_ns() // 1_000)
 
-        # Prune old entries if cache grows too large
-        if len(self.cache) > 1000:
-            self._prune(now)
-
-        self.cache[iv] = now + self.window_us
+        # A message is valid until its own timestamp leaves the window
+        expiration = timestamp_us + self.window_us
+        self.cache[iv] = expiration
+        self._expirations.append((expiration, iv))
 
     def _prune(self, now: int) -> None:
-        # Remove expired entries
-        expired_keys = [k for k, v in self.cache.items() if now > v]
-        for k in expired_keys:
-            del self.cache[k]
+        # Entries are in arrival order, so the expired ones are at the front
+        while self._expirations and now > self._expirations[0][0]:
+            _, iv = self._expirations.popleft()
+            self.cache.pop(iv, None)
 
 
 class BPPCodec:
@@ -141,7 +142,7 @@ class BPPCodec:
         header = struct.pack(HEADER_FORMAT, BPP_VERSION, mode, timestamp_us, random_val)
 
         # Reject this message if a peer sends it back
-        self.replay_protection.mark_seen(header[2:])
+        self.replay_protection.mark_seen(header[2:], timestamp_us)
 
         if mode == MODE_ENC and self.cc_cipher:
             # Encrypt with ChaCha20-Poly1305, use header as AAD
