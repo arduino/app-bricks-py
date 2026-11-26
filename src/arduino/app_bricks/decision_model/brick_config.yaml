@@ -1,7 +1,7 @@
 id: arduino:decision_model
 name: Decision Model
 description: "Decision Model Brick answers typed questions (choice, score, yes/no) about a text or JSON state, and optionally an image, with calibrated probabilities, using a local llama.cpp decision model instead of a text-generating LLM."
-category: ai
+category: text
 requires_services: ["arduino:llamacpp"]
 model_by_boards:
   - platform: ventunoq

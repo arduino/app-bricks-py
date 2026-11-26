@@ -1,3 +1,4 @@
 id: arduino:arduino_cloud
 name: Arduino Cloud
 description: "Connects to Arduino Cloud"
+category: cloud

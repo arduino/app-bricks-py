@@ -21,13 +21,14 @@ from pathlib import Path
 
 import yaml
 
+from arduino.app_tools.brick_categories import BRICK_CATEGORIES, DEFAULT_BRICK_CATEGORY
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BRICKS_DIR = Path("src/arduino/app_bricks")
 TESTS_DIR = Path("tests/arduino/app_bricks")
 CONFIG_FILE = "brick_config.yaml"
 
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
-CATEGORIES = ("ai", "audio", "image", "miscellaneous", "storage", "text", "ui", "video")
 
 SPDX_HEADER = """# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
@@ -164,8 +165,8 @@ def scaffold(repo_root: Path, name: str, display_name: str | None, desc: str, ca
     """Create the brick package and its test directory, returning the next steps."""
     if not NAME_PATTERN.match(name):
         raise BricksError(f"'{name}' is not a valid brick name, use a lowercase Python identifier like my_brick.")
-    if category not in CATEGORIES:
-        raise BricksError(f"'{category}' is not a brick category, use one of {', '.join(CATEGORIES)}.")
+    if category not in BRICK_CATEGORIES:
+        raise BricksError(f"'{category}' is not a brick category, use one of {', '.join(BRICK_CATEGORIES)}.")
     directory = repo_root / BRICKS_DIR / name
     tests = repo_root / TESTS_DIR / name
     if directory.exists() or tests.exists():
@@ -199,7 +200,7 @@ def create_parser() -> argparse.ArgumentParser:
     new_parser.add_argument("name", help="Brick name, a lowercase Python identifier like my_brick.")
     new_parser.add_argument("--name", dest="display_name", help="Display name, defaults to the name in title case.")
     new_parser.add_argument("--desc", default="TODO", help="One line description for brick_config.yaml and the README.")
-    new_parser.add_argument("--category", default="miscellaneous", choices=CATEGORIES, help="Category in brick_config.yaml.")
+    new_parser.add_argument("--category", default=DEFAULT_BRICK_CATEGORY, choices=BRICK_CATEGORIES, help="Category in brick_config.yaml.")
     return parser
 
 
