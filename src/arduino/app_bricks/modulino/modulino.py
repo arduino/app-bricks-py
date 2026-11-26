@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import threading
 import time
 from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple, override
@@ -1011,12 +1012,28 @@ class ModulinoVibro(Modulino):
         self._call("turn off", "off")
 
 
+class _MotorsConfig(NamedTuple):
+    """Configuration of a Modulino Motors, cached by `ModulinoMotors`."""
+
+    stepper_mode: bool
+    half_step: bool
+    half_full_scale: bool
+    decay: int
+    frequency: int
+
+
 class ModulinoMotors(Modulino):
     """Class to handle a Modulino Motors (two DC motors on channels A and B, or one stepper motor).
 
     The modulino starts in DC mode. The stepper methods (`move`, `hold`, `release`, `set_half_step`
     and the move complete callback) are available after `set_stepper_mode(True)`.
     `stop()` stops both DC motors and, in stepper mode, releases the coils.
+
+    The configuration (stepper mode, half step, current range, decay mode and frequency) is cached:
+    `start()` fills it with the defaults read from the board, the setters update it once the board
+    applies the value, and the getters return it without reading the module. After a failure or a
+    mode change the cache is cleared and the next getter reads the module again. If the module is
+    powered off or reconnected, call `start()` again.
     """
 
     _TYPE = "motors"
@@ -1051,28 +1068,79 @@ class ModulinoMotors(Modulino):
             _check_int("steps_per_revolution", steps_per_revolution, 1, 32767)
         super().__init__(i2c_address, hub_port)
         self.steps_per_revolution = steps_per_revolution
-        self._stepper = False
+        # Reentrant: the setters hold it while _command clears the cache on a failure
+        self._lock = threading.RLock()
+        self._cache: _MotorsConfig | None = None  # None: unknown, read from the module when needed
 
     def _require_stepper(self, what: str) -> None:
-        if not self._stepper:
+        if not self._config().stepper_mode:
             raise RuntimeError(f"modulino {self.name}: cannot {what}: stepper mode not enabled")
 
     def _require_dc(self, what: str) -> None:
-        if self._stepper:
+        if self._config().stepper_mode:
             raise RuntimeError(f"modulino {self.name}: cannot {what}: stepper mode enabled")
 
-    def _status(self) -> int:
-        return self._read("get status", "getStatus")
+    # Any failure clears the cache: the module may have been reset or the value may be partly applied.
+
+    @override
+    def _command(self, what: str, method: str, *args: Any) -> None:
+        try:
+            super()._command(what, method, *args)
+        except ModulinoError:
+            self._clear_cache()
+            raise
+
+    @override
+    def _read(self, what: str, method: str, *args: Any) -> Any:  # noqa: ANN401 the result type is set by the MCU method
+        try:
+            return super()._read(what, method, *args)
+        except ModulinoError:
+            self._clear_cache()
+            raise
+
+    def _clear_cache(self) -> None:
+        with self._lock:
+            self._cache = None
+
+    def _read_status(self) -> tuple[int, _MotorsConfig]:
+        """Read the status from the module and refresh the cache with it."""
+        with self._lock:
+            status = self._read("get status", "getStatus")
+            self._cache = _MotorsConfig(
+                stepper_mode=bool(status & 0x02),
+                half_step=bool(status & 0x04),
+                half_full_scale=bool(status & 0x08),
+                decay=(status >> 4) & 0x03,
+                frequency=(status >> 8) & 0xFFFF,
+            )
+            return status, self._cache
+
+    def _config(self) -> _MotorsConfig:
+        """Return the cached configuration, read from the module when unknown."""
+        with self._lock:
+            if self._cache is not None:
+                return self._cache
+            return self._read_status()[1]
+
+    def _set_config(self, what: str, method: str, value: object, **field: object) -> None:
+        """Set a value on the board, then update its field of the cache (left unknown if the cache is)."""
+        with self._lock:
+            self._command(what, method, value)
+            if self._cache is not None:
+                self._cache = self._cache._replace(**field)
 
     @override
     def start(self) -> None:
-        """Start the motors modulino, in DC mode with both motors stopped.
+        """Start the motors modulino, in DC mode with both motors stopped and the default configuration.
 
         Raises:
-            ModulinoError: If the Modulino doesn't answer.
+            ModulinoError: If the Modulino doesn't answer or the board can't read its status.
         """
-        super().start()
-        self._stepper = False
+        with self._lock:
+            self._cache = None
+            super().start()
+            # The board restores the defaults in :begin: read them to fill the cache
+            self._read_status()
 
     # Common methods
 
@@ -1089,19 +1157,21 @@ class ModulinoMotors(Modulino):
             ModulinoError: If the board can't switch the mode.
         """
         _check_bool("enabled", enabled)
-        self._command("set stepper mode", "setStepperMode", enabled)
-        self._stepper = enabled
+        with self._lock:
+            self._command("set stepper mode", "setStepperMode", enabled)
+            # The module may change other settings with the mode (e.g. half step): read them again when needed
+            self._cache = None
 
     def is_stepper_mode(self) -> bool:
-        """Return True if the module is in stepper mode (read from the module).
+        """Return True if the module is in stepper mode (cached, read from the module when unknown).
 
         Returns:
             bool: True in stepper mode, False in DC mode.
 
         Raises:
-            ModulinoError: If the board can't read the status.
+            ModulinoError: If the mode is unknown and the board can't read the status.
         """
-        return bool(self._status() & 0x02)
+        return self._config().stepper_mode
 
     def set_decay(self, mode: int) -> None:
         """Set the current decay mode of the motor driver.
@@ -1115,18 +1185,18 @@ class ModulinoMotors(Modulino):
             ModulinoError: If the board can't set the decay mode.
         """
         _check_int("mode", mode, self.DECAY_SLOW, self.DECAY_FAST)
-        self._command("set decay", "setDecay", mode)
+        self._set_config("set decay", "setDecay", mode, decay=mode)
 
     def get_decay(self) -> int:
-        """Return the decay mode (read from the module).
+        """Return the decay mode (cached, read from the module when unknown).
 
         Returns:
             int: `DECAY_SLOW`, `DECAY_MIXED_SLOW`, `DECAY_MIXED_FAST` or `DECAY_FAST`.
 
         Raises:
-            ModulinoError: If the board can't read the status.
+            ModulinoError: If the decay mode is unknown and the board can't read the status.
         """
-        return (self._status() >> 4) & 0x03
+        return self._config().decay
 
     def set_half_full_scale(self, enabled: bool) -> None:
         """Set the current range of the motor driver.
@@ -1140,18 +1210,18 @@ class ModulinoMotors(Modulino):
             ModulinoError: If the board can't set the current range.
         """
         _check_bool("enabled", enabled)
-        self._command("set half full scale", "setHalfFullScale", enabled)
+        self._set_config("set half full scale", "setHalfFullScale", enabled, half_full_scale=enabled)
 
     def is_half_full_scale(self) -> bool:
-        """Return True if the half full scale current range is enabled (read from the module).
+        """Return True if the half full scale current range is enabled (cached, read from the module when unknown).
 
         Returns:
             bool: True for the 1.9 A range, False for the 3.8 A range.
 
         Raises:
-            ModulinoError: If the board can't read the status.
+            ModulinoError: If the current range is unknown and the board can't read the status.
         """
-        return bool(self._status() & 0x08)
+        return self._config().half_full_scale
 
     def get_current_a(self) -> float:
         """Return the current of channel A (in stepper mode, the current of coil A).
@@ -1232,18 +1302,18 @@ class ModulinoMotors(Modulino):
             ModulinoError: If the board can't set the frequency.
         """
         _check_int("hz", hz, 200, 60000)
-        self._command("set frequency", "setFrequency", hz)
+        self._set_config("set frequency", "setFrequency", hz, frequency=hz)
 
     def get_frequency(self) -> int:
-        """Return the PWM frequency of the DC motors (the last value set, the module does not report it).
+        """Return the PWM frequency of the DC motors (the last value set: the module does not report it).
 
         Returns:
             int: The frequency in Hz.
 
         Raises:
-            ModulinoError: If the board can't read the status.
+            ModulinoError: If the frequency is not cached and the board can't read the status.
         """
-        return (self._status() >> 8) & 0xFFFF
+        return self._config().frequency
 
     # Stepper mode
 
@@ -1291,7 +1361,7 @@ class ModulinoMotors(Modulino):
         Raises:
             ModulinoError: If the board can't read the status.
         """
-        return bool(self._status() & 0x01)
+        return bool(self._read_status()[0] & 0x01)
 
     def hold(self) -> None:
         """Energize the stepper coils, so the motor holds its position.
@@ -1325,19 +1395,20 @@ class ModulinoMotors(Modulino):
             ModulinoError: If the board can't set the half step mode.
         """
         _check_bool("enabled", enabled)
-        self._require_stepper("set half step")
-        self._command("set half step", "setHalfStep", enabled)
+        with self._lock:
+            self._require_stepper("set half step")
+            self._set_config("set half step", "setHalfStep", enabled, half_step=enabled)
 
     def is_half_step(self) -> bool:
-        """Return True if half step mode is enabled (read from the module).
+        """Return True if half step mode is enabled (cached, read from the module when unknown).
 
         Returns:
             bool: True in half step mode, False in full step mode.
 
         Raises:
-            ModulinoError: If the board can't read the status.
+            ModulinoError: If the step mode is unknown and the board can't read the status.
         """
-        return bool(self._status() & 0x04)
+        return self._config().half_step
 
     def set_on_move_complete_callback(self, callback: Callable[[], object]) -> None:
         """Call a callback each time a stepper move completes.
