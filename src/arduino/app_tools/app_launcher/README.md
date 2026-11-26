@@ -1,6 +1,6 @@
 # arduino-app-launcher
 
-Runs inside the container of one app, started by `/run.sh launch` of `python-apps-base` as `python -m arduino.app_tools.app_launcher` on the interpreter of the app. It imports the libraries once, starts the app at once and ends when the app ends on its own, as the app did: the container lives as long as its app. A start request replaces the running app, so a start after an edit skips the interpreter startup and the imports. The daemon is its client; the protocol is in `protocol.py`.
+Runs inside the container of one app, started by `/run.sh launch` of `python-apps-base` as `python -m arduino.app_tools.app_launcher` on the interpreter of the app. It starts the app before it loads itself, so the app never waits for it, then imports the libraries once and ends when the app ends on its own, as the app did: the container lives as long as its app. A start request replaces the running app, so a start after an edit skips the interpreter startup and the imports. The daemon is its client; the protocol is in `protocol.py`.
 
 ## Control socket
 

@@ -4,8 +4,8 @@
 
 """The app launcher: imports the libraries once, then forks the app of its folder on each start request.
 
-It starts the app at once and ends when the app ends on its own, as the app did: the container lives as long
-as its app.
+It takes over the app started before it loaded and ends when the app ends on its own, as the app did: the
+container lives as long as its app.
 
 The parent stays single-threaded: one asyncio loop, no executors, numeric addresses only. Forks happen
 between two runs of the loop, never inside a callback, so the child never unwinds through asyncio.
@@ -35,6 +35,7 @@ from typing import Any, NoReturn
 from arduino.version import __version__
 
 from . import child, dependencies, protocol
+from .boot import Started
 from .child import Launch, Runner
 from .config import Config
 from .protocol import ErrorCode, LauncherError, Request, Start, Status
@@ -42,9 +43,9 @@ from .protocol import ErrorCode, LauncherError, Request, Start, Status
 logger = logging.getLogger("arduino.app_tools.app_launcher")
 
 REQUEST_TIMEOUT_S = 5.0
-HANDLED_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGCHLD)
 PRELOAD_GRACE_S = 0.5
-"""How long the preload waits once the socket is open: the start a fresh container is brought up for comes first."""
+"""How long the preload waits once the socket is open: a start request that arrives then comes first."""
+HANDLED_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGCHLD)
 STRAY_SWEEPS = 5
 """How many times a sweep lists and kills what a stopped app left behind, for a leftover forking in between."""
 _HOST_PID_NAMESPACE = 0xEFFFFFFC
@@ -86,10 +87,17 @@ class _ForkRequest:
 class Launcher:
     """Owns the control socket and the app process of this container."""
 
-    def __init__(self, config: Config) -> None:
-        """Prepares the launcher; the signal dispositions of this moment are the ones a fresh `python main.py` has."""
+    def __init__(self, config: Config, started: Started | None = None) -> None:
+        """Prepares the launcher for the app started before it loaded, if any.
+
+        The signal dispositions an app gets are the ones a fresh `python main.py` has: those of the moment the first
+        app started, or of this moment.
+        """
         self._config = config
+        self._first_app = started
         self._dispositions: dict[int, SignalHandler] = {signum: signal.getsignal(signum) for signum in HANDLED_SIGNALS}
+        if started is not None:
+            self._dispositions.update(started.dispositions)
         self._pending_preload = list(config.preload)
         self._preloaded: list[str] = []
         self._preload_failed: list[str] = []
@@ -116,12 +124,19 @@ class Launcher:
         Returns:
             Launch | None: None in the launcher once it is done; in a forked child, the app it has to become.
         """
+        if (started := self._first_app) is not None:
+            # Before the loop takes the signals over: a stop always finds the app to stop
+            self._adopt(started.launch, started.pid, started.started_at)
         self._loop.add_signal_handler(signal.SIGTERM, self._request_exit, signal.SIGTERM)
         self._loop.add_signal_handler(signal.SIGINT, self._request_exit, signal.SIGINT)
-        self._loop.add_signal_handler(signal.SIGCHLD, self._reap)
         self._loop.run_until_complete(self._open())
+        self._loop.add_signal_handler(signal.SIGCHLD, self._reap)
         self._log_ready()
-        self._run_task = self._loop.create_task(self._run_app())
+        if started is None:
+            self._run_task = self._loop.create_task(self._run_app())
+        else:
+            # The app may have ended before the loop took SIGCHLD over
+            self._loop.call_soon(self._reap)
         # The socket is served first: a start arriving before the preload is done forks between two imports, the app
         # imports what it needs itself, and the remaining modules are imported afterwards, one between two turns of the loop
         self._loop.call_later(PRELOAD_GRACE_S, self._preload_step)
@@ -368,9 +383,11 @@ class Launcher:
         signal.pthread_sigmask(signal.SIG_UNBLOCK, HANDLED_SIGNALS)
         return pid
 
-    def _adopt(self, launch: Launch, pid: int) -> Child:
+    def _adopt(self, launch: Launch, pid: int, started_at: datetime | None = None) -> Child:
         # Registered before the loop runs again, so the reaper always finds it
-        self._child = Child(app=launch.app, pid=pid, runner=launch.runner, started_at=datetime.now(UTC), exited=self._loop.create_future())
+        self._child = Child(
+            app=launch.app, pid=pid, runner=launch.runner, started_at=started_at or datetime.now(UTC), exited=self._loop.create_future()
+        )
         logger.info(f"Started {launch.app} as pid {pid}")
         return self._child
 
@@ -509,15 +526,15 @@ def _exit_now(signum: int, frame: FrameType | None) -> NoReturn:
     raise SystemExit(128 + signum)
 
 
-def main() -> int:
-    """Runs the launcher; in a forked child it returns the app's exit code."""
+def main(started: Started | None = None) -> int:
+    """Runs the launcher, which takes over the app started before it loaded, if any; in a forked child it returns the app's exit code."""
     _setup_logging()
     try:
         config = Config.from_env(os.environ)
     except ValueError as e:
         logger.error(f"Invalid configuration: {e}")
         return 2
-    launcher = Launcher(config)
+    launcher = Launcher(config, started)
     launch = launcher.serve()
     if launch is not None:
         return child.run(launch)

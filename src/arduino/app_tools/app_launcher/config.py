@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""The settings of the launcher, from the environment."""
+"""The settings of the launcher, read before it loads: the app starts first and needs them too."""
 
 import os
 from collections.abc import Mapping

@@ -389,6 +389,16 @@ def test_ends_as_its_app_did(main, exit_code):
         launcher.remove()
 
 
+@pytest.mark.parametrize("delay_s", [0.02, 0.04, 0.06, 0.08, 0.1, 0.15, 0.2])
+def test_ends_as_its_app_did_whenever_the_app_ends(delay_s):
+    # The app starts before the launcher loads: it may end at any moment of that load
+    launcher = LauncherProcess(main=f"import time\ntime.sleep({delay_s})\nraise SystemExit(3)\n")
+    try:
+        assert launcher.process.wait(10) == 3
+    finally:
+        launcher.remove()
+
+
 def test_ends_as_failed_when_a_start_leaves_no_app_running():
     # A thread the preload leaves alive makes the launcher refuse to fork
     threaded = "import threading, time\nthreading.Thread(target=time.sleep, args=(60,), daemon=True).start()\n"
@@ -428,6 +438,33 @@ def test_the_app_does_not_wait_for_the_preload():
     try:
         launcher.output(until="running")
         assert "importing" not in launcher.output(), "the app starts before the preload"
+    finally:
+        launcher.remove()
+
+
+# An app that tells which modules its interpreter had loaded when it started
+COLD_MAIN = """
+import signal, sys
+print("asyncio loaded:", "asyncio" in sys.modules, flush=True)
+signal.pause()
+"""
+
+
+def test_its_app_starts_before_the_launcher_loads():
+    launcher = LauncherProcess(main=COLD_MAIN)
+    try:
+        assert "asyncio loaded: False" in launcher.output(until="asyncio loaded"), "the app does not wait for the launcher's modules"
+        assert launcher.running()["pid"], "the launcher took the app over"
+    finally:
+        launcher.remove()
+
+
+def test_a_stop_while_the_launcher_loads_stops_the_app():
+    launcher = LauncherProcess(main=ORPHANED_MAIN)
+    try:
+        launcher.output(until="running")
+        launcher.process.send_signal(signal.SIGTERM)
+        assert launcher.process.wait(5) == 128 + signal.SIGTERM
     finally:
         launcher.remove()
 
