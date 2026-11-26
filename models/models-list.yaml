@@ -2314,6 +2314,9 @@ models:
       - id: "arduino:multimodal_llm"
         model_configuration:
           GGML_HEXAGON_DEVICES: 1
+      - id: "arduino:vlm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
     deployment:
       handler: "hf-handler"
       platforms:
@@ -2338,6 +2341,9 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:multimodal_llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 2
+      - id: "arduino:vlm"
         model_configuration:
           GGML_HEXAGON_DEVICES: 2
     deployment:
