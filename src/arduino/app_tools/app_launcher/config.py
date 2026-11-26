@@ -8,8 +8,6 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from . import protocol
-
 # The packages the apps spend their startup importing, the backends of the peripherals named one by one, since their
 # packages load them only on use
 DEFAULT_PRELOAD = ",".join((
@@ -25,6 +23,7 @@ DEFAULT_PRELOAD = ",".join((
     "arduino.app_peripherals.speaker",
     "arduino.app_bricks.web_ui",
 ))
+DEFAULT_SOCKET = "/run/arduino-app-cli/app-launcher.sock"
 
 
 @dataclass(frozen=True)
@@ -48,7 +47,7 @@ class Config:
             raise ValueError("APP_DIR is not set: the app folder to serve")
         return cls(
             preload=tuple(name.strip() for name in env.get("APP_LAUNCHER_PRELOAD", DEFAULT_PRELOAD).split(",") if name.strip()),
-            socket_path=env.get("APP_LAUNCHER_SOCKET", protocol.DEFAULT_SOCKET),
+            socket_path=env.get("APP_LAUNCHER_SOCKET", DEFAULT_SOCKET),
             stop_timeout_s=float(env.get("APP_LAUNCHER_STOP_TIMEOUT_S", "5")),
             app_dir=os.path.normpath(env["APP_DIR"]),
         )
