@@ -70,33 +70,25 @@ The methods raise:
 
 ### Callbacks
 
-Some Modulini call a function of your app when something happens: a button pressed, an object near, a move or an animation completed. Your callback runs on the bridge thread, where the Modulino methods can't be called. To act on a Modulino, signal your app (for example with a `threading.Event`) and call the method from your loop:
+Some Modulini call a function of your app when something happens: a button pressed, an object near, a move or an animation completed. The callback can call the methods of any Modulino:
 
 ```python
-import threading
-
 from arduino.app_bricks.modulino import ModulinoButtons, ModulinoBuzzer
 from arduino.app_utils import App
 
 buttons = ModulinoButtons()
 buzzer = ModulinoBuzzer()
-pressed = threading.Event()
 
 def on_buttons(button_a, button_b, button_c):
     if button_a:
-        pressed.set()
+        buzzer.play_tone(880, 100)
 
 buttons.set_on_change_callback(on_buttons)
 
-def loop():
-    if pressed.wait(timeout=1):
-        pressed.clear()
-        buzzer.play_tone(880, 100)   # a Modulino method: called from the loop, not from the callback
-
-App.run(user_loop=loop)
+App.run()
 ```
 
-Keep the callbacks short: while one runs, the other notifications wait. Passing something that is not callable raises `TypeError`.
+Each Modulino with a callback has a thread of its own that calls it, one notification at a time and in order. The callback doesn't run on the main thread of your app: if it shares data with your loop, protect it (for example with a `threading.Lock`). While a callback runs, the notifications of its Modulino are queued, and if the callback is too slow the oldest are dropped (a warning is logged); the other Modulini are not delayed. An exception raised by the callback is logged and the next notifications still call it. Removing the callback, also from inside the callback, stops the calls right away: the queued notifications are dropped. Passing something that is not callable raises `TypeError`.
 
 ## Modulino Hub
 
@@ -150,7 +142,7 @@ print(sample.x, sample.y, sample.z)   # about (0, 0, 1) g when the module lies f
 x, y, z, roll, pitch, yaw = sample
 ```
 
-To receive the samples at a regular interval, `start_sample(ms, callback)` calls `callback(sample)` with a `MovementSample` every `ms` milliseconds (at least 100), until `stop_sample()`:
+To receive the samples at a regular interval, `start_sample(ms, callback)` calls `callback(sample)` with a `MovementSample` every `ms` milliseconds (at least 100), until `stop_sample()`. If the callback is slower than the interval, it gets the latest sample and the ones in between are skipped:
 
 ```python
 def on_sample(sample: MovementSample):
@@ -203,13 +195,10 @@ print(distance.get_distance())
 ```python
 def on_proximity(state, distance_mm):
     if state == ModulinoDistance.NEAR:
-        # Add your code here to stop a movement, e.g. set a threading.Event checked by your app
-        pass
+        motors.stop_motors()   # a ModulinoMotors of the app
 
 distance.set_threshold_callback(150, on_proximity)   # NEAR below 15 cm, FAR again above 17 cm
 ```
-
-The callback can't call the Modulino methods (see [Callbacks](#callbacks)): to stop the motors, for example, signal your app and stop them from there.
 
 The sensor measures every 20 ms. By default a new state is notified after the next measure confirms it: a single measure below `threshold_mm` followed by one at or above it does not raise `NEAR`. Calling `set_threshold_callback` again restarts from `FAR`, so an object already near is notified again. Use `set_debounce(ms)` to require a longer stable time. `remove_threshold_callback()` stops the notifications.
 
@@ -410,16 +399,13 @@ matrix.stop_animation()   # the current frame stays on the matrix
 
 The animation frames are shown on/off, also in grayscale mode. A new animation replaces the running one, and `draw()` or `clear()` stop it. Frames that are not 12x8 raise `ValueError`.
 
-`on_animation_end_callback(callback)` calls `callback()` when an animation without loop ends, after the duration of its last frame. A stopped or replaced animation does not call it. To chain animations, signal your app from the callback and play the next one from your loop:
+`on_animation_end_callback(callback)` calls `callback()` when an animation without loop ends, after the duration of its last frame. A stopped or replaced animation does not call it. To chain animations, play the next one from the callback:
 
 ```python
-import threading
+def on_end():
+    matrix.play_animation(next_frames)
+    matrix.remove_on_animation_end_callback()   # only once
 
-ended = threading.Event()
-matrix.on_animation_end_callback(ended.set)
-
+matrix.on_animation_end_callback(on_end)
 matrix.play_animation(frames)
-ended.wait()
-ended.clear()
-matrix.play_animation(next_frames)
 ```

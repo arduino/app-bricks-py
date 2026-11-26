@@ -3,12 +3,13 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import queue
 import threading
 import time
 from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple, override
 
-from arduino.app_utils import AppError, Bridge, brick
+from arduino.app_utils import AppError, Bridge, Logger, brick
 from arduino.app_utils.ledmatrix import MODULINO_MATRIX, Frame, FrameDesigner
 
 _CONNECT_HINT = (
@@ -17,6 +18,8 @@ _CONNECT_HINT = (
 )
 _SKETCH_HINT = "Check that the sketch of the app is running: the Modulino brick adds the ModulinoBridge library to it."
 _DUPLICATE_HINT = "Another Modulino of the same type may already use this I2C address on the same bus or hub port."
+
+logger = Logger("Modulino")
 
 
 class ModulinoError(AppError):
@@ -50,6 +53,76 @@ def _check_bool(name: str, value: object) -> None:
 def _check_callable(callback: object) -> None:
     if not callable(callback):
         raise TypeError("callback must be callable")
+
+
+class _CallbackWorker:
+    """Calls the callback of one modulino on a thread of its own, one notification at a time and in order.
+
+    The bridge runs every handler of the app on one thread, where the Modulino methods can't be
+    called: the handler only queues the notification and the worker calls the callback, so the
+    callback can call the Modulino methods and a slow callback doesn't delay the other handlers.
+
+    The queue is bounded: when it is full the oldest notification is dropped. With `latest_only`
+    it holds one notification, the latest (a stream of samples, where only the last one counts).
+
+    `stop()` can be called from any thread, the callback included: the worker checks the stop
+    after taking each item, so it calls nothing more, also with notifications still queued.
+    """
+
+    _QUEUE_SIZE = 32
+    _WAKE: tuple[()] = ()  # queued by stop() to wake a worker waiting on an empty queue
+
+    def __init__(self, name: str, handler: Callable[..., object], latest_only: bool = False) -> None:
+        self._name = name
+        self._handler = handler
+        self._latest_only = latest_only
+        self._queue: queue.Queue[tuple[Any, ...]] = queue.Queue(1 if latest_only else self._QUEUE_SIZE)
+        self._stop = threading.Event()  # one per worker: a new subscription never restarts a stopped worker
+        self._dropped = False
+        self._thread = threading.Thread(target=self._run, name=f"Modulino-{name}-callback", daemon=True)
+        self._thread.start()
+
+    def put(self, args: tuple[Any, ...]) -> None:
+        """Queue a notification, dropping the oldest one if the queue is full (called on the bridge thread)."""
+        if self._stop.is_set():
+            return
+        while True:
+            try:
+                self._queue.put_nowait(args)
+                return
+            except queue.Full:
+                try:
+                    self._queue.get_nowait()
+                except queue.Empty:
+                    pass  # the worker took it in the meantime
+                if not self._latest_only and not self._dropped:
+                    self._dropped = True
+                    logger.warning(f"modulino {self._name}: the callback is slower than the notifications, the oldest ones are dropped")
+
+    def stop(self, join_timeout: float | None = None) -> None:
+        """Stop the worker: the callback is not called anymore, a running one completes.
+
+        Args:
+            join_timeout (float, optional): Seconds to wait for a running callback to complete,
+                not waited from the worker thread itself. Defaults to None: no wait.
+        """
+        self._stop.set()
+        try:
+            self._queue.put_nowait(self._WAKE)
+        except queue.Full:
+            pass  # not waiting: the worker takes an item and sees the stop
+        if join_timeout is not None and threading.current_thread() is not self._thread:
+            self._thread.join(join_timeout)
+
+    def _run(self) -> None:
+        while True:
+            args = self._queue.get()
+            if self._stop.is_set():
+                return
+            try:
+                self._handler(*args)
+            except Exception:
+                logger.exception(f"modulino {self._name}: the callback raised an exception")
 
 
 class RGBColor(NamedTuple):
@@ -155,6 +228,8 @@ class Modulino:
             raise TypeError("Modulino is a base class: use the class of your Modulino, e.g. ModulinoThermo")
         _check_int("i2c_address", i2c_address, 0x00, 0xFF)
         _check_hub_port(hub_port)
+        self._worker: _CallbackWorker | None = None  # runs the callback, None without one
+        self._worker_lock = threading.Lock()
         self.i2c_address = i2c_address
         self.hub_address = hub_port.hub_address if hub_port is not None else 0
         self.port = hub_port.port if hub_port is not None else 0
@@ -190,6 +265,7 @@ class Modulino:
         Raises:
             ModulinoError: If the board can't stop the Modulino.
         """
+        self._stop_worker(join_timeout=1.0)
         try:
             Bridge.call("delete_modulino", self.name)
         except Exception as e:
@@ -217,16 +293,42 @@ class Modulino:
             raise ModulinoError(f"modulino {self.name}: cannot {what}: read failed")
         return value
 
-    def _subscribe(self, what: str, handler: Callable[..., object], period_ms: int) -> None:
-        """Provide the handler of the notifications of the modulino and start them every `period_ms`."""
+    # Callbacks: the bridge calls _notified, which hands the notification to the worker of the modulino.
+
+    def _start_worker(self, handler: Callable[..., object], latest_only: bool = False) -> None:
+        """Run `handler` on a new worker for each notification, stopping the previous worker."""
+        with self._worker_lock:
+            previous = self._worker
+            self._worker = _CallbackWorker(self.name, handler, latest_only)
+        if previous is not None:
+            previous.stop()
+
+    def _stop_worker(self, join_timeout: float | None = None) -> None:
+        with self._worker_lock:
+            worker = self._worker
+            self._worker = None
+        if worker is not None:
+            worker.stop(join_timeout)
+
+    def _notified(self, *args: Any) -> None:  # noqa: ANN401 the values notified by the MCU
+        """Handler of the notifications of the modulino, on the bridge thread: it only queues them."""
+        worker = self._worker
+        if worker is not None:
+            worker.put(args)
+
+    def _subscribe(self, what: str, handler: Callable[..., object], period_ms: int, latest_only: bool = False) -> None:
+        """Call `handler` on the worker of the modulino for each notification, started every `period_ms`."""
+        self._start_worker(handler, latest_only)
         try:
-            Bridge.provide(f"{self.name}_callback", handler)
+            Bridge.provide(f"{self.name}_callback", self._notified)
             Bridge.notify("poll_subscribe", self.name, period_ms)
         except Exception as e:
+            self._stop_worker()
             raise ModulinoError(f"modulino {self.name}: cannot {what}") from e
 
     def _unsubscribe(self, what: str) -> None:
-        """Stop the notifications of the modulino."""
+        """Stop the notifications of the modulino and its worker."""
+        self._stop_worker()
         try:
             Bridge.notify("poll_unsubscribe", self.name)
         except Exception as e:
@@ -341,8 +443,8 @@ class ModulinoMovement(Modulino):
         The callback function will be called with each movement sample as an argument
         at the specified interval.
         To stop sampling, call the `stop_sample` method.
-        The callback runs on the bridge thread: it must not call the methods of the Modulini,
-        signal the app instead (e.g. with a `threading.Event`).
+        The callback runs on a thread of this Modulino, not on the main thread of the app, and can call
+        the methods of the Modulini. If it is slower than the interval, it gets the latest sample: the ones in between are skipped.
 
         Args:
             ms (int): The sampling interval in milliseconds (minimum 100 ms).
@@ -361,7 +463,7 @@ class ModulinoMovement(Modulino):
         def handler(x: float, y: float, z: float, roll: float, pitch: float, yaw: float) -> None:
             callback(MovementSample(x, y, z, roll, pitch, yaw))
 
-        self._subscribe("start sampling", handler, ms)
+        self._subscribe("start sampling", handler, ms, latest_only=True)
 
     def stop_sample(self) -> None:
         """Stop sampling movement data.
@@ -410,8 +512,8 @@ class ModulinoButtons(Modulino):
         The callback will report the current state of each button after the change event (1 pressed, 0 released).
         The callback must accept 3 arguments: button_a, button_b, and button_c.
 
-        The callback runs on the bridge thread: it must not call the methods of the Modulini,
-        signal the app instead (e.g. with a `threading.Event`).
+        The callback runs on a thread of this Modulino, not on the main thread of the app, and can call
+        the methods of the Modulini. The notifications are queued while it runs: if it is too slow, the oldest are dropped.
 
         Args:
             callback (Callable[[int, int, int], object]): The callback function to be called on button state change.
@@ -475,8 +577,8 @@ class ModulinoJoystick(Modulino):
         The callback function should have the following signature:
                 def callback(x: int, y: int, button: int) -> None:
 
-        The callback runs on the bridge thread: it must not call the methods of the Modulini,
-        signal the app instead (e.g. with a `threading.Event`).
+        The callback runs on a thread of this Modulino, not on the main thread of the app, and can call
+        the methods of the Modulini. The notifications are queued while it runs: if it is too slow, the oldest are dropped.
 
         Args:
             callback (Callable[[int, int, int], object]): The callback function to be called when the joystick state changes.
@@ -540,8 +642,8 @@ class ModulinoKnob(Modulino):
         (1 pressed, 0 released) and the direction, how much the position changed since the previous notification
         (its sign gives the direction of the rotation, 0 when only the button changed).
 
-        The callback runs on the bridge thread: it must not call the methods of the Modulini,
-        signal the app instead (e.g. with a `threading.Event`).
+        The callback runs on a thread of this Modulino, not on the main thread of the app, and can call
+        the methods of the Modulini. The notifications are queued while it runs: if it is too slow, the oldest are dropped.
 
         Args:
             callback (Callable[[int, int, int], object]): The callback function to be called when the knob state changes.
@@ -640,8 +742,8 @@ class ModulinoDistance(Modulino):
 
         This runs through the Linux side and is not a safety-rated emergency stop.
 
-        The callback runs on the bridge thread: it must not call the methods of the Modulini,
-        signal the app instead (e.g. with a `threading.Event`).
+        The callback runs on a thread of this Modulino, not on the main thread of the app, and can call
+        the methods of the Modulini. The notifications are queued while it runs: if it is too slow, the oldest are dropped.
 
         Args:
             threshold_mm (int): The threshold distance in millimeters.
@@ -1416,8 +1518,8 @@ class ModulinoMotors(Modulino):
         Set it before calling `move()`. If a new move starts before the previous one completes,
         the callback is called once, at the end of the last move.
 
-        The callback runs on the bridge thread: it must not call the methods of the Modulini,
-        signal the app instead (e.g. with a `threading.Event`).
+        The callback runs on a thread of this Modulino, not on the main thread of the app, and can call
+        the methods of the Modulini. The notifications are queued while it runs: if it is too slow, the oldest are dropped.
 
         Args:
             callback (Callable[[], object]): Called with no arguments:
@@ -1479,7 +1581,6 @@ class ModulinoLEDMatrix(Modulino):
             raise ValueError(f"i2c_address must be between 0x08 and 0x77, got 0x{i2c_address:x}")
         super().__init__(i2c_address)
         self._grayscale = False
-        self._on_animation_end: Callable[[], object] | None = None
 
     @override
     def start(self) -> None:
@@ -1491,19 +1592,12 @@ class ModulinoLEDMatrix(Modulino):
         super().start()
         self._grayscale = False
 
-        # Always provided: the MCU notifies (3 unused integers) the end of every animation without loop
-        def handler(_unused0: int, _unused1: int, _unused2: int) -> None:
-            self._animation_ended()
-
+        # Always provided: the MCU notifies (3 unused integers) the end of every animation without loop,
+        # dropped while no callback is set (no worker)
         try:
-            Bridge.provide(f"{self.name}_callback", handler)
+            Bridge.provide(f"{self.name}_callback", self._notified)
         except Exception as e:
             raise ModulinoError(f"modulino {self.name}: cannot start") from e
-
-    def _animation_ended(self) -> None:
-        callback = self._on_animation_end
-        if callback is not None:
-            callback()
 
     @property
     def brightness_levels(self) -> int:
@@ -1630,8 +1724,8 @@ class ModulinoLEDMatrix(Modulino):
         """Call a callback each time an animation without loop ends, after the duration of its last frame.
 
         An animation stopped by `stop_animation()`, `draw()`, `clear()` or a new `play_animation()` does not call it.
-        The callback runs on the bridge thread: it must not call the methods of the Modulini, signal the app instead
-        (e.g. with a `threading.Event`).
+        The callback runs on a thread of this Modulino, not on the main thread of the app, and can call
+        the methods of the Modulini.
 
         Args:
             callback (Callable[[], object]): Called with no arguments:
@@ -1641,8 +1735,12 @@ class ModulinoLEDMatrix(Modulino):
             TypeError: If `callback` is not callable.
         """
         _check_callable(callback)
-        self._on_animation_end = callback
+
+        def handler(_unused0: int, _unused1: int, _unused2: int) -> None:
+            callback()
+
+        self._start_worker(handler)
 
     def remove_on_animation_end_callback(self) -> None:
         """Remove the animation end callback."""
-        self._on_animation_end = None
+        self._stop_worker()
