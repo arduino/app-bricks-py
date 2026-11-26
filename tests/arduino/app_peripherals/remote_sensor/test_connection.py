@@ -217,6 +217,28 @@ async def test_wrong_secret_client_is_not_connected(encrypt):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("encrypt", [False, True])
+async def test_client_echoing_the_welcome_is_not_connected(encrypt):
+    """Test that a client sending the welcome message back causes no status change and no datapoint."""
+    events = []
+    datapoints = []
+
+    sensor = RemoteSensor(port=0, secret=TEST_SECRET, encrypt=encrypt)
+    sensor.on_status_changed(lambda status, info: events.append(status))
+    sensor.on_datapoint(datapoints.append)
+    sensor.start()
+
+    async with websockets.connect(sensor.url) as ws:
+        welcome = await ws.recv()
+        await ws.send(welcome)
+
+    sensor.stop()
+
+    assert events == []
+    assert datapoints == []
+
+
+@pytest.mark.asyncio
 async def test_status_is_reported_after_restart(codec):
     """Test that status changes are still reported after the sensor is stopped and started again."""
     loop = asyncio.get_running_loop()

@@ -53,13 +53,19 @@ class ReplayProtection:
             logger.warning("IV reuse detected")
             return False
 
+        self.mark_seen(iv)
+
+        return True
+
+    def mark_seen(self, iv: bytes) -> None:
+        """Stores an IV so that a later message carrying it is rejected."""
+        now = time.time_ns() // 1_000
+
         # Prune old entries if cache grows too large
         if len(self.cache) > 1000:
             self._prune(now)
 
         self.cache[iv] = now + self.window_us
-
-        return True
 
     def _prune(self, now: int) -> None:
         # Remove expired entries
@@ -93,6 +99,8 @@ class BPPCodec:
     - Random: 32-bit random value for uniqueness.
     - Payload: Actual data being transmitted.
     - AuthTag/Sig: HMAC signature (32 bytes for Mode 1) or AuthTag (16 bytes for Mode 2).
+
+    A codec rejects its own messages, so each peer needs its own instance.
 
     Text-safe encoding/decoding via Base64URL are also provided.
     """
@@ -131,6 +139,9 @@ class BPPCodec:
         timestamp_us = time.time_ns() // 1_000
         random_val = secrets.randbits(32)
         header = struct.pack(HEADER_FORMAT, BPP_VERSION, mode, timestamp_us, random_val)
+
+        # Reject this message if a peer sends it back
+        self.replay_protection.mark_seen(header[2:])
 
         if mode == MODE_ENC and self.cc_cipher:
             # Encrypt with ChaCha20-Poly1305, use header as AAD

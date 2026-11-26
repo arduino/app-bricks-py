@@ -782,6 +782,24 @@ class TestWebSocketConnectedStatus:
 
         assert events == []
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("encrypt", [False, True])
+    async def test_client_echoing_the_welcome_is_not_connected(self, encrypt):
+        """Test that a client sending the welcome message back causes no status change."""
+        events = []
+
+        mic = WebSocketMicrophone(port=0, secret=TEST_SECRET, encrypt=encrypt)
+        mic.on_status_changed(lambda status, info: events.append(status))
+        mic.start()
+
+        async with websockets.connect(mic.url) as ws:
+            welcome = await ws.recv()
+            await ws.send(welcome)
+
+        mic.stop()
+
+        assert events == []
+
 
 class TestWebSocketMicrophoneAuthenticated:
     """Test WebSocket microphone with HMAC-SHA256 authentication (secret, no encryption)."""

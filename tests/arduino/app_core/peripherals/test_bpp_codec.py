@@ -29,10 +29,28 @@ def codec_enc():
     return BPPCodec(secret=SECRET, enable_encryption=True)
 
 
+@pytest.fixture
+def peer_none():
+    """Remote peer codec configured for No Security"""
+    return BPPCodec()
+
+
+@pytest.fixture
+def peer_sign():
+    """Remote peer codec configured for HMAC Signing (Mode 1)"""
+    return BPPCodec(secret=SECRET, enable_encryption=False)
+
+
+@pytest.fixture
+def peer_enc():
+    """Remote peer codec configured for Encryption (Mode 2)"""
+    return BPPCodec(secret=SECRET, enable_encryption=True)
+
+
 # HAPPY PATH TESTS
-def test_mode_none_success(codec_none):
+def test_mode_none_success(codec_none, peer_none):
     """Test standard encoding/decoding for Mode 0"""
-    encoded = codec_none.encode(PAYLOAD)
+    encoded = peer_none.encode(PAYLOAD)
     decoded = codec_none.decode(encoded)
 
     assert decoded == PAYLOAD
@@ -40,9 +58,9 @@ def test_mode_none_success(codec_none):
     assert encoded[1] == 0x00  # Mode 0
 
 
-def test_mode_sign_success(codec_sign):
+def test_mode_sign_success(codec_sign, peer_sign):
     """Test standard encoding/decoding for Mode 1"""
-    encoded = codec_sign.encode(PAYLOAD)
+    encoded = peer_sign.encode(PAYLOAD)
     decoded = codec_sign.decode(encoded)
 
     assert decoded == PAYLOAD
@@ -50,9 +68,9 @@ def test_mode_sign_success(codec_sign):
     assert len(encoded) == 14 + len(PAYLOAD) + 32  # Header(14) + Payload + Signature(32)
 
 
-def test_mode_enc_success(codec_enc):
+def test_mode_enc_success(codec_enc, peer_enc):
     """Test standard encoding/decoding for Mode 2"""
-    encoded = codec_enc.encode(PAYLOAD)
+    encoded = peer_enc.encode(PAYLOAD)
     decoded = codec_enc.decode(encoded)
 
     assert decoded == PAYLOAD
@@ -97,12 +115,12 @@ def test_downgrade_prevention_enc_rejects_none(codec_enc, codec_none):
 
 
 # REPLAY PROTECTION & EXPIRATION
-def test_replay_attack_prevention(codec_enc):
+def test_replay_attack_prevention(codec_enc, peer_enc):
     """
     Scenario: Valid packet sent twice.
     Result: First succeeds, second fails.
     """
-    packet = codec_enc.encode(PAYLOAD)
+    packet = peer_enc.encode(PAYLOAD)
 
     # First decode: succeeds
     assert codec_enc.decode(packet) == PAYLOAD
@@ -110,12 +128,26 @@ def test_replay_attack_prevention(codec_enc):
     assert codec_enc.decode(packet) is None
 
 
-def test_packet_expiration(codec_enc, monkeypatch):
+@pytest.mark.parametrize("secret, encrypt", [("", False), (SECRET, False), (SECRET, True)])
+def test_reflection_attack_prevention(secret, encrypt):
+    """
+    Scenario: Attacker sends a codec's own packet back to it.
+    Result: Should return None, while the peer still decodes it.
+    """
+    codec = BPPCodec(secret=secret, enable_encryption=encrypt)
+    peer = BPPCodec(secret=secret, enable_encryption=encrypt)
+    packet = codec.encode(PAYLOAD)
+
+    assert codec.decode(packet) is None  # Rejected
+    assert peer.decode(packet) == PAYLOAD
+
+
+def test_packet_expiration(codec_enc, peer_enc, monkeypatch):
     """
     Scenario: Packet is 11 seconds old.
     Result: Should fail time window check.
     """
-    packet = codec_enc.encode(PAYLOAD)
+    packet = peer_enc.encode(PAYLOAD)
 
     # Fast forward time by 11 seconds
     original_ns = time.time_ns
@@ -125,37 +157,37 @@ def test_packet_expiration(codec_enc, monkeypatch):
 
 
 # INTEGRITY (TAMPERING)
-def test_tampered_signature(codec_sign):
+def test_tampered_signature(codec_sign, peer_sign):
     """
     Scenario: Mode 1 packet, change one byte of the signature.
     Result: HMAC verification should fail.
     """
-    packet = bytearray(codec_sign.encode(PAYLOAD))
+    packet = bytearray(peer_sign.encode(PAYLOAD))
     packet[-1] ^= 0xFF  # Flip signature's last byte to corrupt it
 
     decoded = codec_sign.decode(bytes(packet))
     assert decoded is None  # Rejected
 
 
-def test_tampered_ciphertext(codec_enc):
+def test_tampered_ciphertext(codec_enc, peer_enc):
     """
     Scenario: Mode 2 packet, change one byte of the ciphertext.
     Result: Poly1305 verification should fail.
     """
-    packet = bytearray(codec_enc.encode(PAYLOAD))
+    packet = bytearray(peer_enc.encode(PAYLOAD))
     packet[14] ^= 0xFF  # Flip ciphertext's first byte to corrupt it
 
     decoded = codec_enc.decode(bytes(packet))
     assert decoded is None  # Rejected
 
 
-def test_tampered_header_aad(codec_enc):
+def test_tampered_header_aad(codec_enc, peer_enc):
     """
     Scenario: Mode 2 packet. Attacker tries to modify the Timestamp in the header
     to bypass replay protection, but keeps the original Tag.
     Result: Poly1305 verification should fail because Header is AAD.
     """
-    packet = bytearray(codec_enc.encode(PAYLOAD))
+    packet = bytearray(peer_enc.encode(PAYLOAD))
     packet[9] ^= 0x01  # Flip the lowest bit of the big-endian timestamp, never overflows the byte
 
     decoded = codec_enc.decode(bytes(packet))
@@ -163,17 +195,17 @@ def test_tampered_header_aad(codec_enc):
 
 
 # TEXT WRAPPER TESTS
-def test_text_wrapper_workflow(codec_enc):
+def test_text_wrapper_workflow(codec_enc, peer_enc):
     """Verify string encoding works"""
-    token = codec_enc.encode_text(PAYLOAD)
+    token = peer_enc.encode_text(PAYLOAD)
     decoded = codec_enc.decode_text(token)
 
     assert decoded == PAYLOAD
 
 
-def test_text_wrapper_tampering(codec_enc):
+def test_text_wrapper_tampering(codec_enc, peer_enc):
     """Verify tampering with the base64 string fails"""
-    b64_text = codec_enc.encode_text(PAYLOAD)
+    b64_text = peer_enc.encode_text(PAYLOAD)
     # Tamper with the base64 string (change last char)
     tampered_token = b64_text[:-1] + ("A" if b64_text[-1] != "A" else "B")
 
