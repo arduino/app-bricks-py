@@ -255,7 +255,6 @@ case "$1" in
     ;;
   launch)
     install_streamlit
-    echo "======== App launcher is starting ==================="
     cd "$BASE_DIR"
     # The launcher runs the app at once and ends with it: the container lives as long as its app.
     # On the interpreter the app runs on, the venv one once activated: a console script
