@@ -151,8 +151,12 @@ class SQLStore:
 
         Use it as a context manager, `with db.transaction():`. The changes made inside the block are committed when the
         block ends; if the block raises an exception they are all undone and the exception
-        continues. While the block runs, the other threads wait before reading or writing the
-        database, so they never see half of the changes. Keep the block short.
+        continues. Tables created or dropped inside the block are undone too.
+
+        While the block runs nothing else can change the database: the other threads wait before
+        reading or writing it, and so does another program that writes to the same file. What the
+        block reads stays true until it ends, so it can read a value and write one that depends
+        on it. Keep the block short.
 
         Saving the changes together is also faster than saving them one by one, since the
         database is written to disk once.
@@ -161,10 +165,19 @@ class SQLStore:
         `create_or_replace_table()` cannot be used inside a transaction.
 
         Raises:
-            DBStorageSQLStoreError: If there is an error committing the changes.
+            DBStorageSQLStoreError: If the transaction cannot be started, e.g. because another
+                program keeps the database locked, or there is an error committing the changes.
         """
         with self.conn_lock:
             conn = self._get_connection()
+            if self._transaction_depth == 0:
+                # Start the transaction now, taking the right to write. Without it SQLite would
+                # start one only at the first change: a table created before it could not be
+                # undone, and another program could write between a read and that change.
+                try:
+                    conn.execute("BEGIN IMMEDIATE")
+                except sqlite3.Error as e:
+                    raise DBStorageSQLStoreError(f"Error starting the transaction: {e}")
             self._transaction_depth += 1
             try:
                 yield

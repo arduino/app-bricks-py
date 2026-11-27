@@ -1205,3 +1205,96 @@ def test_create_or_replace_table_refused_change_leaves_no_open_transaction(open_
         conn.execute.side_effect = sqlite3.OperationalError("cannot start a transaction within a transaction")
         with pytest.raises(DBStorageSQLStoreError):
             db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER"})
+
+
+def test_transaction_starts_when_the_block_is_entered(open_sqlstore_database: SQLStore):
+    """The transaction is open from the first line of the block, not from its first change."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+
+    assert db.conn is not None and not db.conn.in_transaction
+    with db.transaction():
+        assert db.conn.in_transaction
+        db.read("test_table")
+        assert db.conn.in_transaction
+    assert not db.conn.in_transaction
+
+
+def test_transaction_rolls_back_tables_created_and_dropped(open_sqlstore_database: SQLStore):
+    """A table created or dropped inside a block that fails is put back as it was."""
+    db = open_sqlstore_database
+    db.create_table("kept", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    db.store("kept", {"id": 1, "name": "first"})
+
+    with pytest.raises(RuntimeError):
+        with db.transaction():
+            db.create_table("made_inside", {"id": "INTEGER"})  # before any change to the data
+            db.store("made_inside", {"id": 1}, create_table=False)
+            db.drop_table("kept")
+            raise RuntimeError("boom")
+
+    names = [r["name"] for r in db.execute_sql("SELECT name FROM sqlite_master WHERE type='table'") or []]
+    assert names == ["kept"]
+    assert db.read("kept") == [{"id": 1, "name": "first"}]
+
+    with db.transaction():
+        db.create_table("made_inside", {"id": "INTEGER"})
+    assert db.read("made_inside") == []
+
+
+def test_transaction_keeps_other_writers_out_between_a_read_and_a_write(open_sqlstore_database: SQLStore):
+    """Another connection to the same file can write only after the block ends, so what the block read stays true."""
+    import sqlite3
+    import threading
+
+    db = open_sqlstore_database
+    db.create_table("counter", {"id": "INTEGER PRIMARY KEY", "value": "INTEGER"})
+    db.store("counter", {"id": 1, "value": 10})
+
+    written = threading.Event()
+
+    def other_program():
+        other = sqlite3.connect(db.database_name, timeout=10)
+        other.execute("UPDATE counter SET value = value + 100 WHERE id = 1")
+        other.commit()
+        other.close()
+        written.set()
+
+    with db.transaction():
+        value = db.read("counter", condition="id = 1")[0]["value"]
+        thread = threading.Thread(target=other_program)
+        thread.start()
+        assert not written.wait(0.3)  # the other writer is waiting for the block to end
+        db.update("counter", {"value": value + 1}, condition="id = 1")
+    thread.join(10)
+
+    assert written.is_set()
+    # Neither update is lost: 10 + 1 from the block, then + 100 from the other writer
+    assert db.read("counter")[0]["value"] == 111
+
+
+def test_transaction_that_cannot_start_raises_the_brick_error(open_sqlstore_database: SQLStore):
+    """If another program keeps the database locked for writing, the block does not run."""
+    import sqlite3
+
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    assert db.conn is not None
+    db.conn.execute("PRAGMA busy_timeout=100")  # do not wait the default 5 s for the lock
+
+    other = sqlite3.connect(db.database_name)
+    other.execute("BEGIN IMMEDIATE")
+    try:
+        ran = False
+        with pytest.raises(DBStorageSQLStoreError):
+            with db.transaction():
+                ran = True
+        assert not ran
+    finally:
+        other.rollback()
+        other.close()
+
+    # Once the lock is released transactions work again
+    with db.transaction():
+        db.store("test_table", {"id": 1})
+    assert db.read("test_table") == [{"id": 1}]
