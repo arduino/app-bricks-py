@@ -7,7 +7,7 @@ A simple, robust Python documentation generator for producing clean, PEP8-compli
 - Extracts and documents modules, classes, functions, methods, and class properties, including constructor (`__init__`) parameters.
 - Documents with a class the methods and properties it inherits from base classes of the same source tree, unless it redefines them, so a brick built on a shared base class shows its whole API.
 - Filters documented objects in `__init__.py` files to only those listed in `__all__`, if present.
-- Mirrors the source folder structure under `docs/`, organizing documentation by module.
+- Mirrors the source folder structure under the output directory, organizing documentation by module.
 - Produces readable Markdown with clear sections: Parameters, Returns, Raises, and Examples.
 - Renders class properties in a dedicated `Properties` section instead of mixing them with methods.
 - Generates an index at the top of each file listing all documented objects.
@@ -19,10 +19,10 @@ A simple, robust Python documentation generator for producing clean, PEP8-compli
 1. Run the documentation generator:
 
    ```sh
-   python -m docs_generator.runner
+   task build:bricks:docs
    ```
 
-2. Find the generated documentation under the `docs/` directory, mirroring arduino source structure.
+2. Find the generated documentation under the `build/api-docs/` directory, mirroring arduino source structure.
 
 ## Structure
 
