@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import gc
+import sqlite3
 import pytest
 import os
 import tempfile
@@ -784,3 +785,628 @@ def test_read_with_no_limit(open_sqlstore_database: SQLStore):
 
     assert len(db.read("limit_table", limit=None)) == 2
     assert len(db.read("limit_table", limit=-1)) == 2
+
+
+def test_store_returns_the_row_id(open_sqlstore_database: SQLStore):
+    """store() returns the id of the new record, also when the database assigns it."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+
+    assert db.store("test_table", {"name": "first"}) == 1
+    assert db.store("test_table", {"name": "second"}) == 2
+    assert db.store("test_table", {"id": 10, "name": "explicit"}) == 10
+    assert db.read("test_table", condition="id = 2")[0]["name"] == "second"
+
+
+def test_update_and_delete_return_the_affected_rows(open_sqlstore_database: SQLStore):
+    """update() and delete() tell how many records they changed."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    for name in ("a", "b", "c"):
+        db.store("test_table", {"name": name})
+
+    assert db.update("test_table", {"name": "x"}, condition="id = 1") == 1
+    assert db.update("test_table", {"name": "y"}, condition="id = 99") == 0
+    assert db.update("test_table", {"name": "z"}) == 3
+    assert db.delete("test_table", condition="id = 99") == 0
+    assert db.delete("test_table", condition="id > 1") == 2
+    assert db.delete("test_table") == 1
+
+
+def test_condition_with_parameters(open_sqlstore_database: SQLStore):
+    """read(), update() and delete() take the values of their condition as parameters."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT", "age": "INTEGER"})
+    for name, age in (("Alice", 30), ("Bob", 17), ("O'Brien", 41)):
+        db.store("test_table", {"name": name, "age": age})
+
+    assert [r["name"] for r in db.read("test_table", condition="age > ?", args=(18,), order_by="id")] == ["Alice", "O'Brien"]
+    # A quote in the value needs no escaping
+    assert db.read("test_table", condition="name = ?", args=("O'Brien",))[0]["age"] == 41
+    assert db.update("test_table", {"age": 18}, condition="name = ?", args=("Bob",)) == 1
+    assert db.read("test_table", condition="name = ? AND age = ?", args=("Bob", 18))[0]["id"] == 2
+    assert db.delete("test_table", condition="id IN (?, ?)", args=(1, 2)) == 2
+    assert [r["name"] for r in db.read("test_table")] == ["O'Brien"]
+
+
+def test_condition_parameters_are_not_read_as_sql(open_sqlstore_database: SQLStore):
+    """Text passed as a parameter cannot change the query."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    db.store("test_table", {"name": "Alice"})
+    db.store("test_table", {"name": "Bob"})
+
+    hostile = "x' OR '1'='1"
+    assert db.read("test_table", condition="name = ?", args=(hostile,)) == []
+    assert db.delete("test_table", condition="name = ?", args=(hostile,)) == 0
+    assert len(db.read("test_table")) == 2
+
+
+def test_condition_with_wrong_number_of_parameters(open_sqlstore_database: SQLStore):
+    """A condition whose placeholders do not match the parameters is an error."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    with pytest.raises(DBStorageSQLStoreError):
+        db.read("test_table", condition="id = ?")
+    with pytest.raises(DBStorageSQLStoreError):
+        db.update("test_table", {"name": "x"}, condition="id = ?", args=(1, 2))
+
+
+def test_store_on_conflict_replace(open_sqlstore_database: SQLStore):
+    """on_conflict="replace" stores the record in place of the one with the same key."""
+    db = open_sqlstore_database
+    db.create_table("settings", {"key": "TEXT PRIMARY KEY", "value": "TEXT"})
+
+    db.store("settings", {"key": "matrix", "value": "uno_q"}, on_conflict="replace")
+    db.store("settings", {"key": "matrix", "value": "modulino"}, on_conflict="replace")
+    db.store("settings", {"key": "other", "value": "1"}, on_conflict="replace")
+
+    assert db.read("settings", order_by="key") == [{"key": "matrix", "value": "modulino"}, {"key": "other", "value": "1"}]
+
+
+def test_store_on_conflict_ignore(open_sqlstore_database: SQLStore):
+    """on_conflict="ignore" keeps the record already in the table and returns 0."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+
+    assert db.store("test_table", {"id": 1, "name": "first"}, on_conflict="ignore") == 1
+    assert db.store("test_table", {"id": 1, "name": "second"}, on_conflict="ignore") == 0
+    assert db.store("test_table", {"id": 2, "name": "third"}, on_conflict="ignore") == 2
+    assert [r["name"] for r in db.read("test_table", order_by="id")] == ["first", "third"]
+
+
+def test_store_conflict_is_an_error_by_default(open_sqlstore_database: SQLStore):
+    """Without on_conflict a duplicate key is still an error, and unknown values are rejected."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    db.store("test_table", {"id": 1, "name": "first"})
+
+    with pytest.raises(DBStorageSQLStoreError):
+        db.store("test_table", {"id": 1, "name": "second"})
+    with pytest.raises(DBStorageSQLStoreError):
+        db.store("test_table", {"id": 3, "name": "x"}, on_conflict="update")  # type: ignore[arg-type]
+    assert db.read("test_table") == [{"id": 1, "name": "first"}]
+
+
+def test_transaction_commits_all_changes(open_sqlstore_database: SQLStore):
+    """The changes made inside a transaction are saved together when the block ends."""
+    db = open_sqlstore_database
+    db.create_table("accounts", {"id": "INTEGER PRIMARY KEY", "balance": "INTEGER"})
+    db.store("accounts", {"id": 1, "balance": 100})
+    db.store("accounts", {"id": 2, "balance": 100})
+
+    with db.transaction():
+        db.update("accounts", {"balance": 50}, condition="id = ?", args=(1,))
+        db.update("accounts", {"balance": 150}, condition="id = ?", args=(2,))
+        new_id = db.store("accounts", {"balance": 0})
+        assert db.read("accounts", condition="id = 1")[0]["balance"] == 50  # visible inside the block
+
+    assert new_id == 3
+    assert [r["balance"] for r in db.read("accounts", order_by="id")] == [50, 150, 0]
+    # A second connection sees the committed data
+    import sqlite3
+
+    other = sqlite3.connect(db.database_name)
+    assert other.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 3
+    other.close()
+
+
+def test_transaction_rolls_back_on_error(open_sqlstore_database: SQLStore):
+    """An exception inside the block undoes every change of the block and continues."""
+    db = open_sqlstore_database
+    db.create_table("accounts", {"id": "INTEGER PRIMARY KEY", "balance": "INTEGER"})
+    db.store("accounts", {"id": 1, "balance": 100})
+
+    with pytest.raises(RuntimeError):
+        with db.transaction():
+            db.update("accounts", {"balance": 0}, condition="id = 1")
+            db.store("accounts", {"id": 2, "balance": 5})
+            db.execute_sql("DELETE FROM accounts WHERE id = 1")
+            raise RuntimeError("boom")
+
+    assert db.read("accounts") == [{"id": 1, "balance": 100}]
+    # The store works normally afterwards
+    db.store("accounts", {"id": 2, "balance": 7})
+    assert len(db.read("accounts")) == 2
+
+
+def test_transaction_rolls_back_on_database_error(open_sqlstore_database: SQLStore):
+    """A failed operation inside the block undoes the ones before it."""
+    db = open_sqlstore_database
+    db.create_table("accounts", {"id": "INTEGER PRIMARY KEY", "balance": "INTEGER"})
+
+    with pytest.raises(DBStorageSQLStoreError):
+        with db.transaction():
+            db.store("accounts", {"id": 1, "balance": 1})
+            db.store("accounts", {"id": 1, "balance": 2})  # duplicate key
+
+    assert db.read("accounts") == []
+
+
+def test_nested_transactions_commit_at_the_end_of_the_outer_one(open_sqlstore_database: SQLStore):
+    """A nested block joins the outer transaction: an error in the outer block undoes it too."""
+    db = open_sqlstore_database
+    db.create_table("accounts", {"id": "INTEGER PRIMARY KEY", "balance": "INTEGER"})
+
+    with pytest.raises(RuntimeError):
+        with db.transaction():
+            with db.transaction():
+                db.store("accounts", {"id": 1, "balance": 1})
+            raise RuntimeError("boom")
+    assert db.read("accounts") == []
+
+    with db.transaction():
+        with db.transaction():
+            db.store("accounts", {"id": 1, "balance": 1})
+        db.store("accounts", {"id": 2, "balance": 2})
+    assert len(db.read("accounts")) == 2
+
+
+def test_transaction_keeps_other_threads_out(open_sqlstore_database: SQLStore):
+    """Another thread reads only after the transaction is over, so it never sees half of it."""
+    import threading
+
+    db = open_sqlstore_database
+    db.create_table("accounts", {"id": "INTEGER PRIMARY KEY", "balance": "INTEGER"})
+    db.store("accounts", {"id": 1, "balance": 100})
+    db.store("accounts", {"id": 2, "balance": 100})
+
+    seen: list[int] = []
+    inside = threading.Event()
+
+    def reader():
+        inside.wait(5)
+        seen.append(sum(r["balance"] for r in db.read("accounts")))
+
+    thread = threading.Thread(target=reader)
+    thread.start()
+    with db.transaction():
+        db.update("accounts", {"balance": 0}, condition="id = 1")
+        inside.set()
+        time.sleep(0.2)  # the reader is waiting for the lock here
+        db.update("accounts", {"balance": 200}, condition="id = 2")
+    thread.join(5)
+
+    assert seen == [200]
+
+
+def test_create_or_replace_table_is_refused_inside_a_transaction(open_sqlstore_database: SQLStore):
+    """create_or_replace_table() manages its own transaction and cannot join another one."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+
+    with pytest.raises(DBStorageSQLStoreError):
+        with db.transaction():
+            db.store("test_table", {"id": 1, "name": "kept out"})
+            db.create_or_replace_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT", "age": "INTEGER"})
+    assert db.read("test_table") == []
+
+
+@pytest.fixture
+def sqlstore_factory():
+    """Fixture to create SQLStore databases with options, all on the same file in a temporary directory."""
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
+        opened: list[SQLStore] = []
+
+        def create(**options) -> SQLStore:
+            with patch("os.makedirs"):
+                db = SQLStore(database_name="test", **options)
+            db.database_name = os.path.join(tmpdir, "test.db")
+            opened.append(db)
+            return db
+
+        yield create
+        for db in opened:
+            db.stop()
+        gc.collect()
+
+
+def _pragma(db: SQLStore, name: str):
+    res = db.execute_sql(f"PRAGMA {name}")
+    assert res is not None
+    return res[0][name]
+
+
+def test_power_loss_safe_is_the_default(sqlstore_factory):
+    """By default every change is flushed to disk, and the journal of the file is left as it is."""
+    db = sqlstore_factory()
+    assert db.power_loss_safe is True
+    assert _pragma(db, "synchronous") == 2  # FULL
+    assert _pragma(db, "journal_mode") == "delete"
+
+
+def test_fast_writes_without_power_loss_safety(sqlstore_factory):
+    """power_loss_safe=False turns on write-ahead logging with the relaxed flush policy."""
+    db = sqlstore_factory(power_loss_safe=False)
+    assert _pragma(db, "journal_mode") == "wal"
+    assert _pragma(db, "synchronous") == 1  # NORMAL
+
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    assert db.store("test_table", {"name": "saved"}) == 1
+    assert os.path.exists(db.database_name + "-wal")
+    assert db.read("test_table") == [{"id": 1, "name": "saved"}]
+
+
+def test_safe_store_on_a_database_used_with_fast_writes(sqlstore_factory):
+    """A database that was used with fast writes is safe again when reopened with the default."""
+    fast = sqlstore_factory(power_loss_safe=False)
+    fast.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    fast.store("test_table", {"name": "written fast"})
+    fast.stop()
+
+    safe = sqlstore_factory()
+    # The file keeps write-ahead logging, which is safe once every change is flushed
+    assert _pragma(safe, "journal_mode") == "wal"
+    assert _pragma(safe, "synchronous") == 2  # FULL
+    assert safe.store("test_table", {"name": "written safe"}) == 2
+    assert [r["name"] for r in safe.read("test_table", order_by="id")] == ["written fast", "written safe"]
+    safe.stop()
+
+    fast_again = sqlstore_factory(power_loss_safe=False)
+    assert _pragma(fast_again, "synchronous") == 1  # NORMAL
+    assert len(fast_again.read("test_table")) == 2
+
+
+def test_fast_writes_fall_back_to_safe_without_write_ahead_logging(sqlstore_factory):
+    """Where write-ahead logging is not available the relaxed flush policy is not used: it would not be safe."""
+    db = sqlstore_factory(power_loss_safe=False)
+    db.database_name = ":memory:"  # an in-memory database cannot use write-ahead logging
+
+    assert _pragma(db, "journal_mode") == "memory"
+    assert _pragma(db, "synchronous") == 2  # FULL
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    assert db.store("test_table", {"id": 1}) == 1
+
+
+def test_settings_changed_with_raw_sql_still_apply(sqlstore_factory):
+    """An app that tunes SQLite itself with execute_sql, as before this option existed, keeps working."""
+    db = sqlstore_factory()
+    db.start()
+    db.execute_sql("PRAGMA journal_mode=WAL")
+    db.execute_sql("PRAGMA synchronous=NORMAL")
+
+    assert _pragma(db, "journal_mode") == "wal"
+    assert _pragma(db, "synchronous") == 1  # NORMAL
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    assert db.store("test_table", {"id": 1}) == 1
+
+
+def test_read_with_expressions_as_columns(open_sqlstore_database: SQLStore):
+    """The columns of read() can be SQL expressions, named with AS."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "age": "INTEGER"})
+
+    # On an empty table an aggregate still answers one row, with NULL values
+    assert db.read("test_table", columns=["COUNT(*) AS total", "MAX(id) AS last_id"]) == [{"total": 0, "last_id": None}]
+
+    for age in (30, 17, 41):
+        db.store("test_table", {"age": age})
+    assert db.read("test_table", columns=["COUNT(*) AS total", "MAX(id) AS last_id", "MIN(age) AS youngest"]) == [
+        {"total": 3, "last_id": 3, "youngest": 17}
+    ]
+    assert db.read("test_table", columns=["COUNT(*) AS adults"], condition="age >= ?", args=(18,)) == [{"adults": 2}]
+    assert db.read("test_table", columns=["id", "age * 2 AS doubled"], order_by="id", limit=1) == [{"id": 1, "doubled": 60}]
+
+
+def test_failed_operation_leaves_no_open_transaction(open_sqlstore_database: SQLStore):
+    """A failed operation is rolled back at once: nothing stays pending on the connection."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    db.store("test_table", {"id": 1, "name": "first"})
+
+    failing = [
+        lambda: db.store("test_table", {"id": 1, "name": "duplicate"}),
+        lambda: db.update("test_table", {"missing_column": 1}),
+        lambda: db.delete("test_table", condition="missing_column = 1"),
+        lambda: db.execute_sql("INSERT INTO test_table (id, name) VALUES (1, 'duplicate')"),
+        lambda: db.execute_sql("UPDATE missing_table SET a = 1"),
+    ]
+    for operation in failing:
+        with pytest.raises(DBStorageSQLStoreError):
+            operation()
+        assert db.conn is not None and not db.conn.in_transaction
+
+    assert db.read("test_table") == [{"id": 1, "name": "first"}]
+
+
+def test_schema_change_after_a_failed_operation(open_sqlstore_database: SQLStore):
+    """create_or_replace_table() works right after an operation that failed."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER", "name": "TEXT"})
+    db.execute_sql("CREATE UNIQUE INDEX test_table_id ON test_table (id)")
+    db.store("test_table", {"id": 1, "name": "first"})
+    with pytest.raises(DBStorageSQLStoreError):
+        db.store("test_table", {"id": 1, "name": "duplicate"})
+
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER"})
+
+    assert db.read("test_table") == [{"id": 1, "name": "first", "age": None}]
+
+
+def test_failed_operation_inside_a_transaction_is_left_to_the_block(open_sqlstore_database: SQLStore):
+    """Inside transaction() a failed operation undoes nothing by itself: the block can handle the error and go on."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+
+    with db.transaction():
+        db.store("test_table", {"id": 1, "name": "first"})
+        with pytest.raises(DBStorageSQLStoreError):
+            db.store("test_table", {"id": 1, "name": "duplicate"})
+        db.store("test_table", {"id": 2, "name": "second"})
+
+    assert [r["name"] for r in db.read("test_table", order_by="id")] == ["first", "second"]
+
+
+def test_create_or_replace_table_commits_the_schema_change(open_sqlstore_database: SQLStore):
+    """The new schema is saved when the call returns, without waiting for another write."""
+    import sqlite3
+
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER", "name": "TEXT"})
+    db.store("test_table", {"id": 1, "name": "first"})
+
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER"})
+
+    assert db.conn is not None and not db.conn.in_transaction
+    # A second connection sees the new column, as the app would after a restart
+    other = sqlite3.connect(db.database_name)
+    assert [row[1] for row in other.execute("PRAGMA table_info(test_table)")] == ["id", "name", "age"]
+    other.close()
+
+
+def test_create_or_replace_table_twice_in_a_row(open_sqlstore_database: SQLStore):
+    """Schema changes can follow each other, also when one of them changes nothing."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER", "name": "TEXT"})
+
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER"})
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER"})  # nothing to change
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER", "city": "TEXT"})
+    db.create_or_replace_table("test_table", {"id": "INTEGER", "city": "TEXT"})
+
+    db.store("test_table", {"id": 1, "city": "Turin"})
+    assert db.read("test_table") == [{"id": 1, "city": "Turin"}]
+    assert db.conn is not None and not db.conn.in_transaction
+
+
+def test_create_or_replace_table_refused_change_leaves_no_open_transaction(open_sqlstore_database: SQLStore):
+    """A refused schema change is rolled back and reported with the brick's own error."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER", "name": "TEXT"})
+
+    with pytest.raises(DBStorageSQLStoreError):
+        db.create_or_replace_table("test_table", {"id": "TEXT", "name": "TEXT"})
+    assert db.conn is not None and not db.conn.in_transaction
+
+    # An SQLite error while changing the schema is not raised as it is
+    with patch.object(db, "conn_lock"), patch.object(db, "conn") as conn:
+        import sqlite3
+
+        conn.cursor.return_value.fetchone.return_value = ("test_table",)
+        conn.execute.side_effect = sqlite3.OperationalError("cannot start a transaction within a transaction")
+        with pytest.raises(DBStorageSQLStoreError):
+            db.create_or_replace_table("test_table", {"id": "INTEGER", "name": "TEXT", "age": "INTEGER"})
+
+
+def test_transaction_starts_when_the_block_is_entered(open_sqlstore_database: SQLStore):
+    """The transaction is open from the first line of the block, not from its first change."""
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+
+    assert db.conn is not None and not db.conn.in_transaction
+    with db.transaction():
+        assert db.conn.in_transaction
+        db.read("test_table")
+        assert db.conn.in_transaction
+    assert not db.conn.in_transaction
+
+
+def test_transaction_rolls_back_tables_created_and_dropped(open_sqlstore_database: SQLStore):
+    """A table created or dropped inside a block that fails is put back as it was."""
+    db = open_sqlstore_database
+    db.create_table("kept", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    db.store("kept", {"id": 1, "name": "first"})
+
+    with pytest.raises(RuntimeError):
+        with db.transaction():
+            db.create_table("made_inside", {"id": "INTEGER"})  # before any change to the data
+            db.store("made_inside", {"id": 1}, create_table=False)
+            db.drop_table("kept")
+            raise RuntimeError("boom")
+
+    names = [r["name"] for r in db.execute_sql("SELECT name FROM sqlite_master WHERE type='table'") or []]
+    assert names == ["kept"]
+    assert db.read("kept") == [{"id": 1, "name": "first"}]
+
+    with db.transaction():
+        db.create_table("made_inside", {"id": "INTEGER"})
+    assert db.read("made_inside") == []
+
+
+def test_transaction_keeps_other_writers_out_between_a_read_and_a_write(open_sqlstore_database: SQLStore):
+    """Another connection to the same file can write only after the block ends, so what the block read stays true."""
+    import sqlite3
+    import threading
+
+    db = open_sqlstore_database
+    db.create_table("counter", {"id": "INTEGER PRIMARY KEY", "value": "INTEGER"})
+    db.store("counter", {"id": 1, "value": 10})
+
+    written = threading.Event()
+
+    def other_program():
+        other = sqlite3.connect(db.database_name, timeout=10)
+        other.execute("UPDATE counter SET value = value + 100 WHERE id = 1")
+        other.commit()
+        other.close()
+        written.set()
+
+    with db.transaction():
+        value = db.read("counter", condition="id = 1")[0]["value"]
+        thread = threading.Thread(target=other_program)
+        thread.start()
+        assert not written.wait(0.3)  # the other writer is waiting for the block to end
+        db.update("counter", {"value": value + 1}, condition="id = 1")
+    thread.join(10)
+
+    assert written.is_set()
+    # Neither update is lost: 10 + 1 from the block, then + 100 from the other writer
+    assert db.read("counter")[0]["value"] == 111
+
+
+def test_transaction_that_cannot_start_raises_the_brick_error(open_sqlstore_database: SQLStore):
+    """If another program keeps the database locked for writing, the block does not run."""
+    import sqlite3
+
+    db = open_sqlstore_database
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    assert db.conn is not None
+    db.conn.execute("PRAGMA busy_timeout=100")  # do not wait the default 5 s for the lock
+
+    other = sqlite3.connect(db.database_name)
+    other.execute("BEGIN IMMEDIATE")
+    try:
+        ran = False
+        with pytest.raises(DBStorageSQLStoreError):
+            with db.transaction():
+                ran = True
+        assert not ran
+    finally:
+        other.rollback()
+        other.close()
+
+    # Once the lock is released transactions work again
+    with db.transaction():
+        db.store("test_table", {"id": 1})
+    assert db.read("test_table") == [{"id": 1}]
+
+
+def test_stop_releases_the_connection_and_start_reopens_it(sqlstore_factory):
+    """After stop() the store can be started and used again, on the same data."""
+    db = sqlstore_factory()
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    db.store("test_table", {"name": "before"})
+    first_connection = db.conn
+
+    db.stop()
+    assert db.conn is None
+    with pytest.raises(sqlite3.ProgrammingError):  # the old connection is really closed
+        first_connection.execute("SELECT 1")
+
+    db.start()
+    assert db.conn is not None and db.conn is not first_connection
+    assert db.read("test_table") == [{"id": 1, "name": "before"}]
+    assert db.store("test_table", {"name": "after"}) == 2
+    assert db.update("test_table", {"name": "changed"}, condition="id = ?", args=(1,)) == 1
+    with db.transaction():
+        db.delete("test_table", condition="id = ?", args=(2,))
+    assert db.read("test_table") == [{"id": 1, "name": "changed"}]
+
+
+def test_stop_twice_and_stop_before_start(sqlstore_factory):
+    """stop() on a store that is not open does nothing."""
+    db = sqlstore_factory()
+    db.stop()  # never started
+    db.start()
+    db.stop()
+    db.stop()
+    assert db.conn is None
+
+
+def test_operation_after_stop_reopens_the_store(sqlstore_factory):
+    """An operation on a stopped store opens it again, as it does on a store never started."""
+    db = sqlstore_factory()
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    db.store("test_table", {"id": 1})
+    db.stop()
+
+    assert db.read("test_table") == [{"id": 1}]
+    assert db.conn is not None
+    db.stop()
+    assert db.store("test_table", {"id": 2}) == 2
+    db.stop()
+    assert db.execute_sql("SELECT COUNT(*) AS n FROM test_table") == [{"n": 2}]
+
+
+def test_stop_and_start_many_times(sqlstore_factory):
+    """Starting and stopping again and again leaves no file open."""
+    db = sqlstore_factory(power_loss_safe=False)
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    db.stop()
+    open_files = len(os.listdir("/proc/self/fd")) if os.path.isdir("/proc/self/fd") else None
+
+    for i in range(30):
+        db.start()
+        db.store("test_table", {"id": i + 1})
+        db.stop()
+        # Closing the last connection folds the write-ahead log back into the database file
+        assert not os.path.exists(db.database_name + "-wal")
+
+    if open_files is not None:
+        assert len(os.listdir("/proc/self/fd")) == open_files
+    assert len(db.read("test_table")) == 30
+
+
+def test_restart_applies_power_loss_safe_again(sqlstore_factory):
+    """The new connection gets the same safety setting as the first one."""
+    fast = sqlstore_factory(power_loss_safe=False)
+    fast.start()
+    fast.stop()
+    fast.start()
+    assert _pragma(fast, "journal_mode") == "wal"
+    assert _pragma(fast, "synchronous") == 1  # NORMAL
+    fast.stop()
+
+    safe = sqlstore_factory()
+    safe.start()
+    safe.stop()
+    safe.start()
+    assert _pragma(safe, "synchronous") == 2  # FULL
+
+
+def test_stop_drops_what_a_failed_operation_left(sqlstore_factory):
+    """Stopping after a failed operation does not raise, and the store restarts clean."""
+    db = sqlstore_factory()
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    db.store("test_table", {"id": 1})
+    with pytest.raises(DBStorageSQLStoreError):
+        db.store("test_table", {"id": 1})
+    db.stop()
+    db.start()
+    assert db.read("test_table") == [{"id": 1}]
+
+
+def test_stop_is_refused_inside_a_transaction(sqlstore_factory):
+    """stop() inside a transaction is an error: the block goes on and its changes are saved or undone as usual."""
+    db = sqlstore_factory()
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+
+    with db.transaction():
+        db.store("test_table", {"id": 1})
+        with pytest.raises(DBStorageSQLStoreError):
+            db.stop()
+        db.store("test_table", {"id": 2})
+
+    assert len(db.read("test_table")) == 2
+    db.stop()
+    assert db.conn is None
