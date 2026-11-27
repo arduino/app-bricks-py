@@ -143,7 +143,11 @@ class SQLStore:
         """
         with self.conn_lock:
             if self.conn is not None and self._transaction_depth == 0:
-                self.conn.rollback()
+                try:
+                    self.conn.rollback()
+                except sqlite3.Error as e:
+                    # The caller is already reporting the error of the operation: do not hide it
+                    logger.debug(f"Rollback of a failed operation not done: {e}")
 
     @contextmanager
     def transaction(self) -> Generator[None]:
@@ -212,15 +216,26 @@ class SQLStore:
     def stop(self) -> None:
         """Close the SQLite database connection.
 
+        The connection and the files it keeps open are released. The store can be used again
+        afterwards: start(), or any operation, opens a new connection to the same database.
+        Calling stop() on a store that is not open does nothing.
+
         Raises:
-            DBStorageSQLStoreError: If there is an error stopping the SQLite connection.
+            DBStorageSQLStoreError: If there is an error stopping the SQLite connection, or stop()
+                is called inside a transaction.
         """
         with self.conn_lock:
+            if self._transaction_depth > 0:
+                # The rest of the block would run on a new connection, outside the transaction
+                raise DBStorageSQLStoreError("stop() cannot be used inside a transaction")
             if self.conn:
                 try:
                     self.conn.close()
                 except sqlite3.Error as e:
                     raise DBStorageSQLStoreError(f"Error stopping SQLite connection: {e}")
+                finally:
+                    # Forget the connection also when closing it failed: a closed one cannot be used again
+                    self.conn = None
 
     def create_table(self, table: str, columns: dict[str, str]) -> None:
         """Create a table in the SQLite database if it does not already exist.

@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import gc
+import sqlite3
 import pytest
 import os
 import tempfile
@@ -1298,3 +1299,114 @@ def test_transaction_that_cannot_start_raises_the_brick_error(open_sqlstore_data
     with db.transaction():
         db.store("test_table", {"id": 1})
     assert db.read("test_table") == [{"id": 1}]
+
+
+def test_stop_releases_the_connection_and_start_reopens_it(sqlstore_factory):
+    """After stop() the store can be started and used again, on the same data."""
+    db = sqlstore_factory()
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    db.store("test_table", {"name": "before"})
+    first_connection = db.conn
+
+    db.stop()
+    assert db.conn is None
+    with pytest.raises(sqlite3.ProgrammingError):  # the old connection is really closed
+        first_connection.execute("SELECT 1")
+
+    db.start()
+    assert db.conn is not None and db.conn is not first_connection
+    assert db.read("test_table") == [{"id": 1, "name": "before"}]
+    assert db.store("test_table", {"name": "after"}) == 2
+    assert db.update("test_table", {"name": "changed"}, condition="id = ?", args=(1,)) == 1
+    with db.transaction():
+        db.delete("test_table", condition="id = ?", args=(2,))
+    assert db.read("test_table") == [{"id": 1, "name": "changed"}]
+
+
+def test_stop_twice_and_stop_before_start(sqlstore_factory):
+    """stop() on a store that is not open does nothing."""
+    db = sqlstore_factory()
+    db.stop()  # never started
+    db.start()
+    db.stop()
+    db.stop()
+    assert db.conn is None
+
+
+def test_operation_after_stop_reopens_the_store(sqlstore_factory):
+    """An operation on a stopped store opens it again, as it does on a store never started."""
+    db = sqlstore_factory()
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    db.store("test_table", {"id": 1})
+    db.stop()
+
+    assert db.read("test_table") == [{"id": 1}]
+    assert db.conn is not None
+    db.stop()
+    assert db.store("test_table", {"id": 2}) == 2
+    db.stop()
+    assert db.execute_sql("SELECT COUNT(*) AS n FROM test_table") == [{"n": 2}]
+
+
+def test_stop_and_start_many_times(sqlstore_factory):
+    """Starting and stopping again and again leaves no file open."""
+    db = sqlstore_factory(power_loss_safe=False)
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    db.stop()
+    open_files = len(os.listdir("/proc/self/fd")) if os.path.isdir("/proc/self/fd") else None
+
+    for i in range(30):
+        db.start()
+        db.store("test_table", {"id": i + 1})
+        db.stop()
+        # Closing the last connection folds the write-ahead log back into the database file
+        assert not os.path.exists(db.database_name + "-wal")
+
+    if open_files is not None:
+        assert len(os.listdir("/proc/self/fd")) == open_files
+    assert len(db.read("test_table")) == 30
+
+
+def test_restart_applies_power_loss_safe_again(sqlstore_factory):
+    """The new connection gets the same safety setting as the first one."""
+    fast = sqlstore_factory(power_loss_safe=False)
+    fast.start()
+    fast.stop()
+    fast.start()
+    assert _pragma(fast, "journal_mode") == "wal"
+    assert _pragma(fast, "synchronous") == 1  # NORMAL
+    fast.stop()
+
+    safe = sqlstore_factory()
+    safe.start()
+    safe.stop()
+    safe.start()
+    assert _pragma(safe, "synchronous") == 2  # FULL
+
+
+def test_stop_drops_what_a_failed_operation_left(sqlstore_factory):
+    """Stopping after a failed operation does not raise, and the store restarts clean."""
+    db = sqlstore_factory()
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    db.store("test_table", {"id": 1})
+    with pytest.raises(DBStorageSQLStoreError):
+        db.store("test_table", {"id": 1})
+    db.stop()
+    db.start()
+    assert db.read("test_table") == [{"id": 1}]
+
+
+def test_stop_is_refused_inside_a_transaction(sqlstore_factory):
+    """stop() inside a transaction is an error: the block goes on and its changes are saved or undone as usual."""
+    db = sqlstore_factory()
+    db.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+
+    with db.transaction():
+        db.store("test_table", {"id": 1})
+        with pytest.raises(DBStorageSQLStoreError):
+            db.stop()
+        db.store("test_table", {"id": 2})
+
+    assert len(db.read("test_table")) == 2
+    db.stop()
+    assert db.conn is None
