@@ -6,10 +6,12 @@ import threading
 from unittest.mock import patch
 
 import pytest
+from langchain_core.messages import HumanMessage
 
 import arduino.app_bricks.cloud_llm.cloud_llm as cloud_llm_module
 import arduino.app_bricks.llm.local_llm as local_llm_module
 from arduino.app_bricks.cloud_llm import CloudLLM
+from arduino.app_bricks.cloud_llm.memory import WindowedChatMessageHistory
 from arduino.app_bricks.llm.local_llm import LargeLanguageModel
 
 
@@ -46,7 +48,7 @@ def test_local_llm_logs_local_model_name_while_using_openai_compatible_adapter()
     assert llm._model_name == "genie:qwen3_4b_instruct_2507"
 
     with patch.object(cloud_llm_module.logger, "info") as log_info:
-        llm._get_message_with_history("hello")
+        llm._user_message("hello")
 
     log_info.assert_called_once_with("Initializing model genie:qwen3_4b_instruct_2507...")
 
@@ -57,7 +59,8 @@ def test_local_llm_chat_stream_logs_non_api_errors_raised_during_iteration():
     llm._keep_streaming = threading.Event()
     llm._reasoning_effort_default = None
     llm._callbacks = None
-    llm._get_message_with_history = lambda *_args, **_kwargs: []
+    llm._history = WindowedChatMessageHistory(k=10)
+    llm._user_message = lambda *_args, **_kwargs: HumanMessage(content="hello")
 
     with patch.object(local_llm_module.logger, "error") as log_error:
         with pytest.raises(RuntimeError, match="Response generation failed: provider exploded"):

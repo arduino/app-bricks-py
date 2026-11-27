@@ -6,9 +6,11 @@ import threading
 from unittest.mock import patch
 
 import pytest
+from langchain_core.messages import HumanMessage
 
 import arduino.app_bricks.cloud_llm.cloud_llm as cloud_llm_module
 from arduino.app_bricks.cloud_llm.cloud_llm import CloudLLM
+from arduino.app_bricks.cloud_llm.memory import WindowedChatMessageHistory
 
 
 class FailingStreamModel:
@@ -22,7 +24,8 @@ def test_chat_stream_logs_errors_raised_during_iteration():
     llm._keep_streaming = threading.Event()
     llm._reasoning_effort_default = None
     llm._callbacks = None
-    llm._get_message_with_history = lambda *_args, **_kwargs: []
+    llm._history = WindowedChatMessageHistory(k=10)
+    llm._user_message = lambda *_args, **_kwargs: HumanMessage(content="hello")
 
     with patch.object(cloud_llm_module.logger, "error") as log_error:
         with pytest.raises(RuntimeError, match="Response generation failed: provider exploded"):

@@ -116,7 +116,7 @@ def answer_about_frame(frame_bytes: bytes, question_wav: bytes) -> str:
 
 ### Enable Conversation Memory
 
-Memory is off by default. Use `with_memory()` when follow-up prompts should keep recent context across calls. Pass `persistence=True` to retain memory across restarts: this uses the `SQLStore` brick internally, so no extra setup is required. The text of every turn stays in the history, but only the latest message with images or audio keeps them: in earlier messages each image becomes the text `[image]` and each audio clip `[audio]`. Persisted history stores the placeholders only.
+Memory is off by default. Use `with_memory()` when follow-up prompts should keep recent context across calls. Pass `persistence=True` to retain memory across restarts: this uses the `SQLStore` brick internally, so no extra setup is required. The text of every turn stays in the history, but only the latest message with images or audio keeps them: in earlier messages each image becomes the text `[image]` and each audio clip `[audio]`. Persisted history stores the placeholders only. When a request does not fit in the context window of the model, the memory drops its oldest turns and the request is sent again; `on_context_full` in `with_memory()` changes that, as in the `llm` brick.
 
 ```python
 from arduino.app_bricks.multimodal_llm import MultimodalLanguageModel

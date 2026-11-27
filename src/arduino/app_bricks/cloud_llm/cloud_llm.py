@@ -8,15 +8,17 @@ import os
 import re
 import threading
 from dataclasses import dataclass
-from typing import Optional, Self, Union, Any
-from collections.abc import Iterator, Sequence, Callable
+from itertools import chain
+from typing import Literal, Optional, Self, Union, Any
+from collections.abc import Iterable, Iterator, Sequence, Callable
 
+from langchain_core.exceptions import ContextOverflowError
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, AIMessageChunk, ToolCall, message_chunk_to_message
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool, StructuredTool
 
-from arduino.app_utils import brick
+from arduino.app_utils import AppError, brick
 from arduino.app_utils.audio import AudioClip, AudioInput
 
 from .utils import logger
@@ -29,9 +31,15 @@ from .models import (
     ANTHROPIC_DEFAULT_THINKING_BUDGET,
     ANTHROPIC_EFFORT_MAP,
 )
-from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessageHistory, keep_latest_media
+from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessageHistory, drop_oldest_turns, keep_latest_media, text_size
 
 DEFAULT_MEMORY = 10
+
+# What the memory does when a request does not fit in the context window of the model (see `with_memory`).
+ContextFullPolicy = Literal["drop_oldest", "raise"] | Callable[[list[BaseMessage]], list[BaseMessage]]
+
+# How many times a request rejected as longer than the context window is sent again after making room in the memory.
+CONTEXT_FULL_RETRIES = 3
 
 ToolLike = BaseTool | Callable[..., Any]
 
@@ -40,6 +48,28 @@ class AlreadyGenerating(Exception):
     """Exception raised when a generation is already in progress."""
 
     pass
+
+
+class ContextLengthExceededError(AppError, RuntimeError):
+    """Raised when the request does not fit in the context window of the model.
+
+    The request holds the system prompt, the messages in the memory window and the new
+    message, with its images, audio and tool results. When it does not fit, the memory first
+    makes room as `on_context_full` in `with_memory()` says, by default dropping its oldest
+    turns: this error is raised when that is not enough (the new message alone does not fit)
+    or when `on_context_full` is `"raise"`. The turn that failed is not added to the memory,
+    and the memory is left as it was.
+    It is a `RuntimeError`, like the other request failures.
+
+    Attributes:
+        prompt_tokens (int | None): Tokens of the request, when the model server reports them.
+        context_size (int | None): Tokens the context window holds, when the model server reports them.
+    """
+
+    def __init__(self, *args: Any, hint: str | None = None, prompt_tokens: int | None = None, context_size: int | None = None) -> None:
+        super().__init__(*args, hint=hint)
+        self.prompt_tokens = prompt_tokens
+        self.context_size = context_size
 
 
 @dataclass(frozen=True)
@@ -86,6 +116,9 @@ class CloudLLM:
     # carries them only, replacing earlier ones with text placeholders (see
     # WindowedChatMessageHistory). Off: every turn keeps its media.
     _latest_media_only = False
+
+    # How to make a request fit in the context window again (see ContextLengthExceededError).
+    _CONTEXT_LENGTH_HINT = "Send a shorter message, or make room in the memory with clear_memory()."
 
     def __init__(
         self,
@@ -235,12 +268,18 @@ class CloudLLM:
         self,
         max_messages: int = DEFAULT_MEMORY,
         persistence: bool | MessagePersistence | None = None,
+        on_context_full: ContextFullPolicy = "drop_oldest",
     ) -> Self:
         """Enables conversational memory for this instance.
 
         Configures the Brick to retain a window of previous messages, allowing the
         AI to maintain context across multiple interactions. An optional persistence
         backend stores the history so it can resume across restarts.
+
+        A turn enters the memory once the model has answered it. When a request does not
+        fit in the context window of the model, the memory makes room as `on_context_full`
+        says and the request is sent again; the new message is never cut. The persistence
+        backend keeps the whole conversation either way.
 
         Args:
             max_messages (int): The maximum number of messages.
@@ -249,10 +288,23 @@ class CloudLLM:
                 `True` instantiates a default `SQLMessagePersistence()`. Pass a
                 `MessagePersistence` implementation directly (e.g.
                 `SQLMessagePersistence(thread_id="user-42")`) for full control.
+            on_context_full (ContextFullPolicy): What the memory does when a request does not
+                fit in the context window. `"drop_oldest"` (default) drops the oldest whole
+                turns, down to about half of the context window when the model reports its size,
+                so that the next turns fit as well; a warning is logged. `"raise"` keeps the memory
+                and raises `ContextLengthExceededError`. A callable takes the messages of the memory
+                window (oldest first, without the system prompt) and returns fewer messages to keep
+                in their place, for example a summary of the oldest turns followed by the newest
+                ones; the result must still be a valid conversation, starting with a user message.
 
         Returns:
             Self: The current instance, allowing for method chaining.
+
+        Raises:
+            ValueError: If `on_context_full` is neither `"drop_oldest"`, `"raise"` nor a callable.
         """
+        if not callable(on_context_full) and on_context_full not in ("drop_oldest", "raise"):
+            raise ValueError(f"Unsupported on_context_full {on_context_full!r}: use 'drop_oldest', 'raise' or a callable.")
         if persistence is True:
             store: MessagePersistence | None = SQLMessagePersistence()
         elif persistence in (False, None):
@@ -261,6 +313,7 @@ class CloudLLM:
             store = persistence
 
         self._max_messages = max_messages
+        self._on_context_full: ContextFullPolicy = on_context_full
         self._history = WindowedChatMessageHistory(
             k=max_messages,
             system_message=self._system_prompt,
@@ -270,13 +323,13 @@ class CloudLLM:
 
         return self
 
-    def _get_message_with_history(
+    def _user_message(
         self,
         user_input: str,
         images: Sequence[str | bytes] | None = None,
         audio: AudioInput | Sequence[AudioInput] | None = None,
-    ) -> list[BaseMessage]:
-        """Retrieves the current message history for the conversation, including the new user input.
+    ) -> HumanMessage:
+        """Builds the user message that starts a turn.
 
         Args:
             user_input (str): The latest input message from the user.
@@ -286,8 +339,7 @@ class CloudLLM:
                 in the prompt as ``input_audio`` parts (see ``AudioClip.from_input``). None (default) sends no audio.
 
         Returns:
-            list[BaseMessage]: The list of messages in the conversation history,
-                including system prompt if set.
+            HumanMessage: The message, with its images and audio before the text.
         """
 
         if self._model_loaded is False:
@@ -307,16 +359,25 @@ class CloudLLM:
                 content.append({"type": "input_audio", "input_audio": {"data": base64.b64encode(clip.data).decode(), "format": clip.format}})
             content.append({"type": "text", "text": user_input})
 
-            message = HumanMessage(content=content)
-        else:
-            message = HumanMessage(content=user_input)
+            return HumanMessage(content=content)
+        return HumanMessage(content=user_input)
 
-        messages = self._history.get_messages() + [message]
+    def _scope(self, turn: list[BaseMessage]) -> list[BaseMessage]:
+        """Returns the messages a request sends: the history, with the system prompt, then the current turn.
+
+        The turn is added to the history only once the model has answered it, so a failed request
+        leaves the history as it was.
+
+        Args:
+            turn (list[BaseMessage]): The user message, followed by any tool exchange of the turn.
+
+        Returns:
+            list[BaseMessage]: The messages, oldest first.
+        """
+        messages = self._history.get_messages() + turn
         if self._latest_media_only:
             # A new turn with media replaces the media the history still sends.
             messages = keep_latest_media(messages)
-        self._history.add_messages([message])
-
         return messages
 
     def _process_tool_calls(self, tool_calls: list[ToolCall], input_messages: list[BaseMessage]) -> list[BaseMessage]:
@@ -365,33 +426,40 @@ class CloudLLM:
         self,
         assistant_message: BaseMessage,
         tool_calls: list[ToolCall],
-        input_messages: list[BaseMessage],
-    ) -> list[BaseMessage]:
-        """Runs the requested tool calls and records the whole exchange in history.
+        turn: list[BaseMessage],
+    ) -> None:
+        """Runs the requested tool calls and appends the whole exchange to the current turn.
 
         The assistant message carrying the tool calls and the resulting tool messages are
-        added to the conversation history, so the next turn resends the same conversation
-        the model has already seen. Collapsing a tool round-trip into its final answer
-        rewrites past turns, which breaks local runners that keep session state and diff
-        the incoming messages against it: the genie runner answers
-        ``400 No new messages to process`` on the turn that follows a tool call.
+        recorded in the conversation history with the rest of the turn, so the next turn
+        resends the same conversation the model has already seen. Collapsing a tool
+        round-trip into its final answer rewrites past turns, which breaks local runners
+        that keep session state and diff the incoming messages against it: the genie runner
+        answers ``400 No new messages to process`` on the turn that follows a tool call.
 
         Args:
             assistant_message (BaseMessage): The assistant message holding the tool calls.
             tool_calls (list[ToolCall]): The tool calls requested by the model.
-            input_messages (list[BaseMessage]): The current message scope including history.
-
-        Returns:
-            list[BaseMessage]: Updated message scope, with the assistant message and the
-                tool results appended.
+            turn (list[BaseMessage]): The messages of the current turn, which the assistant
+                message and the tool results are appended to.
         """
         # Streamed messages arrive as chunks: store (and resend) the assembled message.
-        input_messages.append(message_chunk_to_message(assistant_message))
-        updated = self._process_tool_calls(tool_calls, input_messages.copy())
-        # Everything from the assistant message onwards is new: the tool results were
-        # appended by _process_tool_calls.
-        self._history.add_messages(updated[len(input_messages) - 1 :])
-        return updated
+        turn.append(message_chunk_to_message(assistant_message))
+        self._process_tool_calls(tool_calls, turn)
+
+    def _record_streamed_turn(self, turn: list[BaseMessage], answer_chunks: list[str]) -> None:
+        """Adds a streamed turn to the history, with the answer text streamed so far.
+
+        A stream stopped early records the partial answer; a stream stopped before any text
+        records the user message and any tool exchange only.
+
+        Args:
+            turn (list[BaseMessage]): The user message, followed by any tool exchange.
+            answer_chunks (list[str]): The streamed text of the final answer.
+        """
+        messages = (turn + [AIMessage(content="".join(answer_chunks))]) if answer_chunks else turn
+        if messages:
+            self._history.add_messages(messages)
 
     @staticmethod
     def _merge_streamed(gathered: AIMessage | None, token: AIMessage) -> AIMessage:
@@ -481,6 +549,7 @@ class CloudLLM:
             str: The complete text response generated by the AI.
 
         Raises:
+            ContextLengthExceededError: If the request does not fit in the context window of the model.
             RuntimeError: If the internal chain is not initialized, the model does not
                 support reasoning, or the API request fails.
             ValueError: If `reasoning_effort` is not a supported level or budget.
@@ -488,7 +557,7 @@ class CloudLLM:
         """
         try:
             return self._chat_invoke(message, images, reasoning_effort)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, ContextLengthExceededError):
             raise
         except Exception as e:
             logger.error(f"Response generation failed: {e}")
@@ -520,16 +589,17 @@ class CloudLLM:
             str: The complete text response generated by the AI.
 
         Raises:
+            ContextLengthExceededError: If the request does not fit in the context window of the model.
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             ValueError: If `reasoning_effort` is not a supported level or budget.
         """
         effort = reasoning_effort if reasoning_effort is not None else self._reasoning_effort_default
         model = self._model if effort is None else self._get_reasoning_model(effort)
-        input_messages = self._get_message_with_history(message, images, audio)
+        turn: list[BaseMessage] = [self._user_message(message, images, audio)]
         loops = 0
 
         while True:
-            match model.invoke(input=input_messages, config={"callbacks": self._callbacks}):
+            match self._fit_in_context(lambda scope: model.invoke(input=scope, config={"callbacks": self._callbacks}), turn):
                 case AIMessage() as response:
                     logger.debug(f"Model invoked. Full response: {response}")
                 case _:
@@ -542,10 +612,10 @@ class CloudLLM:
             if loops > self._max_tool_loops:
                 raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
 
-            input_messages = self._run_tool_exchange(response, response.tool_calls, input_messages)
+            self._run_tool_exchange(response, response.tool_calls, turn)
 
-        # Add the AI message to long term history
-        self._history.add_messages([response])
+        # The answered turn enters the history as a whole: the user message, any tool exchange and the answer
+        self._history.add_messages(turn + [response])
         return self._content_to_text(response.content)
 
     def chat_stream(self, message: str, images: Sequence[str | bytes] | None = None) -> Iterator[str]:
@@ -569,6 +639,7 @@ class CloudLLM:
             str: Chunks of text (tokens) from the AI response.
 
         Raises:
+            ContextLengthExceededError: If the request does not fit in the context window of the model.
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             AlreadyGenerating: If a streaming session is already active.
         """
@@ -608,8 +679,123 @@ class CloudLLM:
         Args:
             e (Exception): The exception that occurred during streaming.
         """
+        if isinstance(e, ContextLengthExceededError):
+            raise e
         self._logger.error(f"Response generation failed: {e}")
         raise RuntimeError(f"Response generation failed: {e}") from e
+
+    def _context_length_error(self, prompt_tokens: int | None = None, context_size: int | None = None) -> ContextLengthExceededError:
+        """Returns the error for a request that does not fit in the context window of the model.
+
+        Args:
+            prompt_tokens (int | None): Tokens of the request, when the model server reports them.
+            context_size (int | None): Tokens the context window holds, when the model server reports them.
+
+        Returns:
+            ContextLengthExceededError: The error, with the hint of this Brick.
+        """
+        sizes = f": the request takes {prompt_tokens} tokens, the context holds {context_size}" if prompt_tokens and context_size else ""
+        error_msg = f"The conversation does not fit in the context window of model '{self._model_name}'{sizes}."
+        return ContextLengthExceededError(error_msg, hint=self._CONTEXT_LENGTH_HINT, prompt_tokens=prompt_tokens, context_size=context_size)
+
+    def _as_context_length_error(self, e: Exception) -> ContextLengthExceededError | None:
+        """Tells whether the model rejected a request as longer than its context window.
+
+        Args:
+            e (Exception): The error a request raised.
+
+        Returns:
+            ContextLengthExceededError | None: The error that stands for `e`, or None when `e` is another failure.
+        """
+        return self._context_length_error() if isinstance(e, ContextOverflowError) else None
+
+    def _fit_in_context[T](self, request: Callable[[list[BaseMessage]], T], turn: list[BaseMessage]) -> T:
+        """Sends a request with the history and the current turn, making room in the memory when they do not fit.
+
+        A request the model rejects as longer than its context window is sent again once the
+        memory has made room as `on_context_full` says (see `with_memory`), up to
+        `CONTEXT_FULL_RETRIES` times. The current turn is never cut. When the request still does
+        not fit, the memory window is put back as it was before room was made.
+
+        Args:
+            request (Callable[[list[BaseMessage]], T]): Sends the request with the given messages and returns the response.
+            turn (list[BaseMessage]): The messages of the current turn: the user message and any tool exchange.
+
+        Returns:
+            T: What `request` returns.
+
+        Raises:
+            ContextLengthExceededError: If the request does not fit and the memory cannot make room.
+        """
+        attempt = 0
+        window: list[BaseMessage] | None = None
+        while True:
+            scope = self._scope(turn)
+            try:
+                return request(scope)
+            except Exception as e:
+                overflow = self._as_context_length_error(e)
+                if overflow is None:
+                    raise
+                previous = None if attempt == CONTEXT_FULL_RETRIES else self._make_room(overflow, scope, last=attempt == CONTEXT_FULL_RETRIES - 1)
+                if previous is None:
+                    if window is not None:
+                        # Making room did not help: the memory is left as it was
+                        self._history.restore(window)
+                    self._logger.error(str(overflow))
+                    raise overflow from e
+                window = previous if window is None else window
+                attempt += 1
+
+    def _make_room(self, overflow: ContextLengthExceededError, scope: list[BaseMessage], last: bool) -> list[BaseMessage] | None:
+        """Makes room in the memory for a request that did not fit in the context window, as `on_context_full` says.
+
+        `"drop_oldest"` drops the oldest whole turns: when the model reports the sizes, as many
+        as bring the request down to about half of the context window, measured by the share of
+        text they hold, so that the next turns fit as well; otherwise half of the text of the memory.
+        On the last retry it empties the memory, so that only a new message that does not fit alone fails.
+
+        Args:
+            overflow (ContextLengthExceededError): The error the request was rejected with.
+            scope (list[BaseMessage]): The messages the request sent.
+            last (bool): Whether the request is sent for the last time once room is made.
+
+        Returns:
+            list[BaseMessage] | None: The messages the memory window held before, or None when it is left as it was.
+        """
+        policy = self._on_context_full
+        if policy == "raise":
+            return None
+        if callable(policy):
+            compactor = policy
+        elif last:
+            compactor: Callable[[list[BaseMessage]], list[BaseMessage]] = lambda _window: []
+        elif overflow.prompt_tokens and overflow.context_size:
+            size = (1 - overflow.context_size / 2 / overflow.prompt_tokens) * sum(text_size(m) for m in scope)
+            compactor = lambda window: drop_oldest_turns(window, size)
+        else:
+            compactor = lambda window: drop_oldest_turns(window, sum(text_size(m) for m in window) / 2)
+
+        before = len(self._history.get_messages())
+        previous = self._history.compact(compactor)
+        if previous is not None:
+            self._logger.warning(f"{overflow} The memory went down by {before - len(self._history.get_messages())} messages to make room.")
+        return previous
+
+    @staticmethod
+    def _started[T](stream: Iterable[T]) -> Iterator[T]:
+        """Starts a lazy stream by pulling its first item, so that a request the model rejects raises here.
+
+        Args:
+            stream (Iterable[T]): The stream, not started yet.
+
+        Returns:
+            Iterator[T]: Every item of the stream, the first one included.
+        """
+        iterator = iter(stream)
+        for first in iterator:
+            return chain([first], iterator)
+        return iter(())
 
     def _chat_stream_invoke(
         self,
@@ -633,21 +819,27 @@ class CloudLLM:
             str: Chunks of text (tokens) from the AI response.
 
         Raises:
+            ContextLengthExceededError: If the request does not fit in the context window of the model.
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             AlreadyGenerating: If a streaming session is already active.
         """
         if self._keep_streaming.is_set():
             raise AlreadyGenerating("A streaming response is already in progress. Please stop it before starting a new one.")
         assistant_chunks: list[str] = []
+        turn: list[BaseMessage] = []
+        failed = False
 
         try:
             self._keep_streaming.set()
-            input_messages = self._get_message_with_history(message, images, audio)
+            turn.append(self._user_message(message, images, audio))
             loops = 0
 
             while True:
                 gathered: AIMessage | None = None
-                for token in self._model.stream(input=input_messages, config={"callbacks": self._callbacks}):
+                stream = self._fit_in_context(
+                    lambda scope: self._started(self._model.stream(input=scope, config={"callbacks": self._callbacks})), turn
+                )
+                for token in stream:
                     if not self._keep_streaming.is_set():
                         break  # This stops the iteration and halts further token generation
 
@@ -673,17 +865,20 @@ class CloudLLM:
                 if loops > self._max_tool_loops:
                     raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
 
-                input_messages = self._run_tool_exchange(gathered, gathered.tool_calls, input_messages)
+                self._run_tool_exchange(gathered, gathered.tool_calls, turn)
                 # The text streamed alongside the tool calls is already part of the
                 # recorded assistant message: only the answer that follows the tool
                 # results is persisted below.
                 assistant_chunks.clear()
 
+        except Exception:
+            # A failed turn is not recorded: the next one resends the history as it was
+            failed = True
+            raise
         finally:
             self._keep_streaming.clear()
-            if len(assistant_chunks) > 0:
-                full_response = "".join(assistant_chunks)
-                self._history.add_messages([AIMessage(content=full_response)])
+            if not failed:
+                self._record_streamed_turn(turn, assistant_chunks)
 
     def _get_reasoning_model(
         self, reasoning_effort: Union["ReasoningEffort", str, int, None] = None
@@ -1143,6 +1338,7 @@ class CloudLLM:
             ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
 
         Raises:
+            ContextLengthExceededError: If the request does not fit in the context window of the model.
             RuntimeError: If the model is not initialized, does not support reasoning, or the API request fails.
             ValueError: If `reasoning_effort` is not a supported level or budget.
             TypeError: If `reasoning_effort` is not a ReasoningEffort, str, int, or None.
@@ -1195,15 +1391,17 @@ class CloudLLM:
         if self._keep_streaming.is_set():
             raise AlreadyGenerating("A streaming response is already in progress. Please stop it before starting a new one.")
         assistant_chunks: list[str] = []
+        turn: list[BaseMessage] = []
+        failed = False
 
         try:
             self._keep_streaming.set()
-            input_messages = self._get_message_with_history(message, images)
+            turn.append(self._user_message(message, images))
             loops = 0
 
             while True:
                 gathered: AIMessage | None = None
-                for token in reasoning_model.stream(input_messages):
+                for token in self._fit_in_context(lambda scope: self._started(reasoning_model.stream(scope)), turn):
                     if not self._keep_streaming.is_set():
                         break  # This stops the iteration and halts further token generation
 
@@ -1229,17 +1427,20 @@ class CloudLLM:
                 if loops > self._max_tool_loops:
                     raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
 
-                input_messages = self._run_tool_exchange(gathered, gathered.tool_calls, input_messages)
+                self._run_tool_exchange(gathered, gathered.tool_calls, turn)
                 # The text streamed alongside the tool calls is already part of the
                 # recorded assistant message: only the answer that follows the tool
                 # results is persisted below.
                 assistant_chunks.clear()
 
+        except Exception:
+            # A failed turn is not recorded: the next one resends the history as it was
+            failed = True
+            raise
         finally:
             self._keep_streaming.clear()
-            if len(assistant_chunks) > 0:
-                full_response = "".join(assistant_chunks)
-                self._history.add_messages([AIMessage(content=full_response)])
+            if not failed:
+                self._record_streamed_turn(turn, assistant_chunks)
 
     def stop_stream(self) -> None:
         """Signals the active streaming generation to stop.

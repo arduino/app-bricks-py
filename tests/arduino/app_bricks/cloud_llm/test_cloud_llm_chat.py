@@ -17,10 +17,11 @@ import inspect
 from types import SimpleNamespace
 
 import pytest
+from langchain_core.exceptions import ContextOverflowError
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 
 import arduino.app_bricks.cloud_llm.cloud_llm as cloud_llm_module
-from arduino.app_bricks.cloud_llm import CloudLLM, CloudModel, tool
+from arduino.app_bricks.cloud_llm import CloudLLM, CloudModel, ContextLengthExceededError, tool
 from arduino.app_bricks.cloud_llm.cloud_llm import AlreadyGenerating, model_factory
 
 
@@ -914,3 +915,57 @@ def test_clear_memory_empties_history(make_llm, fake_model):
 
     llm.clear_memory()
     assert llm._history.get_messages() == []
+
+
+# --- Context window overflow --------------------------------------------------
+# The provider integrations of LangChain raise ContextOverflowError for a request longer than
+# the context window. The brick raises ContextLengthExceededError and leaves the memory as it
+# was, so the next turn does not resend the message that did not fit.
+
+
+def _overflow(*_args, **_kwargs):
+    raise ContextOverflowError("prompt is too long: 250000 tokens > 200000 maximum")
+
+
+def test_chat_raises_context_length_exceeded_and_records_nothing(make_llm, fake_model, monkeypatch):
+    monkeypatch.setattr(fake_model, "invoke", _overflow)
+    llm = make_llm()
+
+    with pytest.raises(ContextLengthExceededError) as excinfo:
+        llm.chat("a very long message")
+
+    assert "clear_memory()" in excinfo.value.hint
+    assert excinfo.value.prompt_tokens is None
+    assert llm._history.get_messages() == []
+
+
+def test_chat_stream_raises_context_length_exceeded_and_records_nothing(make_llm, fake_model, monkeypatch):
+    monkeypatch.setattr(fake_model, "stream", _overflow)
+    llm = make_llm()
+
+    with pytest.raises(ContextLengthExceededError):
+        list(llm.chat_stream("a very long message"))
+
+    assert llm._history.get_messages() == []
+
+
+def test_chat_without_sizes_drops_the_oldest_half_of_the_memory_and_retries(make_llm, fake_model, monkeypatch):
+    # The provider reports no sizes: the memory drops the turns holding half of its text
+    sent = []
+    answers = iter([ContextOverflowError("prompt is too long"), AIMessage(content="answer")])
+
+    def invoke(input, config=None):
+        sent.append([m.content for m in input if isinstance(m, HumanMessage)])
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(fake_model, "invoke", invoke)
+    llm = make_llm()
+    for i in range(4):
+        llm._history.add_messages([HumanMessage(content=f"q{i}"), AIMessage(content=f"a{i}")])
+
+    assert llm.chat("new") == "answer"
+
+    assert sent == [["q0", "q1", "q2", "q3", "new"], ["q2", "q3", "new"]]
