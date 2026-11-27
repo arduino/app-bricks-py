@@ -1,0 +1,28 @@
+From f59efb6e32a83bd7c768957c06601f20ce1d5436 Mon Sep 17 00:00:00 2001
+From: Marco Colombo <ing.marco.colombo@gmail.com>
+Date: Wed, 25 Nov 2026 21:23:25 +0100
+Subject: [PATCH] hexagon: properly release session at exit
+
+---
+ ggml/src/ggml-hexagon/ggml-hexagon.cpp | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/ggml/src/ggml-hexagon/ggml-hexagon.cpp b/ggml/src/ggml-hexagon/ggml-hexagon.cpp
+index 966219e52..ccb128e06 100644
+--- a/ggml/src/ggml-hexagon/ggml-hexagon.cpp
++++ b/ggml/src/ggml-hexagon/ggml-hexagon.cpp
+@@ -3972,7 +3972,10 @@ static void ggml_hexagon_init(ggml_backend_reg * reg) {
+                 vec_to_str<uint32_t, 16>(opt_pmu_evt).c_str());
+     }
+ 
+-    reg->context = new ggml_hexagon_registry(reg);
++    // static owner: sessions are released at exit, before the driver library (loaded earlier) is closed
++    static std::unique_ptr<ggml_hexagon_registry> registry;
++    registry     = std::make_unique<ggml_hexagon_registry>(reg);
++    reg->context = registry.get();
+ }
+ 
+ static const struct ggml_backend_reg_i ggml_backend_hexagon_reg_i = {
+-- 
+2.34.1
+

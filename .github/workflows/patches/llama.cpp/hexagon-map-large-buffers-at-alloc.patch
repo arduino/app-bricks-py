@@ -1,0 +1,88 @@
+hexagon: map buffer early to properly release resources on fail
+
+Buffers of 128 MiB and more are mapped when they are allocated (not with dma64), so that running out of IOVA
+space is a failed allocation, and a clean model load error, instead of an abort at compute time that leaves
+the DSP mappings behind. Mappings take power-of-2 IOVA slots: when the mapping fails, the buffers of the session
+are remapped largest first, the order the lazy mapping packs them in, before giving up.
+mtmd: a failed allocation of the projector weights is an error, not an assert.
+---
+diff --git a/ggml/src/ggml-hexagon/ggml-hexagon.cpp b/ggml/src/ggml-hexagon/ggml-hexagon.cpp
+index ccb128e06..dbf4e4bc8 100644
+--- a/ggml/src/ggml-hexagon/ggml-hexagon.cpp
++++ b/ggml/src/ggml-hexagon/ggml-hexagon.cpp
+@@ -70,6 +70,7 @@ using uintvec = std::vector<unsigned int>;
+ using u32vec  = std::vector<uint32_t>;
+ 
+ #define GGML_HEXAGON_MAX_SESSIONS          16
++#define GGML_HEXAGON_EARLY_MAP_SIZE        ((size_t) 128 << 20) // buffers this large are mapped at allocation
+ 
+ struct ggml_hexagon_device_config {
+     int         physical_idx = 0;
+@@ -380,6 +381,7 @@ struct ggml_hexagon_session {
+     void flush_pending(bool all = true);
+ 
+     void mmap_buffers();
++    void mmap_early(ggml_hexagon_shared_buffer*);
+     void clone_buffer(const ggml_hexagon_shared_buffer*);
+     void release_buffer(const ggml_hexagon_shared_buffer*);
+     void unclone_buffer(const ggml_hexagon_shared_buffer*);
+@@ -960,8 +962,13 @@ static ggml_backend_buffer_t ggml_backend_hexagon_buffer_type_alloc_buffer(
+         return nullptr;
+     }
+     try {
+-        ggml_hexagon_shared_buffer * sbuf = new ggml_hexagon_shared_buffer(sess, size, false);
+-        return ggml_backend_buffer_init(buffer_type, ggml_backend_hexagon_buffer_interface, sbuf, size);
++        auto sbuf = std::make_unique<ggml_hexagon_shared_buffer>(sess, size, false);
++        // map large buffers now: a mapping failure is then an allocation failure, not an abort at compute time
++        // (dma64 picks the mapping type at first use)
++        if (!opt_dma64 && size >= GGML_HEXAGON_EARLY_MAP_SIZE) {
++            sess->mmap_early(sbuf.get());
++        }
++        return ggml_backend_buffer_init(buffer_type, ggml_backend_hexagon_buffer_interface, sbuf.release(), size);
+     } catch (const std::exception & exc) {
+         GGML_LOG_ERROR("ggml-hex: %s failed to allocate device buffer context: %s\n", dev_ctx->c_name(), exc.what());
+         return nullptr;
+@@ -2144,6 +2151,29 @@ void ggml_hexagon_session::mmap_buffers() {
+     }
+ }
+ 
++// Map a buffer at allocation time. Mappings take power-of-2 IOVA slots, so the allocation order can leave no
++// slot for a buffer that fits when everything is mapped largest first: on failure remap all the session buffers
++// in that order (mmap_buffers). Throws if the buffer still does not fit.
++void ggml_hexagon_session::mmap_early(ggml_hexagon_shared_buffer * sbuf) {
++    this->buffers.insert(sbuf);
++    try {
++        sbuf->mmap();
++    } catch (const std::exception &) {
++        GGML_LOG_WARN("ggml-hex: %s remapping the session buffers largest first\n", this->c_name());
++        // nothing may still run on the buffers that get unmapped
++        this->flush_sync();
++        for (auto * b : this->buffers) {
++            b->unmap();
++        }
++        try {
++            this->mmap_buffers();
++        } catch (const std::exception &) {
++            this->buffers.erase(sbuf);
++            throw;
++        }
++    }
++}
++
+ void ggml_hexagon_session::clone_buffer(const ggml_hexagon_shared_buffer * sbuf)
+ {
+     GGML_ASSERT(sbuf && sbuf->mem);
+diff --git a/tools/mtmd/mtmd-model.cpp b/tools/mtmd/mtmd-model.cpp
+index 508dfbe94..380672d27 100644
+--- a/tools/mtmd/mtmd-model.cpp
++++ b/tools/mtmd/mtmd-model.cpp
+@@ -4442,6 +4442,9 @@ struct mtmd_model_loader {
+ 
+             // alloc memory and offload data
+             model.buf.reset(ggml_backend_alloc_ctx_tensors_from_buft(model.ctx_data.get(), buft));
++            if (!model.buf) {
++                throw std::runtime_error(mtmd_format("%s: unable to allocate %s buffer\n", __func__, ggml_backend_buft_name(buft)));
++            }
+             ggml_backend_buffer_set_usage(model.buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+             // read the weight from file
+             if (!no_alloc) {

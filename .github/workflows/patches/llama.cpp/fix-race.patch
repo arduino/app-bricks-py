@@ -9,10 +9,10 @@ QURT_ETIMEDOUT is moving code to latest else branch, causing the loop exit and t
  1 file changed, 21 insertions(+), 3 deletions(-)
 
 diff --git a/ggml/src/ggml-hexagon/htp/main.c b/ggml/src/ggml-hexagon/htp/main.c
-index 1d291e16b463..51a9c399a5de 100644
+index a944d7c51..407d749e7 100644
 --- a/ggml/src/ggml-hexagon/htp/main.c
 +++ b/ggml/src/ggml-hexagon/htp/main.c
-@@ -1284,6 +1284,9 @@ static void htp_main_thread(void * context) {
+@@ -1518,6 +1518,9 @@ static void htp_main_thread(void * context) {
  
      FARF(HIGH, "htp-main-thread: started");
  
@@ -22,7 +22,7 @@ index 1d291e16b463..51a9c399a5de 100644
      while (!atomic_load(&ctx->killed)) {
          uint32_t flags = 0;
          uint32_t num_buffers = 0;
-@@ -1291,12 +1294,27 @@ static void htp_main_thread(void * context) {
+@@ -1525,12 +1528,27 @@ static void htp_main_thread(void * context) {
  
          int err = dspqueue_peek(ctx->dsp_queue, &flags, &num_buffers, &message_length, 50000);
          if (err == 0) {

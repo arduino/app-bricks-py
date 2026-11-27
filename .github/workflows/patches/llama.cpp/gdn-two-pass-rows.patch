@@ -9,10 +9,10 @@ Assisted-by: Claude Fable 5.2
  1 file changed, 74 insertions(+), 25 deletions(-)
 
 diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
-index 6d3d4d3d5..c4e0dd0dd 100644
+index 72dd3e691..d1bf6a900 100644
 --- a/ggml/src/ggml-cpu/ops.cpp
 +++ b/ggml/src/ggml-cpu/ops.cpp
-@@ -11294,6 +11294,70 @@ void ggml_compute_forward_solve_tri(const struct ggml_compute_params * params, s
+@@ -11267,6 +11267,70 @@ void ggml_compute_forward_solve_tri(const struct ggml_compute_params * params, s
  }
  
  // ggml_compute_forward_gated_delta_net
@@ -83,7 +83,7 @@ index 6d3d4d3d5..c4e0dd0dd 100644
  static void ggml_compute_forward_gated_delta_net_one_chunk(
      const ggml_compute_params * params,
      ggml_tensor * dst,
-@@ -11390,10 +11454,14 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+@@ -11363,10 +11427,14 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
              ? state_work
              : state_out_base + (iv3 * H + iv1) * S_v * S_v;
  
@@ -100,7 +100,7 @@ index 6d3d4d3d5..c4e0dd0dd 100644
  
          if (src_pk) {
              const int64_t n_r = ((const int32_t *) src_n_rep->data)[iv3];
-@@ -11451,36 +11519,19 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+@@ -11424,36 +11492,19 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
              // state is stored transposed: s_out[j*S_v + i] = S[i][j]
              // so row j of s_out = column j of S (contiguous access)
  
@@ -143,6 +143,3 @@ index 6d3d4d3d5..c4e0dd0dd 100644
              }
  
              attn_data += S_v * H; // advance to next token
--- 
-2.34.1
-

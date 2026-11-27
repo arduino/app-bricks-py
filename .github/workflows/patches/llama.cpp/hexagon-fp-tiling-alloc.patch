@@ -1,8 +1,8 @@
 diff --git a/ggml/src/ggml-hexagon/htp-repack.h b/ggml/src/ggml-hexagon/htp-repack.h
-index f3206bc87..a2d9cffa3 100644
+index fc1c0d7b58..49ca9d1a36 100644
 --- a/ggml/src/ggml-hexagon/htp-repack.h
 +++ b/ggml/src/ggml-hexagon/htp-repack.h
-@@ -29,7 +29,8 @@ static inline bool htp_is_tiled_weight_tensor(const struct ggml_tensor * t) {
+@@ -31,7 +31,8 @@ static inline bool htp_is_tiled_weight_tensor(const struct ggml_tensor * t) {
          return false;
      }
      if (!ggml_is_quantized(t->type)) {

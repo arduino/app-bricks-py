@@ -2277,20 +2277,12 @@ models:
       With 500 million parameters, it understands images and short video clips alongside text,
       making it suitable for visual question answering, image captioning and scene description
       directly on edge devices.
-    supported_boards: ["unoq", "ventunoq"]
+    supported_boards: ["unoq"]
     bricks:
       - id: "arduino:vlm"
-        model_configuration:
-          GGML_HEXAGON_DEVICES: 1      
     deployment:
       handler: "hf-handler"
       platforms:
-        - ventunoq:
-            variables:
-              model_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
-              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/ccd7aae53bcb1997355c2f094959e72b3642ce17/mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
-              models_repository: "llamacpp"
-              model_directory: "ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"
         - unoq:
             variables:
               model_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
