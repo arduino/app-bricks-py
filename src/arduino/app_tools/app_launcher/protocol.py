@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, cast
 
-DEFAULT_SOCKET = "/run/arduino-app-cli/app-launcher.sock"
 MAX_LINE_BYTES = 1024 * 1024
 
 

@@ -64,6 +64,18 @@ def environment(launch: Launch) -> dict[str, str]:
     return env
 
 
+def signal_group(pid: int, signum: int) -> None:
+    """Signals the process group the child leads, or the child alone when it has not become its leader yet."""
+    for kill in (os.killpg, os.kill):
+        try:
+            kill(pid, signum)
+            return
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            return
+
+
 def detach() -> None:
     """Makes the freshly forked process a group leader holding only the container stdio, first thing after the fork."""
     os.setsid()

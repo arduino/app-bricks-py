@@ -5,7 +5,6 @@
 """The dependencies run.sh installs for an app and their fingerprint: when it changes, the container must be prepared again."""
 
 import glob
-import hashlib
 import os
 from contextlib import suppress
 
@@ -47,6 +46,8 @@ def fingerprint(app: str) -> str | None:
     found = dependencies(app)
     if not found:
         return None
+    import hashlib  # noqa: PLC0415  # Not loaded for the app started before the launcher: few apps need it
+
     digest = hashlib.sha256()
     for name, content in found:
         digest.update(f"{name}\0{len(content)}\0".encode())
