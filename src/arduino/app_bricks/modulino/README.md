@@ -20,7 +20,7 @@ The Modulino brick lets your app use the Modulino modules connected to the Qwiic
 
 ## Using a Modulino
 
-Create the Modulini at the top of your app. `App.run()` starts them and stops them when the app closes, so call their methods from your loop (or from code that runs after `App.run()` has started them):
+Create the Modulini at the top of your app. A Modulino is started when it is created, so its methods can be called right away, also before `App.run()`; `App.run()` stops it when the app closes:
 
 ```python
 import time
@@ -42,9 +42,9 @@ def loop():
 App.run(user_loop=loop)
 ```
 
-To use a Modulino before `App.run()`, start it yourself with `App.start_brick(modulino)`: `App.run()` doesn't start it again, and stops it when the app closes. Don't call `start()` directly before `App.run()`: the Modulino would be started twice, and the second start resets it (for example it turns the LEDs of the Pixels off).
+Creating a Modulino initializes it on the board in its default state. If the Modulino doesn't answer, the creation raises `ModulinoError`. `App.run()` calls `start()`, which does nothing on a Modulino already started, so the settings made before `App.run()` (callbacks, thresholds, debounce, LEDs, ...) are kept.
 
-`start()` initializes the Modulino on the board and puts it back in its default state. `stop()` stops its notifications and turns its outputs off: motors, LEDs, sound and vibration (the Latch Relay keeps its position). If a Modulino doesn't answer, its `start()` fails: the app logs the error and keeps running.
+`stop()` stops the notifications, turns the outputs off (motors, LEDs, sound and vibration; the Latch Relay keeps its position) and brings the settings back to the defaults. After `stop()`, `start()` initializes the Modulino again in its default state.
 
 The snippets in the next sections show only the calls: put them in your loop, as above.
 
@@ -175,7 +175,7 @@ A failed measure raises `ModulinoError`.
 
 ## Modulino Distance
 
-`ModulinoDistance` is a time-of-flight sensor at the fixed I2C address 0x29. `get_distance()` returns the last measure in millimeters, or NaN when it is not valid (for example nothing in range). `start()` waits up to 50 ms for the first measure, so the first `get_distance()` is already valid:
+`ModulinoDistance` is a time-of-flight sensor at the fixed I2C address 0x29. `get_distance()` returns the last measure in millimeters, or NaN when it is not valid (for example nothing in range). Starting it waits up to 50 ms for the first measure, so the first `get_distance()` is already valid:
 
 ```python
 from arduino.app_bricks.modulino import ModulinoDistance
@@ -220,7 +220,7 @@ buttons.set_on_change_callback(on_buttons)
 buttons.set_leds(True, False, True)   # LEDs A and C on
 ```
 
-A change is notified when it has been stable for the debounce time, 30 ms by default: change it with `set_debounce(ms)`. `remove_on_change_callback()` stops the notifications. The LEDs are off after `start()` and `stop()`, and `start()` brings the debounce back to 30 ms.
+A change is notified when it has been stable for the debounce time, 30 ms by default: change it with `set_debounce(ms)`. `remove_on_change_callback()` stops the notifications. The LEDs are off when the Modulino starts and after `stop()`, and `stop()` brings the debounce back to 30 ms.
 
 ## Modulino Joystick
 
@@ -262,7 +262,7 @@ knob.set_on_change_callback(on_knob)
 knob.set_start_position(0)   # the counter starts from 0
 ```
 
-The knob keeps its position across apps. `set_start_position(position)` sets the counter: the new position is notified with `direction` 0, as it is not a rotation. In the same way, the first notification after `start()` doesn't count the position left by the previous app as a rotation. A change is notified when it has been stable for the debounce time, 30 ms by default: change it with `set_debounce(ms)`. `remove_on_change_callback()` stops the notifications.
+The knob keeps its position across apps. `set_start_position(position)` sets the counter: the new position is notified with `direction` 0, as it is not a rotation. In the same way, the first notification after the Modulino starts doesn't count the position left by the previous app as a rotation. A change is notified when it has been stable for the debounce time, 30 ms by default: change it with `set_debounce(ms)`. `remove_on_change_callback()` stops the notifications.
 
 ## Modulino Buzzer
 
@@ -367,9 +367,9 @@ motors.release()                    # free the shaft
 
 With `release_ms=0` the motor keeps holding its position at the end of the move; 1 to 255 releases the coils that many milliseconds after the end. `hold()` and `release()` energize or release the coils right away. `set_half_step(True)` doubles the steps per revolution for a smoother movement. The stepper methods raise `RuntimeError` until `set_stepper_mode(True)` is called, and `set_speed_a`, `set_speed_b` and `stop_motors` raise it in stepper mode.
 
-Both modes share the driver settings: `set_decay(mode)` with `DECAY_SLOW`, `DECAY_MIXED_SLOW`, `DECAY_MIXED_FAST` or `DECAY_FAST`, `set_half_full_scale(enabled)` for the 1.9 A range (better accuracy at low currents) instead of 3.8 A, and `set_frequency(hz)` for the DC PWM frequency (200 to 60000 Hz, 20000 by default). The configuration is cached: `is_stepper_mode()`, `is_half_step()`, `get_decay()`, `is_half_full_scale()` and `get_frequency()` return the values set (or the defaults `start()` reads from the board) without reading the module, which is read again only after a failure or a mode change. `is_busy()` always reads the module. If the module is powered off or reconnected, call `start()` again. `get_current_a()` and `get_current_b()` return the current of each channel in milliamps.
+Both modes share the driver settings: `set_decay(mode)` with `DECAY_SLOW`, `DECAY_MIXED_SLOW`, `DECAY_MIXED_FAST` or `DECAY_FAST`, `set_half_full_scale(enabled)` for the 1.9 A range (better accuracy at low currents) instead of 3.8 A, and `set_frequency(hz)` for the DC PWM frequency (200 to 60000 Hz, 20000 by default). The configuration is cached: `is_stepper_mode()`, `is_half_step()`, `get_decay()`, `is_half_full_scale()` and `get_frequency()` return the values set (or the defaults read from the board when the Modulino starts) without reading the module, which is read again only after a failure or a mode change. `is_busy()` always reads the module. If the module is powered off or reconnected, call `stop()` and then `start()`. `get_current_a()` and `get_current_b()` return the current of each channel in milliamps.
 
-`start()` brings the module back to DC mode with the default settings. `stop()`, also when the app closes, stops the DC motors and, in stepper mode, releases the coils.
+The module starts in DC mode with the default settings. `stop()`, also when the app closes, stops the DC motors and, in stepper mode, releases the coils.
 
 ## Modulino LED Matrix
 

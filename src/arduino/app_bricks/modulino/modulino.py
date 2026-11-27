@@ -208,12 +208,15 @@ class Modulino:
 
     Don't instantiate it: use the class of your Modulino (`ModulinoThermo`, `ModulinoButtons`, ...).
     Each subclass sets `_TYPE`, the type name known by the MCU.
+
+    The constructor starts the Modulino (`_begin`), so its methods can be called right away, before `App.run()`.
+    A subclass that overrides `_begin` sets the attributes it uses before calling `super().__init__()`.
     """
 
     _TYPE = ""
 
     def __init__(self, i2c_address: int, hub_port: ModulinoHubPort | None = None) -> None:
-        """Create the Modulino on the board.
+        """Create the Modulino on the board and start it.
 
         Args:
             i2c_address (int): The I2C address of the Modulino, 0xFF for autoscan.
@@ -222,7 +225,7 @@ class Modulino:
         Raises:
             TypeError: If `Modulino` is instantiated directly, or an argument has the wrong type.
             ValueError: If `i2c_address` is not between 0x00 and 0xFF.
-            ModulinoError: If the board can't create the Modulino.
+            ModulinoError: If the board can't create the Modulino, or the Modulino doesn't answer.
         """
         if not type(self)._TYPE:
             raise TypeError("Modulino is a base class: use the class of your Modulino, e.g. ModulinoThermo")
@@ -244,27 +247,44 @@ class Modulino:
         if not isinstance(name, str) or not name:
             raise ModulinoError(error, hint=_DUPLICATE_HINT)
         self.name = name
+        # Started here and not only by App.run(): the methods called before App.run() reach the device
+        # (the address is found by :begin) and their settings are not reset by a later start
+        self._started = False
+        self._begin()
+        self._started = True
 
     def _location(self) -> str:
         return f" on hub 0x{self.hub_address:x} port {self.port}" if self.hub_address else ""
 
+    def _begin(self) -> None:
+        """Initialize the Modulino on the board and put it in its default state."""
+        if not self._call("start", "begin"):
+            raise ModulinoError(f"modulino {self.name}: cannot start", hint=_CONNECT_HINT)
+
     def start(self) -> None:
-        """Start the Modulino: the board initializes it.
+        """Start the Modulino again after `stop()`: the board initializes it and puts it in its default state.
+
+        The Modulino is already started when it is created, so this does nothing until `stop()` is called:
+        `App.run()` calls it and keeps the settings made before.
 
         Raises:
             ModulinoError: If the Modulino doesn't answer.
         """
-        if not self._call("start", "begin"):
-            raise ModulinoError(f"modulino {self.name}: cannot start", hint=_CONNECT_HINT)
+        if self._started:
+            return
+        self._begin()
+        self._started = True
 
     def stop(self) -> None:
         """Stop the Modulino: the board stops its notifications and turns its outputs off.
 
         The outputs are the motors, LEDs, sound and vibration; the Latch Relay keeps its position.
+        The settings go back to the defaults. Call `start()` to use the Modulino again.
 
         Raises:
             ModulinoError: If the board can't stop the Modulino.
         """
+        self._started = False  # first: also after a failed stop, start() initializes the Modulino again
         self._stop_worker(join_timeout=1.0)
         try:
             Bridge.call("delete_modulino", self.name)
@@ -539,7 +559,7 @@ class ModulinoButtons(Modulino):
         """Set the debounce time for button state changes.
 
         Args:
-            ms (int): Debounce time in milliseconds. Defaults to 30 after `start()`.
+            ms (int): Debounce time in milliseconds. Defaults to 30.
 
         Raises:
             TypeError: If `ms` is not an integer.
@@ -602,7 +622,7 @@ class ModulinoJoystick(Modulino):
         """Set the debounce time for the joystick modulino.
 
         Args:
-            ms (int): Debounce time in milliseconds. Defaults to 30 after `start()`.
+            ms (int): Debounce time in milliseconds. Defaults to 30.
 
         Raises:
             TypeError: If `ms` is not an integer.
@@ -667,7 +687,7 @@ class ModulinoKnob(Modulino):
         """Set the debounce time for the knob modulino.
 
         Args:
-            ms (int): Debounce time in milliseconds. Defaults to 30 after `start()`.
+            ms (int): Debounce time in milliseconds. Defaults to 30.
 
         Raises:
             TypeError: If `ms` is not an integer.
@@ -695,7 +715,7 @@ class ModulinoKnob(Modulino):
 class ModulinoDistance(Modulino):
     """Class to handle a Modulino Distance (time-of-flight sensor, I2C address 0x29).
 
-    `start()` waits up to 50 ms for the first measure, so the first `get_distance()` is already valid.
+    Starting it waits up to 50 ms for the first measure, so the first `get_distance()` is already valid.
     """
 
     _TYPE = "distance"
@@ -1132,10 +1152,10 @@ class ModulinoMotors(Modulino):
     `stop()` stops both DC motors and, in stepper mode, releases the coils.
 
     The configuration (stepper mode, half step, current range, decay mode and frequency) is cached:
-    `start()` fills it with the defaults read from the board, the setters update it once the board
-    applies the value, and the getters return it without reading the module. After a failure or a
+    starting the modulino fills it with the defaults read from the board, the setters update it once the
+    board applies the value, and the getters return it without reading the module. After a failure or a
     mode change the cache is cleared and the next getter reads the module again. If the module is
-    powered off or reconnected, call `start()` again.
+    powered off or reconnected, call `stop()` and then `start()`.
     """
 
     _TYPE = "motors"
@@ -1168,11 +1188,11 @@ class ModulinoMotors(Modulino):
         """
         if steps_per_revolution is not None:
             _check_int("steps_per_revolution", steps_per_revolution, 1, 32767)
-        super().__init__(i2c_address, hub_port)
         self.steps_per_revolution = steps_per_revolution
         # Reentrant: the setters hold it while _command clears the cache on a failure
         self._lock = threading.RLock()
         self._cache: _MotorsConfig | None = None  # None: unknown, read from the module when needed
+        super().__init__(i2c_address, hub_port)
 
     def _require_stepper(self, what: str) -> None:
         if not self._config().stepper_mode:
@@ -1232,15 +1252,11 @@ class ModulinoMotors(Modulino):
                 self._cache = self._cache._replace(**field)
 
     @override
-    def start(self) -> None:
-        """Start the motors modulino, in DC mode with both motors stopped and the default configuration.
-
-        Raises:
-            ModulinoError: If the Modulino doesn't answer or the board can't read its status.
-        """
+    def _begin(self) -> None:
+        """DC mode with both motors stopped and the default configuration, read back to fill the cache."""
         with self._lock:
             self._cache = None
-            super().start()
+            super()._begin()
             # The board restores the defaults in :begin: read them to fill the cache
             self._read_status()
 
@@ -1579,17 +1595,13 @@ class ModulinoLEDMatrix(Modulino):
         _check_int("i2c_address", i2c_address)
         if not 0x08 <= i2c_address <= 0x77:
             raise ValueError(f"i2c_address must be between 0x08 and 0x77, got 0x{i2c_address:x}")
+        self._grayscale = False  # before super().__init__(), which calls _begin
         super().__init__(i2c_address)
-        self._grayscale = False
 
     @override
-    def start(self) -> None:
-        """Start the LED matrix, in monochrome mode.
-
-        Raises:
-            ModulinoError: If the Modulino doesn't answer.
-        """
-        super().start()
+    def _begin(self) -> None:
+        """Monochrome mode, and the callback of the end of the animations provided."""
+        super()._begin()
         self._grayscale = False
 
         # Always provided: the MCU notifies (3 unused integers) the end of every animation without loop,
