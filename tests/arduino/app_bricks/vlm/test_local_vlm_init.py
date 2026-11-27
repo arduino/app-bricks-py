@@ -14,6 +14,7 @@ import base64
 import io
 import threading
 
+import httpx
 import openai
 import pytest
 from PIL import Image
@@ -109,7 +110,7 @@ def test_init_builds_image_in_memory_without_filesystem(monkeypatch):
 
 
 def test_init_wraps_api_errors_into_runtime_error():
-    error = openai.APIError("runner down", request=None, body=None)
+    error = openai.APIError("runner down", request=httpx.Request("POST", "http://llamacpp-models-runner:9999/v1/chat/completions"), body=None)
     vlm = _make_vlm(RecordingModel(error=error))
 
     with pytest.raises(RuntimeError):
