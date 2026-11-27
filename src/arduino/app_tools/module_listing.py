@@ -501,7 +501,7 @@ def release() -> None:
     parser = argparse.ArgumentParser(description="Provision the static assets bundled into the Arduino App Bricks wheel.")
     parser.add_argument("-d", "--static-dir", type=str, required=True, help="Static assets directory to populate.")
     parser.add_argument("-m", "--models-dir", type=str, default="models", help="Directory holding the models-*.yaml files.")
-    parser.add_argument("-a", "--api-docs-dir", type=str, default="docs", help="Directory holding the generated API docs.")
+    parser.add_argument("-a", "--api-docs-dir", type=str, default="build/api-docs", help="Directory holding the generated API docs.")
     parser.add_argument("-r", "--pyright-rules", type=str, default="pyright-rules.json", help="Pyright rules file to ship in the wheel.")
     parser.add_argument(
         "-v",

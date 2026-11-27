@@ -83,9 +83,9 @@ tasks:
       - cp pyproject.toml uv.lock dist/
 
   build:bricks:docs:
-    desc: Generate the API documentation under docs/
+    desc: Generate the API documentation under build/api-docs/
     cmds:
-      - uv run --group build python -m docs_generator.runner docs
+      - uv run --group build python -m docs_generator.runner build/api-docs
 
   build:bricks:static:
     desc: Provision the static assets bundled into the wheel, BRICKS_RELEASE_VERSION overrides the version stamped into compose and models files
@@ -93,7 +93,7 @@ tasks:
     cmds:
       - rm -rf src/arduino/app_bricks/static
       - task: build:bricks:docs
-      - uv run --group build arduino-bricks-release --static-dir src/arduino/app_bricks/static --api-docs-dir docs
+      - uv run --group build arduino-bricks-release --static-dir src/arduino/app_bricks/static --api-docs-dir build/api-docs
 
   build:containers:
     desc: Build the container images with docker buildx bake, pass -- <names> for a subset (parents are built too)
